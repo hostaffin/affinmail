@@ -176,14 +176,14 @@ export async function request(methodCalls: unknown[][]): Promise<any[]> {
 export async function listMailboxes(): Promise<JmapMailbox[]> {
   const session = await getSession();
   const id = accountId(session);
-  const [, getRes] = await request([['Mailbox/get', { accountId: id }, '0']]);
+  const [getRes] = await request([['Mailbox/get', { accountId: id }, '0']]);
   let list = (getRes[1].list ?? []) as JmapMailbox[];
   if (!list.some((m) => m.role === 'archive')) {
     try {
       await request([
         ['Mailbox/set', { accountId: id, create: { archive: { name: 'Archive', role: 'archive' } } }, '0'],
       ]);
-      const [, refreshed] = await request([['Mailbox/get', { accountId: id }, '0']]);
+      const [refreshed] = await request([['Mailbox/get', { accountId: id }, '0']]);
       list = (refreshed[1].list ?? []) as JmapMailbox[];
     } catch {
       // Archive is a convenience; if the server refuses, actions falling back to it just fail.
@@ -258,7 +258,7 @@ export async function queryEmails(q: EmailQuery = {}): Promise<JmapEmail[]> {
 export async function getEmails(ids: string[]): Promise<JmapEmail[]> {
   if (ids.length === 0) return [];
   const session = await getSession();
-  const [, getRes] = await request([
+  const [getRes] = await request([
     [
       'Email/get',
       {
@@ -322,7 +322,7 @@ export function moveTo(target: string, from: string[] = []): EmailPatch {
 
 export async function setEmail(emailId: string, patch: EmailPatch): Promise<void> {
   const session = await getSession();
-  const [, res] = await request([['Email/set', { accountId: accountId(session), update: { [emailId]: patch } }, '0']]);
+  const [res] = await request([['Email/set', { accountId: accountId(session), update: { [emailId]: patch } }, '0']]);
   const failure = res[1].notUpdated?.[emailId];
   if (failure) throw new JmapError(failure.description || 'Update rejected', 400, failure.type);
 }
@@ -331,7 +331,7 @@ export async function setEmail(emailId: string, patch: EmailPatch): Promise<void
 export async function getQuota(): Promise<JmapQuota | null> {
   const session = await getSession();
   try {
-    const [, res] = await request([['Quota/get', { accountId: accountId(session) }, '0']]);
+    const [res] = await request([['Quota/get', { accountId: accountId(session) }, '0']]);
     const quota = (res[1].list ?? [])[0];
     if (!quota || !quota.limit) return null;
     const used = quota.used ?? Math.max(0, (quota.limit ?? 0) - (quota.free ?? 0));
@@ -384,7 +384,7 @@ export async function downloadBlob(blobId: string, name: string): Promise<void> 
 async function getIdentityId(): Promise<string> {
   if (cachedIdentityId) return cachedIdentityId;
   const session = await getSession();
-  const [, res] = await request([['Identity/get', { accountId: accountId(session) }, '0']]);
+  const [res] = await request([['Identity/get', { accountId: accountId(session) }, '0']]);
   const identity = (res[1].list ?? [])[0];
   if (!identity?.id) throw new JmapError('No sending identity configured');
   cachedIdentityId = identity.id as string;
@@ -448,7 +448,7 @@ export async function createAndSubmit(payload: ComposePayload): Promise<string> 
   const email = await buildEmailBody(payload);
   const rcptTo = [...addressList(payload.to), ...addressList(payload.cc), ...addressList(payload.bcc)];
 
-  const [, createRes] = await request([
+  const [createRes] = await request([
     [
       'Email/set',
       {
@@ -464,7 +464,7 @@ export async function createAndSubmit(payload: ComposePayload): Promise<string> 
     throw new JmapError(failure?.description || 'Could not create message', 400, failure?.type);
   }
 
-  const [, submitRes] = await request([
+  const [submitRes] = await request([
     [
       'EmailSubmission/set',
       {
@@ -499,7 +499,7 @@ export async function createAndSubmit(payload: ComposePayload): Promise<string> 
 
 export async function discardDraft(draftId: string): Promise<void> {
   const session = await getSession();
-  const [, res] = await request([['Email/set', { accountId: accountId(session), destroy: [draftId] }, '0']]);
+  const [res] = await request([['Email/set', { accountId: accountId(session), destroy: [draftId] }, '0']]);
   if (res[1].notDestroyed?.[draftId]) throw new JmapError('Could not discard draft');
 }
 
@@ -519,7 +519,7 @@ export async function saveDraft(payload: ComposePayload, draftId?: string): Prom
     }
   }
 
-  const [, res] = await request([
+  const [res] = await request([
     [
       'Email/set',
       {

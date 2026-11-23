@@ -368,10 +368,10 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
 
         {/* Quick Action Footer Buttons (Reply / Forward) */}
         {!showReplyBox && (
-          <div className="p-4 bg-white dark:bg-[#1E1F20] border-t border-[#E0E2E7] dark:border-[#333538] flex items-center gap-3">
+          <div className="p-4 bg-white dark:bg-[#1E1F20] border-t border-[#E0E2E7] dark:border-[#333538] flex flex-wrap items-center gap-2 sm:gap-3">
             <button
               onClick={() => setShowReplyBox(true)}
-              className="flex items-center gap-2 px-6 py-2 rounded-full border border-[#747775] dark:border-[#8E918F] text-xs font-semibold text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] hover:text-[#1F1F1F] transition-colors"
+              className="flex items-center gap-2 px-4 sm:px-6 py-2 rounded-full border border-[#747775] dark:border-[#8E918F] text-xs font-semibold text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] hover:text-[#1F1F1F] transition-colors"
             >
               <Reply className="w-4 h-4 stroke-[2]" />
               <span>Reply</span>
@@ -379,7 +379,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
 
             <button
               onClick={() => setShowReplyBox(true)}
-              className="flex items-center gap-2 px-6 py-2 rounded-full border border-[#747775] dark:border-[#8E918F] text-xs font-semibold text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] hover:text-[#1F1F1F] transition-colors"
+              className="flex items-center gap-2 px-4 sm:px-6 py-2 rounded-full border border-[#747775] dark:border-[#8E918F] text-xs font-semibold text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] hover:text-[#1F1F1F] transition-colors"
             >
               <ReplyAll className="w-4 h-4 stroke-[2]" />
               <span>Reply all</span>
@@ -387,7 +387,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
 
             <button
               onClick={() => onForward?.(thread)}
-              className="flex items-center gap-2 px-6 py-2 rounded-full border border-[#747775] dark:border-[#8E918F] text-xs font-semibold text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] hover:text-[#1F1F1F] transition-colors"
+              className="flex items-center gap-2 px-4 sm:px-6 py-2 rounded-full border border-[#747775] dark:border-[#8E918F] text-xs font-semibold text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] hover:text-[#1F1F1F] transition-colors"
             >
               <Forward className="w-4 h-4 stroke-[2]" />
               <span>Forward</span>

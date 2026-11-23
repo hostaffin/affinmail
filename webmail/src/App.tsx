@@ -20,6 +20,7 @@ import {
   getThreadEmails,
   getSession,
   JmapEmail,
+  JmapError,
   JmapMailbox,
   keywords,
   listMailboxes,
@@ -247,8 +248,12 @@ export const App: React.FC = () => {
       } catch (err) {
         if (!cancelled) {
           addToast(err instanceof Error ? err.message : 'Could not load mailbox', 'error');
-          logout();
-          setAuthEmail(null);
+          // Only a genuine auth failure ends the session; transient load
+          // errors must not eject a signed-in user back to the login screen.
+          if (err instanceof JmapError && err.status === 401) {
+            logout();
+            setAuthEmail(null);
+          }
         }
       } finally {
         if (!cancelled) setIsAppLoading(false);

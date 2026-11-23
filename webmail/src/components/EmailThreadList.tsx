@@ -71,11 +71,11 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
     <div className="flex-1 overflow-y-auto bg-white dark:bg-[#1E1F20] flex flex-col select-none">
       {/* Gmail Inbox Category Tabs (Primary, Promotions, Social) */}
       {isInbox && (
-        <div className="flex items-center border-b border-[#E0E2E7] dark:border-[#333538] px-2 select-none shrink-0 bg-white dark:bg-[#1E1F20]">
+        <div className="flex items-center overflow-x-auto border-b border-[#E0E2E7] dark:border-[#333538] px-2 select-none shrink-0 bg-white dark:bg-[#1E1F20]">
           {/* Primary Tab */}
           <button
             onClick={() => onTabChange?.('primary')}
-            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[160px] ${
+            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[120px] sm:min-w-[160px] ${
               activeTab === 'primary'
                 ? 'border-b-gmail-blue text-gmail-blue font-bold'
                 : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]'
@@ -88,7 +88,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
           {/* Promotions Tab */}
           <button
             onClick={() => onTabChange?.('promotions')}
-            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[160px] ${
+            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[120px] sm:min-w-[160px] ${
               activeTab === 'promotions'
                 ? 'border-b-gmail-blue text-gmail-blue font-bold'
                 : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]'
@@ -104,7 +104,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
           {/* Social Tab */}
           <button
             onClick={() => onTabChange?.('social')}
-            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[160px] ${
+            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[120px] sm:min-w-[160px] ${
               activeTab === 'social'
                 ? 'border-b-gmail-blue text-gmail-blue font-bold'
                 : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]'
@@ -127,7 +127,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
             <div
               key={thread.id}
               onClick={() => onSelectThread(thread)}
-              className={`gmail-row group cursor-pointer text-xs transition-colors flex items-center px-4 py-2 relative border-b border-[#F2F4F7] dark:border-[#282A2C] ${
+              className={`gmail-row group cursor-pointer text-xs transition-colors flex flex-wrap items-center px-3 sm:px-4 py-2 relative border-b border-[#F2F4F7] dark:border-[#282A2C] ${
                 isSelected
                   ? 'bg-[#C2E7FF]/60 dark:bg-[#004A77]/40 border-l-4 border-l-gmail-blue'
                   : isCursor
@@ -180,7 +180,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
               </button>
 
               {/* Sender Name with Gmail Contact Hovercard */}
-              <div className="w-36 md:w-48 shrink-0 flex items-center gap-1.5 mr-3">
+              <div className="flex-1 min-w-0 sm:flex-none sm:w-36 md:w-48 sm:shrink-0 flex items-center gap-1.5 mr-3">
                 <ContactHovercard
                   senderName={thread.senderName}
                   senderEmail={thread.senderEmail}
@@ -204,7 +204,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
               </div>
 
               {/* Subject & Snippet & Labels */}
-              <div className="flex-1 min-w-0 flex items-center gap-2 mr-3">
+              <div className="flex-1 min-w-0 flex items-center gap-2 mr-3 max-sm:order-5 max-sm:basis-full max-sm:pl-[68px] max-sm:mt-0.5">
                 {/* Labels Chips */}
                 {thread.labels
                   .filter((l) => l !== 'inbox' && l !== 'sent' && l !== 'drafts')
@@ -228,7 +228,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
                   {thread.subject}
                 </span>
 
-                <span className="text-[#5E5E5E] dark:text-[#8E918F] truncate text-xs font-normal hidden md:inline">
+                <span className="text-[#5E5E5E] dark:text-[#8E918F] truncate text-xs font-normal hidden sm:inline max-sm:hidden">
                   — {thread.snippet}
                 </span>
               </div>
@@ -245,7 +245,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
               )}
 
               {/* Right Side: Timestamp by default, or Gmail Quick Action Buttons on Hover! */}
-              <div className="relative shrink-0 flex items-center justify-end min-w-[120px]">
+              <div className="relative shrink-0 flex items-center justify-end min-w-0 sm:min-w-[120px]">
                 {/* Default Timestamp (Hidden on hover) */}
                 <span
                   className={`gmail-date group-hover:hidden font-sans text-xs tabular-nums text-right ${

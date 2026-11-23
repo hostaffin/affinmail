@@ -48,13 +48,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onLogout,
 }) => {
   const [showAppsMenu, setShowAppsMenu] = useState(false);
+  const [mobileSearch, setMobileSearch] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showSearchFilter, setShowSearchFilter] = useState(false);
 
   return (
     <header className="h-16 px-4 bg-gmail-canvas dark:bg-gmail-dark-canvas flex items-center justify-between gap-4 select-none shrink-0 relative z-30">
       {/* 1. Brand & Hamburger Toggle */}
-      <div className="flex items-center gap-3 shrink-0 min-w-[230px]">
+      <div className={`flex items-center gap-3 shrink-0 min-w-0 sm:min-w-[230px] ${mobileSearch ? "max-sm:hidden" : ""}`}>
         <button
           onClick={onToggleSidebar}
           className="btn btn-ghost btn-circle btn-sm text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10"
@@ -74,7 +75,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
       </div>
 
       {/* 2. Gmail Iconic Pill Search Bar */}
-      <div className="flex-1 max-w-[720px] relative min-w-0">
+      <div className={`flex-1 max-w-[720px] relative min-w-0 ${mobileSearch ? "" : "max-sm:hidden"}`}>
         <div
           className={`flex items-center h-12 px-3.5 rounded-full transition-all duration-150 ${
             searchQuery.trim()
@@ -100,9 +101,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             className="w-full mx-2 bg-transparent border-none outline-none text-[#1F1F1F] dark:text-[#E3E3E3] placeholder-[#444746]/70 dark:placeholder-[#C4C7C5]/70 text-[15px]"
           />
 
-          {searchQuery && (
+          {(searchQuery || mobileSearch) && (
             <button
-              onClick={() => onSearchChange('')}
+              onClick={() => { if (searchQuery) onSearchChange(''); else setMobileSearch(false); }}
               className="p-1 text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 rounded-full shrink-0 mr-1"
               title="Clear search"
             >
@@ -170,6 +171,16 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
       {/* 3. Right Icons (Support, Settings, Google Apps Launcher, Theme, Avatar) */}
       <div className="flex items-center gap-1 shrink-0">
+        {/* Mobile Search Toggle (pill search is hidden below sm) */}
+        <button
+          onClick={() => setMobileSearch(true)}
+          className="btn btn-ghost btn-circle btn-sm text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 sm:hidden"
+          title="Search"
+          aria-label="Search"
+        >
+          <Search className="w-5 h-5 stroke-[2]" />
+        </button>
+
         {/* Support Icon */}
         <button
           className="btn btn-ghost btn-circle btn-sm text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 hidden sm:inline-flex"

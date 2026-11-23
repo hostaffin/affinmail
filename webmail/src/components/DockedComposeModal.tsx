@@ -231,7 +231,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
           ? 'inset-0 sm:inset-4 rounded-none sm:rounded-2xl'
           : isMinimized
           ? 'bottom-0 right-6 w-72 h-10 rounded-t-xl'
-          : 'bottom-0 right-6 w-full sm:w-[580px] h-full sm:h-[540px] rounded-t-2xl'
+          : 'bottom-0 right-0 sm:right-6 w-full sm:w-[580px] h-full sm:h-[540px] rounded-t-2xl'
       }`}
     >
       {/* 1. Modal Top Bar */}
