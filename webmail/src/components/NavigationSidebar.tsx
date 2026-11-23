@@ -29,7 +29,8 @@ interface NavigationSidebarProps {
   onSelectLabel: (label: string | null) => void;
   onOpenCompose: () => void;
   unreadCount: number;
-  quota: PlanQuota;
+  draftCount?: number;
+  quota: PlanQuota | null;
   isCollapsed?: boolean;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
@@ -42,6 +43,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   onSelectLabel,
   onOpenCompose,
   unreadCount,
+  draftCount,
   quota,
   isCollapsed = false,
   isOpenMobile = false,
@@ -54,7 +56,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
     { id: 'starred' as MailboxFolderId, name: 'Starred', icon: Star },
     { id: 'snoozed' as MailboxFolderId, name: 'Snoozed', icon: Clock },
     { id: 'sent' as MailboxFolderId, name: 'Sent', icon: Send },
-    { id: 'drafts' as MailboxFolderId, name: 'Drafts', icon: FileText, count: 1 },
+    { id: 'drafts' as MailboxFolderId, name: 'Drafts', icon: FileText, count: draftCount },
   ];
 
   const moreFolders = [
@@ -247,7 +249,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
       </div>
 
       {/* 4. Bottom Storage Breakdown (Gmail Style) */}
-      {!isMini && (
+      {!isMini && quota && (
         <div className="px-6 py-3 space-y-1.5 border-t border-gmail-border dark:border-gmail-dark-border">
           <div className="flex items-center justify-between text-xs text-[#444746] dark:text-[#C4C7C5]">
             <span>{quota.usedFormatted} of {quota.limitFormatted} used</span>
@@ -259,7 +261,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
             max="100"
           ></progress>
           <div className="flex justify-between items-center text-[11px] text-[#444746]/70 dark:text-[#C4C7C5]/70 pt-0.5">
-            <span className="truncate font-mono">IP: {quota.assignedIp}</span>
+            <span className="truncate font-mono">Max attach: {quota.maxAttachmentSizeMb} MB</span>
             <span className="text-gmail-blue hover:underline cursor-pointer">Manage</span>
           </div>
         </div>

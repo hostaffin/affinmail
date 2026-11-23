@@ -29,9 +29,10 @@ interface HeaderBarProps {
   onSearchChange: (q: string) => void;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
   user: UserProfile;
-  quota: PlanQuota;
+  quota: PlanQuota | null;
   onSwitchToAdmin?: () => void;
   onToggleSidebar?: () => void;
+  onLogout?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -44,6 +45,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   quota,
   onSwitchToAdmin,
   onToggleSidebar,
+  onLogout,
 }) => {
   const [showAppsMenu, setShowAppsMenu] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
@@ -323,24 +325,28 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 Manage your AffinMail Account
               </button>
 
-              {/* Storage Info Card */}
-              <div className="mt-4 p-3.5 bg-gmail-canvas dark:bg-gmail-dark-canvas rounded-2xl text-left border border-gmail-border dark:border-gmail-dark-border space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#444746] dark:text-[#C4C7C5]">Storage used</span>
-                  <span className="font-medium tabular-nums">{quota.usedFormatted} of {quota.limitFormatted}</span>
+              {/* Storage Info Card (hidden when the server reports no quota) */}
+              {quota && (
+                <div className="mt-4 p-3.5 bg-gmail-canvas dark:bg-gmail-dark-canvas rounded-2xl text-left border border-gmail-border dark:border-gmail-dark-border space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[#444746] dark:text-[#C4C7C5]">Storage used</span>
+                    <span className="font-medium tabular-nums">{quota.usedFormatted} of {quota.limitFormatted}</span>
+                  </div>
+                  <progress
+                    className="progress progress-primary w-full h-1.5 bg-gray-200 dark:bg-gray-700"
+                    value={quota.percent}
+                    max="100"
+                  ></progress>
+                  {quota.assignedIp && (
+                    <div className="flex justify-between items-center text-[11px] text-[#444746] dark:text-[#C4C7C5]">
+                      <span>Dedicated IP:</span>
+                      <span className="font-mono tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
+                        {quota.assignedIp}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <progress
-                  className="progress progress-primary w-full h-1.5 bg-gray-200 dark:bg-gray-700"
-                  value={quota.percent}
-                  max="100"
-                ></progress>
-                <div className="flex justify-between items-center text-[11px] text-[#444746] dark:text-[#C4C7C5]">
-                  <span>Dedicated IP:</span>
-                  <span className="font-mono tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
-                    {quota.assignedIp}
-                  </span>
-                </div>
-              </div>
+              )}
 
               {/* Admin console link */}
               {onSwitchToAdmin && (
@@ -358,8 +364,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
               {/* Sign out */}
               <div className="mt-3 pt-3 border-t border-gmail-border dark:border-gmail-dark-border">
-                <button className="text-xs text-[#444746] dark:text-[#C4C7C5] hover:text-red-600 font-medium py-1">
-                  Sign out of all accounts
+                <button
+                  onClick={() => {
+                    setShowAccountMenu(false);
+                    onLogout?.();
+                  }}
+                  className="text-xs text-[#444746] dark:text-[#C4C7C5] hover:text-red-600 font-medium py-1"
+                >
+                  Sign out
                 </button>
               </div>
             </div>

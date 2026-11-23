@@ -25,22 +25,41 @@ import {
 } from 'lucide-react';
 import { validateAttachment, formatFileSize } from '../utils/attachmentValidator';
 
+export interface ComposePayload {
+  to: string;
+  cc: string;
+  subject: string;
+  body: string;
+  attachments: File[];
+}
+
 interface DockedComposeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSend: (message: { to: string; cc: string; subject: string; body: string; attachments: File[] }) => void;
+  onSend: (message: ComposePayload) => Promise<void> | void;
+  /** Persist the current contents server-side (Drafts). Returns the draft email id. */
+  onSaveDraft?: (message: ComposePayload, draftId?: string) => Promise<string | undefined>;
+  onDiscardDraft?: (draftId: string) => void;
   planLimitMb: number;
   onErrorToast: (msg: string) => void;
   initialTo?: string;
+  initialSubject?: string;
+  initialBody?: string;
+  initialDraftId?: string;
 }
 
 export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
   isOpen,
   onClose,
   onSend,
+  onSaveDraft,
+  onDiscardDraft,
   planLimitMb,
   onErrorToast,
   initialTo,
+  initialSubject,
+  initialBody,
+  initialDraftId,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -59,15 +78,32 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
   const [attachments, setAttachments] = useState<File[]>([]);
   const [showFormatting, setShowFormatting] = useState(false);
   const [showScheduleMenu, setShowScheduleMenu] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [draftId, setDraftId] = useState<string | undefined>(undefined);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scheduleMenuRef = useRef<HTMLDivElement>(null);
 
+  const wasOpen = useRef(false);
+
   useEffect(() => {
-    if (initialTo && isOpen) {
+    // Fresh compose: nothing to prefill and no draft to resume → clear whatever was left behind.
+    if (isOpen && !wasOpen.current && !initialTo && !initialSubject && !initialBody && !initialDraftId) {
+      setToChips([]);
+      setSubject('');
+      setBody('');
+      setAttachments([]);
+      setDraftId(undefined);
+    }
+    wasOpen.current = isOpen;
+    if (!isOpen) return;
+    if (initialTo) {
       setToChips((prev) => (prev.includes(initialTo) ? prev : [...prev, initialTo]));
     }
-  }, [initialTo, isOpen]);
+    if (initialSubject !== undefined) setSubject(initialSubject);
+    if (initialBody !== undefined) setBody(initialBody);
+    if (initialDraftId !== undefined) setDraftId(initialDraftId);
+  }, [initialTo, initialSubject, initialBody, initialDraftId, isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -120,28 +156,23 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
     }
   };
 
-  const handleSend = () => {
-    // Include pending input in chips
+  const currentPayload = (): ComposePayload => {
     const allTo = [...toChips];
     if (toInput.trim()) allTo.push(toInput.trim());
-
-    if (allTo.length === 0) {
-      onErrorToast('Please specify at least one recipient.');
-      return;
-    }
-
     const allCc = [...ccChips];
     if (ccInput.trim()) allCc.push(ccInput.trim());
-
-    onSend({
+    const allBcc = [...bccChips];
+    if (bccInput.trim()) allBcc.push(bccInput.trim());
+    return {
       to: allTo.join(', '),
-      cc: allCc.join(', '),
+      cc: [...allCc, ...allBcc].join(', '),
       subject: subject || '(no subject)',
       body,
       attachments,
-    });
+    };
+  };
 
-    // Reset fields
+  const resetFields = () => {
     setToInput('');
     setToChips([]);
     setCcInput('');
@@ -151,13 +182,46 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
     setSubject('');
     setBody('');
     setAttachments([]);
+    setDraftId(undefined);
+  };
+
+  const hasContent = () =>
+    Boolean(toChips.length || toInput.trim() || subject.trim() || body.trim() || attachments.length);
+
+  const handleSend = async () => {
+    const payload = currentPayload();
+    if (!payload.to.trim()) {
+      onErrorToast('Please specify at least one recipient.');
+      return;
+    }
+    setIsSending(true);
+    try {
+      await onSend(payload);
+      resetFields();
+      onClose();
+    } catch (err) {
+      onErrorToast(err instanceof Error ? err.message : 'Send failed');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleClose = async () => {
+    if (hasContent() && onSaveDraft) {
+      try {
+        const id = await onSaveDraft(currentPayload(), draftId);
+        if (id) setDraftId(id);
+      } catch {
+        // onSaveDraft already reports failures.
+      }
+    }
     onClose();
   };
 
-  const handleScheduleSend = (scheduledTime: string) => {
+  const handleScheduleSend = async (scheduledTime: string) => {
     setShowScheduleMenu(false);
-    onErrorToast(`Message scheduled for ${scheduledTime}`);
-    handleSend();
+    onErrorToast(`Scheduled send unavailable (${scheduledTime}); sending now.`);
+    await handleSend();
   };
 
   return (
@@ -198,7 +262,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
             )}
           </button>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#E0E2E7] dark:hover:bg-[#333538] p-1.5 rounded-full transition-colors"
             title="Save & close"
           >
@@ -427,9 +491,10 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
               <div className="relative flex items-center mr-2" ref={scheduleMenuRef}>
                 <button
                   onClick={handleSend}
-                  className="bg-gmail-blue hover:bg-blue-700 text-white text-xs font-semibold px-4 h-9 rounded-l-full flex items-center gap-1.5 transition-colors shadow-sm"
+                  disabled={isSending}
+                  className="bg-gmail-blue hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold px-4 h-9 rounded-l-full flex items-center gap-1.5 transition-colors shadow-sm"
                 >
-                  <span>Send</span>
+                  <span>{isSending ? 'Sending…' : 'Send'}</span>
                 </button>
                 <button
                   type="button"
@@ -538,6 +603,8 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
             <button
               onClick={() => {
                 if (confirm('Discard this draft?')) {
+                  if (draftId) onDiscardDraft?.(draftId);
+                  resetFields();
                   onClose();
                 }
               }}

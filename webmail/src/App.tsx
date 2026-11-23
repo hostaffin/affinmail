@@ -1,103 +1,118 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HeaderBar } from './components/HeaderBar';
 import { NavigationSidebar } from './components/NavigationSidebar';
 import { ActionToolbar } from './components/ActionToolbar';
 import { EmailThreadList } from './components/EmailThreadList';
 import { ConversationView } from './components/ConversationView';
-import { DockedComposeModal } from './components/DockedComposeModal';
+import { DockedComposeModal, ComposePayload } from './components/DockedComposeModal';
 import { ToastAlert, ToastMessage } from './components/ToastAlert';
 import { AdminPanel } from './components/AdminPanel';
 import { SplashScreen } from './components/SplashScreen';
+import { Login } from './components/Login';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { EmailThread, MailboxFolderId, PlanQuota, UserProfile } from './types';
+import { EmailMessage, EmailThread, MailboxFolderId, PlanQuota, UserProfile } from './types';
+import {
+  createAndSubmit,
+  discardDraft,
+  getAuth,
+  getEmails,
+  getQuota,
+  getThreadEmails,
+  getSession,
+  JmapEmail,
+  JmapMailbox,
+  keywords,
+  listMailboxes,
+  logout,
+  moveTo,
+  queryEmails,
+  saveDraft,
+  setEmail,
+} from './lib/jmap';
 
-// Initial Demo Seed Threads
-const INITIAL_THREADS: EmailThread[] = [
-  {
-    id: 'th-stripe-1092',
-    subject: 'Payment Receipt #AF-1092 - AffinMail Hosting Plan',
-    snippet: 'Your payment of $45.00 for the AffinMail Enterprise Plan was received successfully.',
-    senderName: 'Stripe Billing',
-    senderEmail: 'billing@stripe.com',
+/** Stalwart has no inbox category tabbing; everything lives in Primary. */
+const CATEGORY: EmailThread['category'] = 'primary';
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function formatWhen(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function toThread(email: JmapEmail, folderByMailboxId: Record<string, MailboxFolderId>): EmailThread {
+  const from = email.from?.[0];
+  const labels = Object.keys(email.mailboxIds ?? {})
+    .map((id) => folderByMailboxId[id])
+    .filter((l): l is MailboxFolderId => Boolean(l));
+  if (email.keywords?.['$flagged']) labels.push('starred');
+  if (email.keywords?.['$snoozed']) labels.push('snoozed');
+  if (email.keywords?.['$draft']) labels.push('drafts');
+
+  return {
+    id: email.id,
+    emailId: email.id,
+    threadId: email.threadId,
+    subject: email.subject || '(no subject)',
+    snippet: email.preview || '',
+    senderName: from?.name || from?.email || 'Unknown sender',
+    senderEmail: from?.email || '',
     messageCount: 1,
-    hasAttachments: true,
-    isStarred: true,
-    isUnread: true,
-    latestReceivedAt: '11:20 AM',
-    labels: ['inbox', 'billing'],
-    category: 'primary',
-  },
-  {
-    id: 'th-github-sec-2918',
-    subject: '[Security Alert] New SSH key registered to hostaffin-prod',
-    snippet: 'A new public key was added to your cluster infrastructure by marcus@apexlogistics.com.',
-    senderName: 'GitHub Security',
-    senderEmail: 'security@github.com',
-    messageCount: 1,
-    hasAttachments: false,
-    isStarred: false,
-    isUnread: true,
-    latestReceivedAt: '10:05 AM',
-    labels: ['inbox', 'security'],
-    category: 'primary',
-  },
-  {
-    id: 'th-sarah-design-final',
-    subject: 'AffinMail Final Design Handover & Release Docs',
-    snippet: 'Hi Marcus, attached is the release documentation and design mockups for the Q4 rollout.',
-    senderName: 'Sarah Chen',
-    senderEmail: 'sarah@chen.design',
-    messageCount: 3,
-    hasAttachments: true,
-    isStarred: true,
-    isUnread: false,
-    latestReceivedAt: 'Yesterday',
-    labels: ['inbox', 'operations'],
-    category: 'primary',
-  },
-  {
-    id: 'th-canva-enterprise',
-    subject: 'Canva Pro: Your Enterprise Team Brand Kit is ready',
-    snippet: 'Explore newly published typography guidelines, high-res assets, and vector logo lockups.',
-    senderName: 'Canva Design',
-    senderEmail: 'updates@canva.com',
-    messageCount: 1,
-    hasAttachments: false,
-    isStarred: false,
-    isUnread: true,
-    latestReceivedAt: 'Nov 22',
-    labels: ['inbox', 'promotions'],
-    category: 'promotions',
-  },
-  {
-    id: 'th-youtube-dev',
-    subject: 'Google Developers: New DevTools & Web Platform features',
-    snippet: 'Watch the recap of Chrome DevTools 2026 performance profiling improvements and Gemini debugging.',
-    senderName: 'YouTube Developers',
-    senderEmail: 'noreply@youtube.com',
-    messageCount: 2,
-    hasAttachments: false,
-    isStarred: false,
-    isUnread: false,
-    latestReceivedAt: 'Nov 20',
-    labels: ['inbox', 'social'],
-    category: 'social',
-  },
-  {
-    id: 'th-hetzner-nov26',
-    subject: 'Hetzner Cloud: Monthly Statement for Account #H-90128',
-    snippet: 'Your monthly invoice for November 2026 is ready for download. Total balance: €14.28.',
-    senderName: 'Hetzner Cloud',
-    senderEmail: 'support@hetzner.com',
-    messageCount: 1,
-    hasAttachments: true,
-    isStarred: false,
-    isUnread: false,
-    latestReceivedAt: 'Nov 21',
-    labels: ['inbox', 'billing'],
-    category: 'primary',
-  },
-];
+    hasAttachments: email.hasAttachment,
+    isStarred: Boolean(email.keywords?.['$flagged']),
+    isUnread: !email.keywords?.['$seen'],
+    isDraft: Boolean(email.keywords?.['$draft']),
+    latestReceivedAt: formatWhen(email.receivedAt),
+    receivedAtIso: email.receivedAt,
+    mailboxIds: email.mailboxIds,
+    labels,
+    category: CATEGORY,
+  };
+}
+
+const SECURITY = { spfPass: true, dkimPass: true, dmarcPass: true, tlsVersion: 'TLS 1.3' };
+
+function toMessage(email: JmapEmail): EmailMessage {
+  const htmlPart = email.htmlBody?.[0];
+  const textPart = email.textBody?.[0];
+  const from = email.from?.[0];
+  return {
+    id: email.id,
+    threadId: email.threadId,
+    senderName: from?.name || from?.email || 'Unknown sender',
+    senderEmail: from?.email || '',
+    recipientTo: (email.to ?? []).map((a) => a.email),
+    recipientCc: (email.cc ?? []).map((a) => a.email),
+    subject: email.subject || '',
+    snippet: email.preview || '',
+    bodyHtml: htmlPart ? email.bodyValues?.[htmlPart.partId]?.value : undefined,
+    bodyText: textPart ? email.bodyValues?.[textPart.partId]?.value : email.preview,
+    receivedAt: email.receivedAt,
+    isRead: Boolean(email.keywords?.['$seen']),
+    isStarred: Boolean(email.keywords?.['$flagged']),
+    attachments: (email.attachments ?? []).map((att) => ({
+      id: att.blobId,
+      blobId: att.blobId,
+      name: att.name || 'attachment',
+      size: att.size,
+      type: att.type,
+    })),
+    labels: Object.keys(email.mailboxIds ?? {}),
+    securityStatus: SECURITY,
+  };
+}
 
 export const App: React.FC = () => {
   // Admin Mode detection (Port 2087, /admin, or ?mode=admin)
@@ -131,49 +146,29 @@ export const App: React.FC = () => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  // User & Quota State
-  const [user] = useState<UserProfile>({
-    displayName: 'Marcus Vance',
-    email: 'marcus@apexlogistics.com',
-    domain: 'apexlogistics.com',
-  });
+  // Auth state
+  const [authEmail, setAuthEmail] = useState<string | null>(() => getAuth()?.email ?? null);
 
-  const [quota] = useState<PlanQuota>({
-    usedBytes: 3435973836, // ~3.2 GB
-    limitBytes: 10737418240, // 10 GB
-    usedFormatted: '3.2 GB',
-    limitFormatted: '10 GB',
-    percent: 32.0,
-    maxAttachmentSizeMb: 25,
-    outboundRoute: 'direct',
-    assignedIp: '195.201.10.102',
-    isDedicatedIp: true,
-  });
+  // Session & server data
+  const [mailboxes, setMailboxes] = useState<JmapMailbox[]>([]);
+  const [quota, setQuota] = useState<PlanQuota | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isAppLoading, setIsAppLoading] = useState(true);
 
   // Navigation & Filtering
   const [currentFolder, setCurrentFolder] = useState<MailboxFolderId>('inbox');
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [activeCategoryTab, setActiveCategoryTab] = useState<'primary' | 'promotions' | 'social'>('primary');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Sidebar Collapse state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Gmail-Style Splash Loading State
-  const [isAppLoading, setIsAppLoading] = useState(true);
-
-  useEffect(() => {
-    // Initial workspace load / mail daemon sync
-    const timer = setTimeout(() => {
-      setIsAppLoading(false);
-    }, 850);
-    return () => clearTimeout(timer);
-  }, []);
-
   // Threads State
-  const [threads, setThreads] = useState<EmailThread[]>(INITIAL_THREADS);
+  const [threads, setThreads] = useState<EmailThread[]>([]);
   const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
   const [activeThread, setActiveThread] = useState<EmailThread | null>(null);
   const [cursorIndex, setCursorIndex] = useState(0);
@@ -181,75 +176,184 @@ export const App: React.FC = () => {
   // Compose Modal State
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [composeInitialTo, setComposeInitialTo] = useState<string | undefined>(undefined);
-
-  const handleComposeTo = (email: string) => {
-    setComposeInitialTo(email);
-    setIsComposeOpen(true);
-  };
+  const [composeInitialSubject, setComposeInitialSubject] = useState<string | undefined>(undefined);
+  const [composeInitialBody, setComposeInitialBody] = useState<string | undefined>(undefined);
+  const [composeDraftId, setComposeDraftId] = useState<string | undefined>(undefined);
 
   // Toast Alerts State
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const addToast = (message: string, type: 'error' | 'success' | 'info' = 'info') => {
+  const addToast = useCallback((message: string, type: 'error' | 'success' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
-  };
+  }, []);
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Filtered Threads
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const roleId = useCallback(
+    (role: string) => mailboxes.find((m) => m.role === role)?.id,
+    [mailboxes]
+  );
+
+  const loadMailboxes = useCallback(async () => {
+    const list = await listMailboxes();
+    setMailboxes(list);
+    return list;
+  }, []);
+
+  // Initial session load
+  useEffect(() => {
+    if (!authEmail) {
+      setIsAppLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setIsAppLoading(true);
+      try {
+        const session = await getSession();
+        if (cancelled) return;
+        const email = session.username || authEmail;
+        setUser({
+          email,
+          displayName: email.split('@')[0],
+          domain: email.split('@')[1] ?? '',
+        });
+        await loadMailboxes();
+        const q = await getQuota();
+        if (!cancelled && q) {
+          setQuota({
+            usedBytes: q.usedBytes,
+            limitBytes: q.limitBytes,
+            usedFormatted: formatBytes(q.usedBytes),
+            limitFormatted: formatBytes(q.limitBytes),
+            percent: q.limitBytes > 0 ? Math.min(100, (q.usedBytes / q.limitBytes) * 100) : 0,
+            maxAttachmentSizeMb: 25,
+            outboundRoute: 'direct',
+            assignedIp: undefined,
+            isDedicatedIp: false,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          addToast(err instanceof Error ? err.message : 'Could not load mailbox', 'error');
+          logout();
+          setAuthEmail(null);
+        }
+      } finally {
+        if (!cancelled) setIsAppLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authEmail, addToast, loadMailboxes]);
+
+  const refreshThreads = useCallback(async () => {
+    if (!authEmail) return;
+    try {
+      const list = await loadMailboxes();
+      const byId: Record<string, MailboxFolderId> = {};
+      const roleToFolder: Record<string, MailboxFolderId> = {
+        inbox: 'inbox',
+        sent: 'sent',
+        drafts: 'drafts',
+        trash: 'trash',
+        junk: 'spam',
+        archive: 'archive',
+      };
+      for (const mb of list) {
+        const folder = mb.role ? roleToFolder[mb.role] : undefined;
+        if (folder) byId[mb.id] = folder;
+      }
+
+      const emails = await queryEmails({
+        text: debouncedSearch || undefined,
+        mailboxId: mailboxForFolder(list, currentFolder),
+        keyword: keywordForFolder(currentFolder),
+      });
+      setThreads(emails.map((e) => toThread(e, byId)));
+      setSelectedThreadIds(new Set());
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Sync failed', 'error');
+    }
+  }, [authEmail, currentFolder, debouncedSearch, loadMailboxes, addToast]);
+
+  useEffect(() => {
+    if (!authEmail) return;
+    setActiveThread(null);
+    setCursorIndex(0);
+    refreshThreads();
+  }, [authEmail, currentFolder, debouncedSearch, refreshThreads]);
+
   const filteredThreads = useMemo(() => {
-    return threads.filter((th) => {
-      // Search matching
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const match =
-          th.subject.toLowerCase().includes(q) ||
-          th.snippet.toLowerCase().includes(q) ||
-          th.senderName.toLowerCase().includes(q) ||
-          th.senderEmail.toLowerCase().includes(q);
-        if (!match) return false;
-      }
+    // Stalwart has no Gmail labels or category tabs; the label list is a client-side text filter
+    // and the Primary/Promotions/Social tabs all show the same server results.
+    // ponytail: text matching only — swap for keyword filters if the server grows labels.
+    if (!selectedLabel) return threads;
+    const q = selectedLabel.toLowerCase();
+    return threads.filter(
+      (th) =>
+        th.subject.toLowerCase().includes(q) ||
+        th.snippet.toLowerCase().includes(q) ||
+        th.senderName.toLowerCase().includes(q) ||
+        th.senderEmail.toLowerCase().includes(q)
+    );
+  }, [threads, selectedLabel]);
 
-      // Label filter
-      if (selectedLabel) {
-        return th.labels.includes(selectedLabel);
-      }
+  const unreadCount = useMemo(
+    () => mailboxes.find((m) => m.role === 'inbox')?.unreadEmails ?? 0,
+    [mailboxes]
+  );
 
-      // Folder filter
-      if (currentFolder === 'starred') return th.isStarred;
-      if (currentFolder === 'inbox') {
-        const itemCat = th.category || 'primary';
-        if (itemCat !== activeCategoryTab) return false;
-        return th.labels.includes('inbox');
-      }
-      if (currentFolder === 'archive') return !th.labels.includes('inbox') && !th.labels.includes('trash');
-      if (currentFolder === 'trash') return th.labels.includes('trash');
-      if (currentFolder === 'spam') return th.labels.includes('spam');
-      if (currentFolder === 'sent') return th.labels.includes('sent');
-      if (currentFolder === 'drafts') return th.labels.includes('drafts');
+  const applyLocal = (ids: string[], patch: (t: EmailThread) => EmailThread) => {
+    setThreads((prev) => prev.map((t) => (ids.includes(t.id) ? patch(t) : t)));
+    setActiveThread((prev) => (prev && ids.includes(prev.id) ? patch(prev) : prev));
+  };
 
-      return true;
-    });
-  }, [threads, currentFolder, selectedLabel, searchQuery, activeCategoryTab]);
+  const patchServer = async (ids: string[], patch: Parameters<typeof setEmail>[1], local: (t: EmailThread) => EmailThread, message: string) => {
+    applyLocal(ids, local);
+    try {
+      await Promise.all(ids.map((id) => setEmail(id, patch)));
+      addToast(message, 'info');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Action failed', 'error');
+      refreshThreads();
+    }
+  };
 
-  const unreadCount = useMemo(() => {
-    return threads.filter((t) => t.isUnread && t.labels.includes('inbox')).length;
-  }, [threads]);
+  const moveThread = (id: string, target: string) => {
+    const thread = threads.find((t) => t.id === id) ?? (activeThread?.id === id ? activeThread : undefined);
+    const from = Object.keys(thread?.mailboxIds ?? {});
+    return setEmail(id, moveTo(target, from));
+  };
+
+  const targetIds = (): string[] => {
+    const ids = activeThread ? [activeThread.id] : Array.from(selectedThreadIds);
+    if (ids.length === 0 && filteredThreads[cursorIndex]) ids.push(filteredThreads[cursorIndex].id);
+    return ids;
+  };
 
   // Actions
   const handleToggleStar = (threadId: string) => {
-    setThreads((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, isStarred: !t.isStarred } : t))
+    const thread = threads.find((t) => t.id === threadId) ?? (activeThread?.id === threadId ? activeThread : undefined);
+    if (!thread) return;
+    patchServer(
+      [threadId],
+      keywords({ $flagged: !thread.isStarred }),
+      (t) => ({ ...t, isStarred: !thread.isStarred }),
+      thread.isStarred ? 'Removed star' : 'Starred'
     );
-    if (activeThread && activeThread.id === threadId) {
-      setActiveThread((prev) => (prev ? { ...prev, isStarred: !prev.isStarred } : null));
-    }
   };
 
   const handleToggleSelectCheckbox = (threadId: string) => {
@@ -286,155 +390,195 @@ export const App: React.FC = () => {
   };
 
   const handleArchive = () => {
-    const targetIds = activeThread
-      ? [activeThread.id]
-      : Array.from(selectedThreadIds);
-
-    if (targetIds.length === 0 && filteredThreads[cursorIndex]) {
-      targetIds.push(filteredThreads[cursorIndex].id);
-    }
-
-    if (targetIds.length === 0) return;
-
-    setThreads((prev) =>
-      prev.map((t) =>
-        targetIds.includes(t.id) ? { ...t, labels: t.labels.filter((l) => l !== 'inbox') } : t
-      )
-    );
+    const ids = targetIds();
+    if (ids.length === 0) return;
+    setThreads((prev) => prev.filter((t) => !ids.includes(t.id)));
     setSelectedThreadIds(new Set());
     setActiveThread(null);
-    addToast(`${targetIds.length} conversation(s) archived`, 'info');
+    const target = roleId('archive');
+    if (!target) {
+      addToast('No Archive mailbox available', 'error');
+      return;
+    }
+    Promise.all(ids.map((id) => moveThread(id, target)))
+      .then(() => addToast(`${ids.length} conversation(s) archived`, 'info'))
+      .catch((err) => {
+        addToast(err instanceof Error ? err.message : 'Archive failed', 'error');
+        refreshThreads();
+      });
   };
 
   const handleDelete = () => {
-    const targetIds = activeThread
-      ? [activeThread.id]
-      : Array.from(selectedThreadIds);
-
-    if (targetIds.length === 0 && filteredThreads[cursorIndex]) {
-      targetIds.push(filteredThreads[cursorIndex].id);
-    }
-
-    if (targetIds.length === 0) return;
-
-    setThreads((prev) =>
-      prev.map((t) =>
-        targetIds.includes(t.id) ? { ...t, labels: ['trash'] } : t
-      )
-    );
+    const ids = targetIds();
+    if (ids.length === 0) return;
+    setThreads((prev) => prev.filter((t) => !ids.includes(t.id)));
     setSelectedThreadIds(new Set());
     setActiveThread(null);
-    addToast(`${targetIds.length} conversation(s) moved to trash`, 'info');
+    const target = roleId('trash');
+    if (!target) {
+      addToast('No Trash mailbox available', 'error');
+      return;
+    }
+    Promise.all(ids.map((id) => moveThread(id, target)))
+      .then(() => addToast(`${ids.length} conversation(s) moved to trash`, 'info'))
+      .catch((err) => {
+        addToast(err instanceof Error ? err.message : 'Delete failed', 'error');
+        refreshThreads();
+      });
   };
 
   const handleMarkRead = () => {
-    const targetIds = activeThread
-      ? [activeThread.id]
-      : Array.from(selectedThreadIds);
-
-    if (targetIds.length === 0 && filteredThreads[cursorIndex]) {
-      targetIds.push(filteredThreads[cursorIndex].id);
-    }
-
-    if (targetIds.length === 0) return;
-
-    setThreads((prev) =>
-      prev.map((t) => (targetIds.includes(t.id) ? { ...t, isUnread: false } : t))
-    );
+    const ids = targetIds();
+    if (ids.length === 0) return;
+    patchServer(ids, keywords({ $seen: true }), (t) => ({ ...t, isUnread: false }), 'Marked as read');
     setSelectedThreadIds(new Set());
-    addToast('Marked as read', 'info');
   };
 
   const handleMarkUnread = () => {
-    const targetIds = activeThread
-      ? [activeThread.id]
-      : Array.from(selectedThreadIds);
-
-    if (targetIds.length === 0 && filteredThreads[cursorIndex]) {
-      targetIds.push(filteredThreads[cursorIndex].id);
-    }
-
-    if (targetIds.length === 0) return;
-
-    setThreads((prev) =>
-      prev.map((t) => (targetIds.includes(t.id) ? { ...t, isUnread: true } : t))
-    );
+    const ids = targetIds();
+    if (ids.length === 0) return;
+    patchServer(ids, keywords({ $seen: false }), (t) => ({ ...t, isUnread: true }), 'Marked as unread');
     setSelectedThreadIds(new Set());
-    if (activeThread) setActiveThread(null);
-    addToast('Marked as unread', 'info');
+    setActiveThread(null);
   };
 
-  // Hover quick actions for individual thread row
   const handleArchiveSingle = (threadId: string) => {
-    setThreads((prev) =>
-      prev.map((t) =>
-        t.id === threadId ? { ...t, labels: t.labels.filter((l) => l !== 'inbox') } : t
-      )
-    );
-    addToast('Conversation archived', 'info');
+    const target = roleId('archive');
+    if (!target) {
+      addToast('No Archive mailbox available', 'error');
+      return;
+    }
+    setThreads((prev) => prev.filter((t) => t.id !== threadId));
+    moveThread(threadId, target)
+      .then(() => addToast('Conversation archived', 'info'))
+      .catch(() => {
+        addToast('Archive failed', 'error');
+        refreshThreads();
+      });
   };
 
   const handleDeleteSingle = (threadId: string) => {
-    setThreads((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, labels: ['trash'] } : t))
-    );
-    addToast('Conversation moved to trash', 'info');
+    const target = roleId('trash');
+    if (!target) {
+      addToast('No Trash mailbox available', 'error');
+      return;
+    }
+    setThreads((prev) => prev.filter((t) => t.id !== threadId));
+    moveThread(threadId, target)
+      .then(() => addToast('Conversation moved to trash', 'info'))
+      .catch(() => {
+        addToast('Delete failed', 'error');
+        refreshThreads();
+      });
   };
 
   const handleToggleReadSingle = (threadId: string) => {
-    setThreads((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, isUnread: !t.isUnread } : t))
-    );
+    const thread = threads.find((t) => t.id === threadId);
+    const nextUnread = thread ? !thread.isUnread : true;
+    patchServer([threadId], keywords({ $seen: !nextUnread }), (t) => ({ ...t, isUnread: nextUnread }), nextUnread ? 'Marked as unread' : 'Marked as read');
   };
 
   const handleSnoozeSingle = (threadId: string) => {
-    setThreads((prev) =>
-      prev.map((t) =>
-        t.id === threadId ? { ...t, labels: [...t.labels, 'snoozed'] } : t
-      )
-    );
-    addToast('Conversation snoozed until tomorrow 8:00 AM', 'info');
+    // Stalwart accepts custom keywords, so $snoozed is server-side truth; the UI label is cosmetic.
+    patchServer([threadId], keywords({ $snoozed: true }), (t) => ({ ...t, labels: Array.from(new Set([...t.labels, 'snoozed'])) }), 'Conversation snoozed until tomorrow 8:00 AM');
   };
 
-  const handleSelectThread = (thread: EmailThread) => {
-    setActiveThread(thread);
-    // Mark as read optimistically
-    if (thread.isUnread) {
-      setThreads((prev) =>
-        prev.map((t) => (t.id === thread.id ? { ...t, isUnread: false } : t))
-      );
+  const openDraft = async (thread: EmailThread) => {
+    try {
+      const [full] = await getEmails([thread.emailId ?? thread.id]);
+      if (!full) return;
+      const message = toMessage(full);
+      setComposeInitialTo((full.to ?? []).map((a) => a.email).join(', ') || undefined);
+      setComposeInitialSubject(message.subject || undefined);
+      setComposeInitialBody(message.bodyText ?? message.bodyHtml ?? '');
+      setComposeDraftId(full.id);
+      setIsComposeOpen(true);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not open draft', 'error');
     }
   };
 
-  const handleSendCompose = (msg: { to: string; subject: string; body: string }) => {
-    const newThread: EmailThread = {
-      id: `th-${Date.now()}`,
-      subject: msg.subject,
-      snippet: msg.body.substring(0, 80) || 'Sent message from AffinMail.',
-      senderName: user.displayName,
-      senderEmail: user.email,
-      messageCount: 1,
-      hasAttachments: false,
-      isStarred: false,
-      isUnread: false,
-      latestReceivedAt: 'Just now',
-      labels: ['sent'],
-    };
+  const handleSelectThread = async (thread: EmailThread) => {
+    if (thread.isDraft) {
+      await openDraft(thread);
+      return;
+    }
+    setActiveThread(thread);
+    if (thread.isUnread) {
+      applyLocal([thread.id], (t) => ({ ...t, isUnread: false }));
+      setEmail(thread.id, keywords({ $seen: true })).catch(() => undefined);
+    }
+    try {
+      const emails = thread.threadId ? await getThreadEmails(thread.threadId) : await getEmails([thread.id]);
+      if (emails.length > 0) {
+        const messages = emails.map(toMessage);
+        const last = messages[messages.length - 1];
+        setActiveThread((prev) =>
+          prev && prev.id === thread.id
+            ? {
+                ...prev,
+                messages,
+                messageCount: messages.length,
+                snippet: last.snippet,
+                hasAttachments: messages.some((m) => (m.attachments ?? []).length > 0),
+                senderName: last.senderName,
+                senderEmail: last.senderEmail,
+              }
+            : prev
+        );
+      }
+    } catch {
+      // Body fetch is best-effort; the preview still renders.
+    }
+  };
 
-    setThreads((prev) => [newThread, ...prev]);
+  const handleSendCompose = async (msg: ComposePayload) => {
+    const to = msg.to.split(',').map((s) => s.trim()).filter(Boolean);
+    const cc = msg.cc ? msg.cc.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    await createAndSubmit({ to, cc, subject: msg.subject, body: msg.body, attachments: msg.attachments });
     addToast('Message sent', 'success');
+    if (composeDraftId) {
+      discardDraft(composeDraftId).catch(() => undefined);
+      setComposeDraftId(undefined);
+    }
+    if (currentFolder === 'sent' || currentFolder === 'drafts') await refreshThreads();
+  };
+
+  const handleSaveDraft = async (msg: ComposePayload, draftId?: string): Promise<string | undefined> => {
+    try {
+      const to = msg.to.split(',').map((s) => s.trim()).filter(Boolean);
+      const cc = msg.cc ? msg.cc.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      const id = await saveDraft({ to, cc, subject: msg.subject, body: msg.body, attachments: msg.attachments }, draftId);
+      setComposeDraftId(id);
+      addToast('Draft saved', 'info');
+      if (currentFolder === 'drafts') await refreshThreads();
+      return id;
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not save draft', 'error');
+      return draftId;
+    }
   };
 
   const handleQuickReply = (text: string) => {
     if (!activeThread) return;
-    setThreads((prev) =>
-      prev.map((t) =>
-        t.id === activeThread.id
-          ? { ...t, messageCount: t.messageCount + 1, snippet: text.substring(0, 80) }
-          : t
-      )
-    );
-    addToast('Reply sent', 'success');
+    createAndSubmit({ to: [activeThread.senderEmail], subject: `Re: ${activeThread.subject}`, body: text })
+      .then(() => addToast('Reply sent', 'success'))
+      .catch((err) => addToast(err instanceof Error ? err.message : 'Reply failed', 'error'));
+  };
+
+  const handleForward = (thread: EmailThread) => {
+    const original = thread.messages?.[0]?.bodyText ?? thread.snippet;
+    setComposeInitialTo(undefined);
+    setComposeInitialSubject(`Fwd: ${thread.subject}`);
+    setComposeInitialBody(`\n\n---------- Forwarded message ----------\nFrom: ${thread.senderName} <${thread.senderEmail}>\nSubject: ${thread.subject}\n\n${original}`);
+    setIsComposeOpen(true);
+  };
+
+  const handleComposeTo = (email: string) => {
+    setComposeInitialTo(email);
+    setComposeInitialSubject(undefined);
+    setComposeInitialBody(undefined);
+    setIsComposeOpen(true);
   };
 
   // Keyboard Shortcuts Binding (Authentic Gmail Shortcuts)
@@ -483,6 +627,25 @@ export const App: React.FC = () => {
     true
   );
 
+  const handleLogout = () => {
+    logout();
+    setAuthEmail(null);
+    setUser(null);
+    setThreads([]);
+    setMailboxes([]);
+    setQuota(null);
+  };
+
+  if (!authEmail) {
+    return (
+      <Login
+        onSuccess={() => {
+          setAuthEmail(getAuth()?.email ?? null);
+        }}
+      />
+    );
+  }
+
   if (isAdminMode) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-base-100">
@@ -497,6 +660,12 @@ export const App: React.FC = () => {
     );
   }
 
+  const currentUser: UserProfile = user ?? {
+    email: authEmail,
+    displayName: authEmail.split('@')[0],
+    domain: authEmail.split('@')[1] ?? '',
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gmail-canvas dark:bg-gmail-dark-canvas select-none">
       {/* 1. Header Bar */}
@@ -506,9 +675,10 @@ export const App: React.FC = () => {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchInputRef={searchInputRef}
-        user={user}
+        user={currentUser}
         quota={quota}
         onSwitchToAdmin={() => setIsAdminMode(true)}
+        onLogout={handleLogout}
         onToggleSidebar={() => {
           if (window.innerWidth < 768) {
             setIsMobileNavOpen((prev) => !prev);
@@ -534,6 +704,7 @@ export const App: React.FC = () => {
           }}
           onOpenCompose={() => setIsComposeOpen(true)}
           unreadCount={unreadCount}
+          draftCount={mailboxes.find((m) => m.role === 'drafts')?.totalEmails}
           quota={quota}
           isCollapsed={isSidebarCollapsed}
           isOpenMobile={isMobileNavOpen}
@@ -556,13 +727,17 @@ export const App: React.FC = () => {
             onDelete={handleDelete}
             onMarkRead={handleMarkRead}
             onMarkUnread={handleMarkUnread}
-            onSnooze={() => addToast('Conversation snoozed', 'info')}
+            onSnooze={() => {
+              const ids = targetIds();
+              if (ids.length > 0) {
+                patchServer(ids, keywords({ $snoozed: true }), (t) => ({ ...t, labels: Array.from(new Set([...t.labels, 'snoozed'])) }), 'Conversation snoozed');
+              }
+            }}
             onRefresh={() => {
               setIsAppLoading(true);
-              setTimeout(() => {
-                setIsAppLoading(false);
-                addToast('Synchronized with mail server', 'info');
-              }, 700);
+              refreshThreads()
+                .then(() => addToast('Synchronized with mail server', 'info'))
+                .finally(() => setIsAppLoading(false));
             }}
             isDetailView={!!activeThread}
             onBackToList={() => setActiveThread(null)}
@@ -572,9 +747,11 @@ export const App: React.FC = () => {
           {activeThread ? (
             <ConversationView
               thread={activeThread}
+              currentUserEmail={currentUser.email}
               onToggleStar={handleToggleStar}
               onSendQuickReply={handleQuickReply}
-              maxAttachmentMb={quota.maxAttachmentSizeMb}
+              onForward={handleForward}
+              maxAttachmentMb={quota?.maxAttachmentSizeMb ?? 25}
               onComposeTo={handleComposeTo}
             />
           ) : (
@@ -604,11 +781,27 @@ export const App: React.FC = () => {
         onClose={() => {
           setIsComposeOpen(false);
           setComposeInitialTo(undefined);
+          setComposeInitialSubject(undefined);
+          setComposeInitialBody(undefined);
+          setComposeDraftId(undefined);
         }}
         onSend={handleSendCompose}
-        planLimitMb={quota.maxAttachmentSizeMb}
+        onSaveDraft={handleSaveDraft}
+        onDiscardDraft={(id) => {
+          discardDraft(id)
+            .then(() => {
+              addToast('Draft discarded', 'info');
+              setComposeDraftId(undefined);
+              if (currentFolder === 'drafts') refreshThreads();
+            })
+            .catch(() => addToast('Could not discard draft', 'error'));
+        }}
+        planLimitMb={quota?.maxAttachmentSizeMb ?? 25}
         onErrorToast={(msg) => addToast(msg, 'error')}
         initialTo={composeInitialTo}
+        initialSubject={composeInitialSubject}
+        initialBody={composeInitialBody}
+        initialDraftId={composeDraftId}
       />
 
       {/* 4. Alert Toasts */}
@@ -619,3 +812,32 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
+/** Maps a sidebar folder to a JMAP mailbox id for server-side filtering. */
+function mailboxForFolder(mailboxes: JmapMailbox[], folder: MailboxFolderId): string | undefined {
+  const role: Partial<Record<MailboxFolderId, string>> = {
+    inbox: 'inbox',
+    sent: 'sent',
+    drafts: 'drafts',
+    trash: 'trash',
+    spam: 'junk',
+    archive: 'archive',
+  };
+  const wanted = role[folder];
+  return wanted ? mailboxes.find((m) => m.role === wanted)?.id : undefined;
+}
+
+function keywordForFolder(folder: MailboxFolderId): string | undefined {
+  switch (folder) {
+    case 'starred':
+      return '$flagged';
+    case 'snoozed':
+      return '$snoozed';
+    case 'important':
+      return '$important';
+    case 'scheduled':
+      return '$scheduled';
+    default:
+      return undefined;
+  }
+}

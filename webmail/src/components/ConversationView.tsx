@@ -14,7 +14,6 @@ import {
   ChevronDown,
   MoreVertical,
   CheckCircle2,
-  HardDrive,
   Trash2,
   Bold,
   Italic,
@@ -23,19 +22,24 @@ import {
 } from 'lucide-react';
 import { EmailThread } from '../types';
 import { ContactHovercard } from './ContactHovercard';
+import { downloadBlob } from '../lib/jmap';
 
 interface ConversationViewProps {
   thread: EmailThread;
+  currentUserEmail: string;
   onToggleStar: (threadId: string) => void;
   onSendQuickReply: (text: string) => void;
+  onForward?: (thread: EmailThread) => void;
   maxAttachmentMb: number;
   onComposeTo?: (email: string) => void;
 }
 
 export const ConversationView: React.FC<ConversationViewProps> = ({
   thread,
+  currentUserEmail,
   onToggleStar,
   onSendQuickReply,
+  onForward,
   onComposeTo,
 }) => {
   const [replyText, setReplyText] = useState('');
@@ -175,19 +179,20 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                       <span className="text-[#1F1F1F] dark:text-[#E3E3E3]">{thread.senderEmail}</span>
 
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">to:</span>
-                      <span className="text-[#1F1F1F] dark:text-[#E3E3E3]">marcus@apexlogistics.com</span>
+                      <span className="text-[#1F1F1F] dark:text-[#E3E3E3]">{currentUserEmail}</span>
 
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">date:</span>
-                      <span className="text-[#1F1F1F] dark:text-[#E3E3E3]">Nov 22, 2026, 11:20 AM</span>
+                      <span className="text-[#1F1F1F] dark:text-[#E3E3E3]">
+                        {thread.receivedAtIso ? new Date(thread.receivedAtIso).toLocaleString() : thread.latestReceivedAt}
+                      </span>
 
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">subject:</span>
                       <span className="text-[#1F1F1F] dark:text-[#E3E3E3]">{thread.subject}</span>
 
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">mailed-by:</span>
-                      <span className="text-[#1F1F1F] dark:text-[#E3E3E3] font-mono text-[11px]">hostaffin.com</span>
-
-                      <span className="text-[#5E5E5E] dark:text-[#8E918F]">signed-by:</span>
-                      <span className="text-[#1F1F1F] dark:text-[#E3E3E3] font-mono text-[11px]">apexlogistics.com</span>
+                      <span className="text-[#1F1F1F] dark:text-[#E3E3E3] font-mono text-[11px]">
+                        {thread.senderEmail.split('@')[1] ?? ''}
+                      </span>
 
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">security:</span>
                       <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
@@ -261,7 +266,10 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                     Reply
                   </button>
                   <button
-                    onClick={() => setShowMoreMenu(false)}
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      onForward?.(thread);
+                    }}
                     className="w-full text-left px-4 py-2 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]"
                   >
                     Forward
@@ -293,62 +301,67 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
           </div>
         </div>
 
-        {/* Message Content */}
+        {/* Message Content (real JMAP body values) */}
         <div className="p-6 text-sm text-[#1F1F1F] dark:text-[#E3E3E3] leading-relaxed space-y-4 font-normal select-text">
-          <p>{thread.snippet}</p>
-          <p>
-            Please let us know if you require any modifications or additional configuration for your virtual domain.
-            All protocol interfaces (JMAP, SMTP, IMAP, CalDAV, CardDAV) are active and verified under the current
-            enterprise quota.
-          </p>
+          {(thread.messages ?? []).length > 0 ? (
+            (thread.messages ?? []).map((msg) => (
+              <div key={msg.id} className="space-y-3">
+                {msg.bodyHtml ? (
+                  <div dangerouslySetInnerHTML={{ __html: msg.bodyHtml }} />
+                ) : (
+                  <p className="whitespace-pre-wrap">{msg.bodyText || msg.snippet}</p>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="whitespace-pre-wrap">{thread.snippet}</p>
+          )}
 
           <div className="pt-6 border-t border-[#F2F4F7] dark:border-[#2D2F31] text-xs text-[#5E5E5E] dark:text-[#8E918F] space-y-0.5">
-            <p>Best regards,</p>
             <p className="font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">{thread.senderName}</p>
             <p className="font-mono text-xs">{thread.senderEmail}</p>
           </div>
         </div>
 
         {/* Attachments Section (Gmail Attachment Cards) */}
-        {thread.hasAttachments && (
+        {(thread.messages ?? []).some((m) => (m.attachments ?? []).length > 0) && (
           <div className="p-5 bg-[#F8FAFD] dark:bg-[#18191A] border-t border-[#E0E2E7] dark:border-[#333538] space-y-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-[#444746] dark:text-[#C4C7C5]">
               <Paperclip className="w-4 h-4 stroke-[2] text-gmail-blue" />
-              <span>1 Attachment</span>
+              <span>
+                {(thread.messages ?? []).reduce((n, m) => n + (m.attachments ?? []).length, 0)} Attachment(s)
+              </span>
             </div>
 
             <div className="flex flex-wrap gap-4">
-              {/* Authentic Gmail Attachment Card */}
-              <div className="group relative w-56 rounded-xl border border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] overflow-hidden shadow-sm hover:shadow-md transition-all">
-                {/* Thumbnail Preview Area */}
-                <div className="h-28 bg-[#F2F6FC] dark:bg-[#282A2C] flex items-center justify-center relative overflow-hidden">
-                  <FileText className="w-12 h-12 stroke-[1.5] text-red-500" />
+              {(thread.messages ?? []).flatMap((m, mi) =>
+                (m.attachments ?? []).map((att, ai) => (
+                  <div
+                    key={`${mi}-${ai}-${att.id}`}
+                    className="group relative w-56 rounded-xl border border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] overflow-hidden shadow-sm hover:shadow-md transition-all"
+                  >
+                    <div className="h-28 bg-[#F2F6FC] dark:bg-[#282A2C] flex items-center justify-center relative overflow-hidden">
+                      <FileText className="w-12 h-12 stroke-[1.5] text-red-500" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-3 transition-opacity">
+                        <button
+                          onClick={() => downloadBlob(att.blobId ?? att.id, att.name)}
+                          className="p-2 bg-white/90 hover:bg-white text-gray-800 rounded-full shadow"
+                          title="Download"
+                        >
+                          <Download className="w-4 h-4 stroke-[2]" />
+                        </button>
+                      </div>
+                    </div>
 
-                  {/* Hover Overlay with Action Buttons */}
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-3 transition-opacity">
-                    <button
-                      className="p-2 bg-white/90 hover:bg-white text-gray-800 rounded-full shadow"
-                      title="Download"
-                    >
-                      <Download className="w-4 h-4 stroke-[2]" />
-                    </button>
-                    <button
-                      className="p-2 bg-white/90 hover:bg-white text-gray-800 rounded-full shadow"
-                      title="Save to AffinMail Storage Box"
-                    >
-                      <HardDrive className="w-4 h-4 stroke-[2]" />
-                    </button>
+                    <div className="p-3">
+                      <p className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{att.name}</p>
+                      <p className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F] font-mono mt-0.5">
+                        {Math.max(1, Math.round(att.size / 1024))} KB
+                      </p>
+                    </div>
                   </div>
-                </div>
-
-                {/* Attachment Card Details */}
-                <div className="p-3">
-                  <p className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">
-                    Documentation_Release_Q4.pdf
-                  </p>
-                  <p className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F] font-mono mt-0.5">14.5 MB</p>
-                </div>
-              </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -373,7 +386,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
             </button>
 
             <button
-              onClick={() => setShowReplyBox(true)}
+              onClick={() => onForward?.(thread)}
               className="flex items-center gap-2 px-6 py-2 rounded-full border border-[#747775] dark:border-[#8E918F] text-xs font-semibold text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] hover:text-[#1F1F1F] transition-colors"
             >
               <Forward className="w-4 h-4 stroke-[2]" />

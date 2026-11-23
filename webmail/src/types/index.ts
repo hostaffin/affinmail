@@ -4,6 +4,7 @@ export interface Attachment {
   size: number; // in bytes
   type: string;
   url?: string;
+  blobId?: string;
 }
 
 export interface EmailMessage {
@@ -44,9 +45,25 @@ export interface EmailThread {
   labels: string[];
   category?: 'primary' | 'promotions' | 'social';
   messages?: EmailMessage[];
+  /** JMAP ids / state (server-backed threads). */
+  emailId?: string;
+  threadId?: string;
+  receivedAtIso?: string;
+  isDraft?: boolean;
+  mailboxIds?: Record<string, true>;
 }
 
-export type MailboxFolderId = 'inbox' | 'starred' | 'sent' | 'drafts' | 'archive' | 'spam' | 'trash';
+export type MailboxFolderId =
+  | 'inbox'
+  | 'starred'
+  | 'snoozed'
+  | 'sent'
+  | 'drafts'
+  | 'important'
+  | 'scheduled'
+  | 'archive'
+  | 'spam'
+  | 'trash';
 
 export interface MailboxFolder {
   id: MailboxFolderId;
