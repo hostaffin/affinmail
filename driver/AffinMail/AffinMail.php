@@ -124,12 +124,23 @@ function affinmail_apiCall($params, $endpoint, $method = 'GET', $data = [])
     }
 
     $decoded = json_decode($response, true);
-    if ($httpCode >= 200 && $httpCode < 300) {
-        return ['success' => true, 'data' => $decoded, 'code' => $httpCode];
+    $apiError = is_array($decoded) ? ($decoded['error'] ?? $decoded['message'] ?? null) : null;
+
+    if ($httpCode >= 200 && $httpCode < 300 && ($decoded['status'] ?? 'success') !== 'error') {
+        $payload = (is_array($decoded) && array_key_exists('data', $decoded)) ? $decoded['data'] : $decoded;
+        return ['success' => true, 'data' => $payload, 'code' => $httpCode];
     }
 
-    $errMsg = $decoded['message'] ?? $decoded['error'] ?? "HTTP {$httpCode} Response";
-    return ['success' => false, 'error' => $errMsg, 'code' => $httpCode];
+    return ['success' => false, 'error' => $apiError ?? "HTTP {$httpCode} Response", 'code' => $httpCode];
+}
+
+/**
+ * Encoded mailbox path segment for API calls
+ */
+function affinmail_mailboxEmail(array $params)
+{
+    $domain = strtolower(trim($params['domain']));
+    return rawurlencode("{$params['username']}@{$domain}");
 }
 
 /**
@@ -189,8 +200,8 @@ function affinmail_CreateAccount(array $params)
  */
 function affinmail_SuspendAccount(array $params)
 {
-    $domain = strtolower(trim($params['domain']));
-    $result = affinmail_apiCall($params, "domains/{$domain}/status", 'PUT', ['status' => 'suspended']);
+    $email = affinmail_mailboxEmail($params);
+    $result = affinmail_apiCall($params, "mailboxes/{$email}/status", 'PUT', ['status' => 'suspended']);
     return $result['success'] ? 'success' : $result['error'];
 }
 
@@ -199,8 +210,8 @@ function affinmail_SuspendAccount(array $params)
  */
 function affinmail_UnsuspendAccount(array $params)
 {
-    $domain = strtolower(trim($params['domain']));
-    $result = affinmail_apiCall($params, "domains/{$domain}/status", 'PUT', ['status' => 'active']);
+    $email = affinmail_mailboxEmail($params);
+    $result = affinmail_apiCall($params, "mailboxes/{$email}/status", 'PUT', ['status' => 'active']);
     return $result['success'] ? 'success' : $result['error'];
 }
 
@@ -210,7 +221,7 @@ function affinmail_UnsuspendAccount(array $params)
 function affinmail_TerminateAccount(array $params)
 {
     $domain = strtolower(trim($params['domain']));
-    $result = affinmail_apiCall($params, "domains/{$domain}", 'DELETE');
+    $result = affinmail_apiCall($params, "domains/" . rawurlencode($domain), 'DELETE');
     return $result['success'] ? 'success' : $result['error'];
 }
 
@@ -219,8 +230,7 @@ function affinmail_TerminateAccount(array $params)
  */
 function affinmail_ChangePassword(array $params)
 {
-    $domain = strtolower(trim($params['domain']));
-    $email = "{$params['username']}@{$domain}";
+    $email = affinmail_mailboxEmail($params);
     $result = affinmail_apiCall($params, "mailboxes/{$email}/password", 'POST', ['password' => $params['password']]);
     return $result['success'] ? 'success' : $result['error'];
 }
@@ -230,16 +240,13 @@ function affinmail_ChangePassword(array $params)
  */
 function affinmail_ChangePackage(array $params)
 {
-    $domain = strtolower(trim($params['domain']));
+    $email = affinmail_mailboxEmail($params);
     $payload = [
-        'diskQuotaMb' => (int)($params['configoption1'] ?? 10240),
-        'maxMailboxes' => (int)($params['configoption2'] ?? 5),
-        'maxAttachmentMb' => (int)($params['configoption3'] ?? 25),
+        'quotaLimitMb' => (int)($params['configoption1'] ?? 10240),
         'hourlyRateLimit' => (int)($params['configoption4'] ?? 200),
         'outboundRoute' => $params['configoption5'] ?? 'direct',
-        'ipPolicy' => $params['configoption6'] ?? 'shared',
     ];
-    $result = affinmail_apiCall($params, "domains/{$domain}/plan", 'PATCH', $payload);
+    $result = affinmail_apiCall($params, "mailboxes/{$email}/quota", 'PATCH', $payload);
     return $result['success'] ? 'success' : $result['error'];
 }
 
@@ -289,15 +296,11 @@ function affinmail_UsageUpdate(array $params)
 function affinmail_ClientArea(array $params)
 {
     $domain = strtolower(trim($params['domain']));
-    $dnsResult = affinmail_apiCall($params, "domains/{$domain}/dns", 'GET');
+    $dnsResult = affinmail_apiCall($params, 'domains/' . rawurlencode($domain) . '/dns', 'GET');
     $ssoResult = affinmail_GenerateSsoToken($params);
 
-    $dnsRecords = $dnsResult['data']['records'] ?? [
-        ['type' => 'MX', 'name' => '@', 'value' => 'mail.hostaffin.com', 'priority' => 10],
-        ['type' => 'TXT', 'name' => '@', 'value' => 'v=spf1 mx include:_spf.hostaffin.com ~all', 'priority' => '-'],
-        ['type' => 'TXT', 'name' => 'affinmail._domainkey', 'value' => 'v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9...', 'priority' => '-'],
-        ['type' => 'TXT', 'name' => '_dmarc', 'value' => "v=DMARC1; p=quarantine; rua=mailto:dmarc@{$domain}", 'priority' => '-']
-    ];
+    $dnsRecords = $dnsResult['success'] ? ($dnsResult['data']['records'] ?? []) : [];
+    $dnsError = $dnsResult['success'] ? '' : ($dnsResult['error'] ?? 'DNS records unavailable');
 
     $isDedicatedIp = !empty($dnsResult['data']['isDedicatedIp']);
     $assignedIp = $dnsResult['data']['assignedIp'] ?? '';
@@ -308,7 +311,9 @@ function affinmail_ClientArea(array $params)
         'templateVariables' => [
             'domain' => $domain,
             'dnsRecords' => $dnsRecords,
-            'ssoUrl' => $ssoResult['ssoUrl'] ?? "https://mail.hostaffin.com",
+            'dnsError' => $dnsError,
+            'ssoUrl' => $ssoResult['ssoUrl'] ?? null,
+            'ssoError' => $ssoResult['error'] ?? '',
             'isDedicatedIp' => $isDedicatedIp,
             'assignedIp' => $assignedIp,
             'rdnsHostname' => $rdnsHostname,
@@ -325,21 +330,28 @@ function affinmail_ClientArea(array $params)
 function affinmail_AdminServicesTabFields(array $params)
 {
     $domain = strtolower(trim($params['domain']));
-    $info = affinmail_apiCall($params, "domains/{$domain}/diagnostics", 'GET');
-    $data = $info['data'] ?? [];
+    $domainResult = affinmail_apiCall($params, 'domains/' . rawurlencode($domain), 'GET');
+    $mailboxResult = affinmail_apiCall($params, 'mailboxes/' . affinmail_mailboxEmail($params), 'GET');
 
-    $diskUsed = $data['diskUsedMb'] ?? '0';
-    $diskLimit = $params['configoption1'] ?? '10240';
-    $activeMailboxes = $data['mailboxCount'] ?? '1';
-    $ipType = $data['ipPolicy'] ?? 'shared';
-    $assignedIp = $data['assignedIp'] ?? 'Cluster Shared';
+    $domainData = $domainResult['success'] ? ($domainResult['data'] ?? []) : [];
+    $mailboxData = $mailboxResult['success'] ? ($mailboxResult['data'] ?? []) : [];
+
+    $quotaUsed = isset($mailboxData['quotaUsedBytes']) ? round(((int)$mailboxData['quotaUsedBytes']) / 1048576, 1) : null;
+    $quotaLimit = $mailboxData['quotaLimitMb'] ?? null;
+    $storage = ($quotaUsed !== null && $quotaLimit !== null) ? "{$quotaUsed} MB / {$quotaLimit} MB" : 'Unavailable';
+
+    $dkimSelector = $domainData['dkimSelector'] ?? '';
+    $dkimPublicKey = $domainData['dkimPublicKey'] ?? '';
+    $dkimStatus = !empty($dkimPublicKey)
+        ? 'Active' . ($dkimSelector !== '' ? " (selector: {$dkimSelector})" : '')
+        : 'Not configured';
 
     return [
-        'Storage Consumption' => "{$diskUsed} MB / {$diskLimit} MB",
-        'Active Mailboxes' => $activeMailboxes,
-        'Assigned Outbound IP' => "{$assignedIp} ({$ipType})",
-        'DKIM Signing Status' => '<span style="color:green;font-weight:bold;">2048-bit RSA Active</span>',
-        'Spam Score (Bayes)' => 'Clean (0.0)',
+        'Storage Consumption' => $storage,
+        'Active Mailboxes' => $domainData['mailboxCount'] ?? 'Unavailable',
+        'Domain Disk Quota' => isset($domainData['diskQuotaMb']) ? "{$domainData['diskQuotaMb']} MB" : 'Unavailable',
+        'DKIM Signing Status' => $dkimStatus,
+        'Mailbox Status' => $mailboxData['status'] ?? 'Unavailable',
     ];
 }
 
@@ -348,8 +360,21 @@ function affinmail_AdminServicesTabFields(array $params)
  */
 function affinmail_AdminServicesTabFieldsSave(array $params)
 {
-    // Process manual admin overrides if submitted
-    return 'success';
+    $quotaLimitMb = $params['quotaLimitMb']
+        ?? $params['diskQuotaMb']
+        ?? $params['disk_quota_mb']
+        ?? $params['configoption1']
+        ?? 10240;
+    $hourlyRateLimit = $params['hourlyRateLimit'] ?? $params['configoption4'] ?? 200;
+    $outboundRoute = $params['outboundRoute'] ?? $params['configoption5'] ?? 'direct';
+
+    $result = affinmail_apiCall($params, 'mailboxes/' . affinmail_mailboxEmail($params) . '/quota', 'PATCH', [
+        'quotaLimitMb' => (int)$quotaLimitMb,
+        'hourlyRateLimit' => (int)$hourlyRateLimit,
+        'outboundRoute' => $outboundRoute,
+    ]);
+
+    return $result['success'] ? 'success' : $result['error'];
 }
 
 /**
@@ -391,10 +416,8 @@ function affinmail_ClientAreaCustomButtonArray()
  */
 function affinmail_Renew(array $params)
 {
-    // Auto-unsuspend if previously suspended for invoice non-payment
-    $domain = strtolower(trim($params['domain']));
-    affinmail_apiCall($params, "domains/{$domain}/status", 'PUT', ['status' => 'active']);
-    return 'success';
+    $result = affinmail_apiCall($params, 'mailboxes/' . affinmail_mailboxEmail($params) . '/status', 'PUT', ['status' => 'active']);
+    return $result['success'] ? 'success' : $result['error'];
 }
 
 /**
@@ -424,7 +447,7 @@ function affinmail_GenerateSsoToken(array $params)
 {
     $domain = strtolower(trim($params['domain']));
     $email = "{$params['username']}@{$domain}";
-    
+
     $result = affinmail_apiCall($params, 'auth/sso-token', 'POST', [
         'email' => $email,
         'ttlSeconds' => 120
@@ -434,13 +457,63 @@ function affinmail_GenerateSsoToken(array $params)
         return ['ssoUrl' => $result['data']['ssoUrl']];
     }
 
-    $fallbackToken = base64_encode(json_encode([
+    $apiError = $result['error'] ?? 'SSO token request failed';
+    $secret = !empty($params['serveraccesshash']) ? $params['serveraccesshash'] : ($params['serverpassword'] ?? '');
+
+    if (empty($secret)) {
+        return ['error' => $apiError];
+    }
+
+    // Locally signed fallback token (HMAC-SHA256), only when a server secret is configured
+    $payload = affinmail_base64url(json_encode([
         'email' => $email,
         'exp' => time() + 120,
         'nonce' => bin2hex(random_bytes(16))
     ]));
+    $token = $payload . '.' . affinmail_base64url(hash_hmac('sha256', $payload, $secret, true));
 
     return [
-        'ssoUrl' => "https://mail.hostaffin.com/sso?token={$fallbackToken}"
+        'ssoUrl' => "https://mail.hostaffin.com/sso?token={$token}"
+    ];
+}
+
+/**
+ * Base64url encode helper
+ */
+function affinmail_base64url($data)
+{
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+/**
+ * 21. FlushRateLimits Method
+ */
+function affinmail_FlushRateLimits(array $params)
+{
+    $domain = strtolower(trim($params['domain']));
+    $email = "{$params['username']}@{$domain}";
+
+    $result = affinmail_apiCall($params, 'system/rate-limits/flush', 'POST', [
+        'domain' => $domain,
+        'email' => $email,
+    ]);
+
+    return $result['success'] ? 'success' : $result['error'];
+}
+
+/**
+ * 22. LoginToWebmail Method
+ */
+function affinmail_LoginToWebmail(array $params)
+{
+    $sso = affinmail_GenerateSsoToken($params);
+    if (empty($sso['ssoUrl'])) {
+        return $sso['error'] ?? 'SSO token request failed';
+    }
+
+    return [
+        'success' => true,
+        'redirectTo' => $sso['ssoUrl'],
+        'ssoUrl' => $sso['ssoUrl'],
     ];
 }
