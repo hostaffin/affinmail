@@ -1,0 +1,102 @@
+# AffinMail Core Engine Configuration (Stalwart v0.8+)
+# Architecture: Rust Tokio Async Core, Multi-IP Egress, Dynamic Storage
+
+[server]
+hostname = "mail.hostaffin.com"
+threads = 4
+
+# Protocol Listeners
+[server.listener."smtp"]
+bind = ["0.0.0.0:25", "[::]:25"]
+protocol = "smtp"
+
+[server.listener."submissions"]
+bind = ["0.0.0.0:465", "[::]:465"]
+protocol = "smtp"
+tls.implicit = true
+
+[server.listener."submission"]
+bind = ["0.0.0.0:587", "[::]:587"]
+protocol = "smtp"
+
+[server.listener."imaps"]
+bind = ["0.0.0.0:993", "[::]:993"]
+protocol = "imap"
+tls.implicit = true
+
+[server.listener."http"]
+bind = ["0.0.0.0:8080", "[::]:8080"]
+protocol = "http"
+
+[server.listener."managesieve"]
+bind = ["0.0.0.0:4190", "[::]:4190"]
+protocol = "managesieve"
+
+# Database Backend (PostgreSQL 16)
+[store."postgres"]
+type = "sql"
+driver = "postgresql"
+host = "postgres"
+port = 5432
+database = "affinmail"
+user = "affinmail_user"
+password = "%{env:STALWART_DB_PASSWORD}%"
+pool.max-connections = 20
+
+# Cache & Rate Limiting Backend (Redis 7)
+[store."redis"]
+type = "redis"
+url = "%{env:STALWART_REDIS_URL}%"
+pool.max-connections = 15
+
+# Dynamic Pluggable Storage Backend
+# Automatically switched based on STORAGE_BLOB_TYPE environment variable
+[storage.blob]
+type = "%{env:STORAGE_BLOB_TYPE:-fs}%"
+path = "/var/lib/stalwart/blobs"
+bucket = "%{env:S3_BUCKET}%"
+region = "%{env:S3_REGION:-auto}%"
+endpoint = "%{env:S3_ENDPOINT}%"
+access-key = "%{env:S3_ACCESS_KEY}%"
+secret-key = "%{env:S3_SECRET_KEY}%"
+
+# Multi-IP Outbound Delivery & Dedicated IP Routing Rules
+[session.outbound.route]
+# Per-domain dedicated outbound binding rules
+# Domains with dedicated IPs transmit via their assigned interface address
+bind = [
+  { if = "query('SELECT ip_address FROM domains d JOIN ip_pools p ON d.assigned_ip_id = p.id WHERE d.domain_name = ? AND d.is_dedicated_ip = true', env.from.domain)", then = "%{result}%" },
+  { else = "%{env:SHARED_OUTBOUND_IPV4:-0.0.0.0}%" }
+]
+
+# Authentication (Argon2id + SASL SCRAM-SHA-256)
+[auth]
+store = "postgres"
+query.lookup = "SELECT password_hash, status FROM mailboxes WHERE email = ? AND status = 'active'"
+
+# Spam Defense Pipeline (Spamhaus DNSBL + Greylisting + Bayes)
+[spam.dnsbl."zen"]
+zone = "zen.spamhaus.org"
+action = "reject"
+code = 554
+
+[spam.dnsbl."dbl"]
+zone = "dbl.spamhaus.org"
+action = "reject"
+code = 554
+
+[spam.greylisting]
+enable = true
+retry-window = "5m..24h"
+
+# Cryptographic Authentication
+[signature.dkim]
+selector = "affinmail"
+headers = ["From", "To", "Subject", "Date", "Message-ID", "Cc"]
+canonicalization = "relaxed/relaxed"
+rsa.bits = 2048
+
+# Maximum Protocol Envelope & Attachment Enforcement
+[session.inbound]
+max-message-size = 52428800 # 50MB absolute server ceiling
+timeout = "5m"
