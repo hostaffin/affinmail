@@ -14,7 +14,7 @@ AffinMail is engineered to run with 100% feature parity and native optimization 
 | **Cloud Alternative** | AWS Graviton (t4g.small / c7g) | 2 vCPUs (Graviton3/4) | 4-8 GB RAM / EBS gp3 | ~$15.00 |
 
 * **ARM64 Efficiency Advantage:** ARM instances (Ampere Altra / Graviton) deliver up to 35% better price-to-performance and lower thermals for Rust and Tokio async I/O.
-* **Network & OS:** 1 Gbit/s unmetered port, Dedicated Clean IPv4 + /64 IPv6, Ubuntu 24.04 LTS or Debian 12 (both offer native ARM64 & x86_64 kernels).
+* **Network & Supported OS:** 1 Gbit/s unmetered port, Dedicated Clean IPv4 + /64 IPv6. First-class native support for **AlmaLinux 8 / 9**, **Rocky Linux 8 / 9**, **Ubuntu 22.04 / 24.04 LTS**, and **Debian 12** (both ARM64 & x86_64).
 
 ### 1.2 Memory Allocation Budget
 | Component | Idle RAM | Peak Concurrency RAM (5,000 users) |

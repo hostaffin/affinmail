@@ -129,6 +129,9 @@ export const App: React.FC = () => {
   const [activeThread, setActiveThread] = useState<EmailThread | null>(null);
   const [cursorIndex, setCursorIndex] = useState(0);
 
+  // Mobile Drawer State
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
   // Compose Modal State
   const [isComposeOpen, setIsComposeOpen] = useState(false);
 
@@ -370,6 +373,7 @@ export const App: React.FC = () => {
         user={user}
         quota={quota}
         onSwitchToAdmin={() => setIsAdminMode(true)}
+        onToggleMobileNav={() => setIsMobileNavOpen((prev) => !prev)}
       />
 
       {/* 2. Main Workspace Layout */}
@@ -389,6 +393,8 @@ export const App: React.FC = () => {
           onOpenCompose={() => setIsComposeOpen(true)}
           unreadCount={unreadCount}
           quota={quota}
+          isOpenMobile={isMobileNavOpen}
+          onCloseMobile={() => setIsMobileNavOpen(false)}
         />
 
         {/* Central Content Area */}

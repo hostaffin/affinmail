@@ -3,7 +3,9 @@
 # AffinMail Standalone Production Universal Installer
 # Compatible with both curl and wget:
 # bash <(curl -fsSL https://raw.githubusercontent.com/.../install.sh 2>/dev/null || wget -qO- https://raw.githubusercontent.com/.../install.sh)
-# Supported OS: Ubuntu 22.04 / 24.04 LTS, Debian 12 (x86_64 & ARM64)
+# Supported OS: 
+#   - AlmaLinux 8 / 9, Rocky Linux 8 / 9, RHEL / CentOS Stream (x86_64 & ARM64)
+#   - Ubuntu 22.04 / 24.04 LTS, Debian 12 (x86_64 & ARM64)
 # ==============================================================================
 
 set -euo pipefail
@@ -16,7 +18,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 INSTALL_DIR="/opt/affinmail"
 REPO_URL="https://github.com/hostaffin/affinmail.git"
 REPO_BRANCH="${AFFINMAIL_BRANCH:-master}"
@@ -40,7 +42,21 @@ if [ ! -t 0 ]; then
     fi
 fi
 
-# 3. Detect & Validate CPU Architecture (ARM64 & x86_64)
+# 3. Detect OS Distribution (Ubuntu/Debian vs AlmaLinux/Rocky/RHEL)
+OS_FAMILY="debian"
+OS_NAME="Linux"
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS_NAME="${NAME:-Linux}"
+    if [[ "${ID:-}" =~ (almalinux|rocky|rhel|centos|fedora) ]] || [[ "${ID_LIKE:-}" =~ (rhel|fedora|centos) ]]; then
+        OS_FAMILY="rhel"
+    elif [[ "${ID:-}" =~ (ubuntu|debian) ]] || [[ "${ID_LIKE:-}" =~ (debian) ]]; then
+        OS_FAMILY="debian"
+    fi
+fi
+echo -e "${GREEN}[*] Detected Operating System:${NC} ${BOLD}${OS_NAME} (${OS_FAMILY} family)${NC}"
+
+# 4. Detect & Validate CPU Architecture (ARM64 & x86_64)
 ARCH=$(uname -m)
 echo -e "${GREEN}[*] Detecting CPU Architecture:${NC} ${BOLD}$ARCH${NC}"
 if [[ "$ARCH" != "x86_64" && "$ARCH" != "aarch64" ]]; then
@@ -49,19 +65,37 @@ if [[ "$ARCH" != "x86_64" && "$ARCH" != "aarch64" ]]; then
     exit 1
 fi
 
-# 4. Bootstrap Essential Packages (curl, wget, git, ufw, jq, etc.)
+# 5. Bootstrap Essential Packages Based on OS Family
 echo -e "\n${BLUE}[1/6] Bootstrapping Essential System Packages...${NC}"
-apt-get update -qq
-apt-get install -y -qq curl wget git ufw fail2ban dnsutils postgresql-client rsync tar jq
+if [ "$OS_FAMILY" == "rhel" ]; then
+    # AlmaLinux / Rocky / RHEL
+    echo -e "${GREEN}[*] Installing packages via DNF (AlmaLinux/RHEL)...${NC}"
+    dnf install -y epel-release || true
+    dnf install -y curl wget git firewalld bind-utils postgresql rsync tar jq openssl
+else
+    # Ubuntu / Debian
+    echo -e "${GREEN}[*] Installing packages via APT (Ubuntu/Debian)...${NC}"
+    apt-get update -qq
+    apt-get install -y -qq curl wget git ufw fail2ban dnsutils postgresql-client rsync tar jq openssl
+fi
 
-# 5. Bootstrap Docker Engine if Not Present
+# 6. Bootstrap Docker Engine if Not Present
 if ! command -v docker &> /dev/null; then
     echo -e "${GREEN}[*] Fresh server detected: Installing Docker Engine...${NC}"
-    curl -fsSL https://get.docker.com | sh
+    if [ "$OS_FAMILY" == "rhel" ]; then
+        dnf install -y dnf-plugins-core
+        dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || true
+        dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin || curl -fsSL https://get.docker.com | sh
+        systemctl enable --now docker
+    else
+        curl -fsSL https://get.docker.com | sh
+        systemctl enable --now docker
+    fi
+else
     systemctl enable --now docker
 fi
 
-# 6. Fetch / Clone Codebase to /opt/affinmail
+# 7. Fetch / Clone Codebase to /opt/affinmail
 echo -e "\n${BLUE}[2/6] Preparing AffinMail Core in ${INSTALL_DIR}...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -87,10 +121,19 @@ mkdir -p "${INSTALL_DIR}/data/blobs"
 mkdir -p "${INSTALL_DIR}/backups"
 cd "${INSTALL_DIR}"
 
+# SELinux Context on AlmaLinux/RHEL
+if [ "$OS_FAMILY" == "rhel" ] && command -v getenforce &> /dev/null; then
+    if [ "$(getenforce)" != "Disabled" ]; then
+        echo -e "${GREEN}[*] Setting SELinux permissions for Docker volume mounts...${NC}"
+        chcon -Rt svirt_sandbox_file_t "${INSTALL_DIR}" 2>/dev/null || true
+        setsebool -P container_manage_cgroup 1 2>/dev/null || true
+    fi
+fi
+
 # Auto-detect Public IP
 AUTO_IP=$(curl -s -4 ifconfig.me 2>/dev/null || wget -qO- -4 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
 
-# 7. Setup Mode Selection (Interactive Now vs Express / Setup Later from Panel)
+# 8. Setup Mode Selection (Interactive Now vs Express / Setup Later from Panel)
 echo -e "\n${CYAN}==================================================================${NC}"
 echo -e "${BOLD}Choose Installation Mode:${NC}"
 echo -e "  ${YELLOW}1)${NC} ${BOLD}Complete Interactive Setup Now${NC} (Configure Hostname, IP, Storage, Admin now)"
@@ -167,24 +210,44 @@ else
     HOSTNAME_INPUT="mail.${AUTO_IP//./-}.nip.io"
 fi
 
-# 8. Firewall Configuration (UFW)
-echo -e "\n${BLUE}[3/6] Hardening Firewall (UFW) Ports...${NC}"
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp comment 'SSH'
-ufw allow 80/tcp comment 'HTTP ACME'
-ufw allow 443/tcp comment 'HTTPS Webmail'
-ufw allow 443/udp comment 'HTTP/3 QUIC'
-ufw allow 2087/tcp comment 'AffinMail Admin Panel (WHM-Style)'
-ufw allow 2083/tcp comment 'AffinMail Client Webmail'
-ufw allow 25/tcp comment 'Inbound SMTP'
-ufw allow 465/tcp comment 'SMTP Submission SSL'
-ufw allow 587/tcp comment 'SMTP Submission STARTTLS'
-ufw allow 993/tcp comment 'IMAP SSL'
-ufw allow 4190/tcp comment 'ManageSieve'
-ufw --force enable
+# 9. Firewall Configuration (UFW on Ubuntu/Debian, Firewalld on AlmaLinux/RHEL)
+echo -e "\n${BLUE}[3/6] Hardening Firewall Ports (25, 80, 443, 465, 587, 993, 2083, 2087, 4190)...${NC}"
+PORTS=(
+    "22/tcp"
+    "80/tcp"
+    "443/tcp"
+    "443/udp"
+    "2087/tcp"
+    "2083/tcp"
+    "25/tcp"
+    "465/tcp"
+    "587/tcp"
+    "993/tcp"
+    "4190/tcp"
+)
 
-# 9. Cryptographic Credentials & Environment File
+if [ "$OS_FAMILY" == "rhel" ]; then
+    # AlmaLinux Firewalld
+    systemctl enable --now firewalld >/dev/null 2>&1 || true
+    if systemctl is-active --quiet firewalld; then
+        for P in "${PORTS[@]}"; do
+            firewall-cmd --permanent --add-port="$P" >/dev/null 2>&1 || true
+        done
+        firewall-cmd --reload >/dev/null 2>&1 || true
+        echo -e "${GREEN}[*] Firewalld rules configured successfully.${NC}"
+    fi
+else
+    # Ubuntu / Debian UFW
+    ufw default deny incoming >/dev/null 2>&1 || true
+    ufw default allow outgoing >/dev/null 2>&1 || true
+    for P in "${PORTS[@]}"; do
+        ufw allow "$P" >/dev/null 2>&1 || true
+    done
+    ufw --force enable >/dev/null 2>&1 || true
+    echo -e "${GREEN}[*] UFW rules configured successfully.${NC}"
+fi
+
+# 10. Cryptographic Credentials & Environment File
 echo -e "\n${BLUE}[4/6] Generating Strong Encryption Keys & .env Config...${NC}"
 if [ ! -f "deploy/.env" ]; then
     DB_PASS=$(openssl rand -hex 16)
@@ -221,13 +284,13 @@ else
     echo -e "${YELLOW}[*] Existing deploy/.env found, preserving established credentials.${NC}"
 fi
 
-# 10. Start Docker Stack
+# 11. Start Docker Stack
 echo -e "\n${BLUE}[5/6] Pulling Multi-Arch Container Images & Starting Services...${NC}"
 cd "${INSTALL_DIR}/deploy"
 docker compose pull
 docker compose up -d
 
-# 11. Register Crons and CLI
+# 12. Register Crons and CLI
 echo -e "\n${BLUE}[6/6] Registering System Crons and Management CLI...${NC}"
 chmod +x "${INSTALL_DIR}/scripts/"*.sh
 
@@ -247,6 +310,7 @@ ADMIN_KEY=$(grep "STALWART_ADMIN_SECRET" "${INSTALL_DIR}/deploy/.env" | cut -d= 
 echo -e "\n${CYAN}==================================================================${NC}"
 echo -e "${GREEN}${BOLD}      AffinMail Server Successfully Installed & Running!          ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
+echo -e "Operating System:        ${GREEN}${OS_NAME} (${ARCH})${NC}"
 echo -e "WHM Admin Control Panel: ${YELLOW}https://${HOSTNAME_INPUT}:2087${NC} (or https://${SHARED_IP_INPUT}:2087)"
 echo -e "Client Webmail Portal:   ${YELLOW}https://${HOSTNAME_INPUT}:2083${NC} (or https://${HOSTNAME_INPUT})"
 echo -e "Admin API Secret:        ${YELLOW}${ADMIN_KEY}${NC}"

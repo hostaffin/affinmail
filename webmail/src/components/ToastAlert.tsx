@@ -14,11 +14,11 @@ interface ToastAlertProps {
 
 export const ToastAlert: React.FC<ToastAlertProps> = ({ toasts, onDismiss }) => {
   return (
-    <div className="toast toast-bottom toast-end z-[70] space-y-2 mb-2 mr-2">
+    <div className="toast toast-bottom toast-end z-[70] space-y-2 mb-2 right-2 sm:right-4 left-2 sm:left-auto max-w-[calc(100vw-1rem)] sm:max-w-md pointer-events-none">
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`alert shadow-lg text-xs py-2.5 px-4 rounded-xl flex items-center justify-between gap-3 border ${
+          className={`alert shadow-lg text-xs py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-between gap-3 border pointer-events-auto ${
             toast.type === 'error'
               ? 'alert-error text-white border-red-600'
               : toast.type === 'success'

@@ -19,6 +19,8 @@ import {
   Cpu,
   Layers,
   Terminal,
+  Menu,
+  X,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -36,6 +38,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   type AdminTab = 'dashboard' | 'domains' | 'mailboxes' | 'ippools' | 'storage' | 'system';
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Domains State
   const [domains, setDomains] = useState([
@@ -192,29 +195,186 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     onNotify(`Storage backend switched to ${storageType.toUpperCase()}! Containers re-configured.`, 'success');
   };
 
+  const renderSidebarContent = (isMobile = false) => (
+    <div className="flex flex-col justify-between h-full">
+      <div className="space-y-1">
+        {isMobile && (
+          <div className="flex items-center justify-between pb-3 mb-2 border-b border-base-300">
+            <div className="flex items-center gap-2">
+              <Server className="w-4 h-4 text-primary" />
+              <span className="font-bold text-sm text-base-content">WHM Administration</span>
+            </div>
+            <button
+              onClick={() => setIsMobileNavOpen(false)}
+              className="btn btn-ghost btn-circle btn-xs text-base-content/60"
+              aria-label="Close navigation"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        <div className="px-3 py-2 text-[11px] font-bold text-base-content/50 uppercase tracking-wider">
+          Administration
+        </div>
+
+        <button
+          onClick={() => {
+            setActiveTab('dashboard');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
+            activeTab === 'dashboard'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-base-content/80 hover:bg-base-300'
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span>Overview Dashboard</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('domains');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
+            activeTab === 'domains'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-base-content/80 hover:bg-base-300'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Globe className="w-4 h-4" />
+            <span>Virtual Domains</span>
+          </div>
+          <span
+            className={`badge badge-sm border-none ${
+              activeTab === 'domains' ? 'bg-white/20 text-white' : 'bg-base-300'
+            }`}
+          >
+            {domains.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('mailboxes');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
+            activeTab === 'mailboxes'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-base-content/80 hover:bg-base-300'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Users className="w-4 h-4" />
+            <span>Mailboxes & Quotas</span>
+          </div>
+          <span
+            className={`badge badge-sm border-none ${
+              activeTab === 'mailboxes' ? 'bg-white/20 text-white' : 'bg-base-300'
+            }`}
+          >
+            {mailboxes.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('ippools');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
+            activeTab === 'ippools'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-base-content/80 hover:bg-base-300'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Layers className="w-4 h-4" />
+            <span>IP Pools & Warm-up</span>
+          </div>
+          <span className="badge badge-sm badge-success text-white border-none">Clean</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('storage');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
+            activeTab === 'storage'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-base-content/80 hover:bg-base-300'
+          }`}
+        >
+          <HardDrive className="w-4 h-4" />
+          <span>Dynamic Storage Engine</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('system');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
+            activeTab === 'system'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-base-content/80 hover:bg-base-300'
+          }`}
+        >
+          <Terminal className="w-4 h-4" />
+          <span>System & CLI Tools</span>
+        </button>
+      </div>
+
+      {/* Node License & Version */}
+      <div className="p-3 bg-base-300/60 rounded-xl text-[11px] space-y-1 text-base-content/70 mt-4">
+        <div className="flex justify-between font-bold text-base-content">
+          <span>AffinMail Core</span>
+          <span>v1.2.0</span>
+        </div>
+        <p>Rust Stalwart • PG16 • Redis7</p>
+        <p className="text-success font-semibold flex items-center gap-1">
+          <CheckCircle className="w-3 h-3" /> Standalone Active
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content select-none">
       {/* 1. WHM Master Header */}
-      <header className="h-16 border-b border-base-300 bg-neutral text-neutral-content px-5 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md shadow-primary/30">
-            <Server className="w-5 h-5 stroke-[2.5]" />
+      <header className="h-16 border-b border-base-300 bg-neutral text-neutral-content px-3 sm:px-5 flex items-center justify-between shrink-0 gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <button
+            onClick={() => setIsMobileNavOpen((prev) => !prev)}
+            className="btn btn-ghost btn-circle btn-sm md:hidden text-white/80 hover:text-white"
+            title="Toggle Admin Menu"
+            aria-label="Toggle navigation menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md shadow-primary/30 shrink-0">
+            <Server className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg tracking-tight text-white">AffinMail Control</span>
-              <span className="badge badge-sm badge-warning font-mono font-bold text-[10px]">
-                WHM PORT :2087
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className="font-bold text-base sm:text-lg tracking-tight text-white">AffinMail Control</span>
+              <span className="badge badge-xs sm:badge-sm badge-warning font-mono font-bold text-[10px]">
+                :2087
               </span>
             </div>
-            <span className="text-[11px] text-neutral-content/70 font-mono">
+            <span className="text-[11px] text-neutral-content/70 font-mono hidden sm:block">
               Cluster Node: mail.hostaffin.com (Tokio Engine v0.8)
             </span>
           </div>
         </div>
 
         {/* Center: System Quick Metrics */}
-        <div className="hidden md:flex items-center gap-6 text-xs text-neutral-content/80 font-mono">
+        <div className="hidden lg:flex items-center gap-6 text-xs text-neutral-content/80 font-mono">
           <div className="flex items-center gap-1.5">
             <Cpu className="w-3.5 h-3.5 text-accent" />
             <span>CPU: 4% (ARM64/x86)</span>
@@ -230,7 +390,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <button
             onClick={onToggleTheme}
             className="btn btn-ghost btn-circle btn-sm text-white/80 hover:text-white"
@@ -242,9 +402,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* Switcher to Port 2083 Client Webmail */}
           <button
             onClick={onSwitchToWebmail}
-            className="btn btn-primary btn-sm gap-2 normal-case font-semibold text-xs shadow-md shadow-primary/30"
+            className="btn btn-primary btn-xs sm:btn-sm gap-1 sm:gap-2 normal-case font-semibold text-xs shadow-md shadow-primary/30 shrink-0"
           >
-            <span>Open Webmail (Port 2083)</span>
+            <span className="hidden xs:inline sm:inline">Open </span>
+            <span>Webmail</span>
+            <span className="hidden md:inline font-mono text-[10px] opacity-80">(Port 2083)</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -252,114 +414,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       {/* 2. Main Admin Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Navigation Sidebar */}
-        <aside className="w-64 border-r border-base-300 bg-base-200/50 flex flex-col justify-between p-3 shrink-0">
-          <div className="space-y-1">
-            <div className="px-3 py-2 text-[11px] font-bold text-base-content/50 uppercase tracking-wider">
-              Administration
-            </div>
-
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-                activeTab === 'dashboard'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-base-content/80 hover:bg-base-300'
-              }`}
-            >
-              <Activity className="w-4 h-4" />
-              <span>Overview Dashboard</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('domains')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-                activeTab === 'domains'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-base-content/80 hover:bg-base-300'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Globe className="w-4 h-4" />
-                <span>Virtual Domains</span>
-              </div>
-              <span className={`badge badge-sm border-none ${activeTab === 'domains' ? 'bg-white/20 text-white' : 'bg-base-300'}`}>
-                {domains.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('mailboxes')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-                activeTab === 'mailboxes'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-base-content/80 hover:bg-base-300'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Users className="w-4 h-4" />
-                <span>Mailboxes & Quotas</span>
-              </div>
-              <span className={`badge badge-sm border-none ${activeTab === 'mailboxes' ? 'bg-white/20 text-white' : 'bg-base-300'}`}>
-                {mailboxes.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('ippools')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-                activeTab === 'ippools'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-base-content/80 hover:bg-base-300'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Layers className="w-4 h-4" />
-                <span>IP Pools & Warm-up</span>
-              </div>
-              <span className="badge badge-sm badge-success text-white border-none">Clean</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('storage')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-                activeTab === 'storage'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-base-content/80 hover:bg-base-300'
-              }`}
-            >
-              <HardDrive className="w-4 h-4" />
-              <span>Dynamic Storage Engine</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('system')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-                activeTab === 'system'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-base-content/80 hover:bg-base-300'
-              }`}
-            >
-              <Terminal className="w-4 h-4" />
-              <span>System & CLI Tools</span>
-            </button>
-          </div>
-
-          {/* Node License & Version */}
-          <div className="p-3 bg-base-300/60 rounded-xl text-[11px] space-y-1 text-base-content/70">
-            <div className="flex justify-between font-bold text-base-content">
-              <span>AffinMail Core</span>
-              <span>v1.2.0</span>
-            </div>
-            <p>Rust Stalwart • PG16 • Redis7</p>
-            <p className="text-success font-semibold flex items-center gap-1">
-              <CheckCircle className="w-3 h-3" /> Standalone Active
-            </p>
-          </div>
+        {/* Desktop Left Navigation Sidebar */}
+        <aside className="hidden md:flex w-64 border-r border-base-300 bg-base-200/50 flex-col justify-between p-3 shrink-0">
+          {renderSidebarContent(false)}
         </aside>
 
+        {/* Mobile Slide-over Drawer */}
+        {isMobileNavOpen && (
+          <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true">
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+              onClick={() => setIsMobileNavOpen(false)}
+            />
+            <aside className="relative w-72 max-w-[85vw] bg-base-200 h-full shadow-2xl p-4 z-10 flex flex-col justify-between overflow-y-auto">
+              {renderSidebarContent(true)}
+            </aside>
+          </div>
+        )}
+
         {/* Central Content Area */}
-        <main className="flex-1 overflow-y-auto p-6 space-y-6 bg-base-100">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6 bg-base-100">
           {/* ===================== TAB 1: DASHBOARD ===================== */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 max-w-6xl">
@@ -441,9 +515,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {/* Cluster Ports Reference */}
-              <div className="card bg-base-200/40 border border-base-300 p-5 rounded-xl space-y-3">
+              <div className="card bg-base-200/40 border border-base-300 p-4 sm:p-5 rounded-xl space-y-3">
                 <h3 className="text-sm font-bold">Active Cluster Protocols & Ports</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
                   <div className="p-3 bg-base-100 rounded-lg border border-base-300">
                     <span className="text-primary font-bold block">Port 2087</span>
                     <span className="text-[11px] text-base-content/60">WHM Admin Panel</span>
@@ -468,14 +542,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* ===================== TAB 2: DOMAINS ===================== */}
           {activeTab === 'domains' && (
             <div className="space-y-6 max-w-6xl">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight">Virtual Hosted Domains</h2>
                   <p className="text-xs text-base-content/60">Configure per-domain DKIM keys, quotas, and dedicated IPs</p>
                 </div>
                 <button
                   onClick={() => setShowAddDomainModal(true)}
-                  className="btn btn-primary btn-sm gap-2 normal-case font-semibold"
+                  className="btn btn-primary btn-sm gap-2 normal-case font-semibold self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Virtual Domain</span>
@@ -483,60 +557,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div className="card bg-base-100 border border-base-300 rounded-xl overflow-hidden shadow-sm">
-                <table className="table w-full text-xs">
-                  <thead className="bg-base-200/60 text-base-content/70">
-                    <tr>
-                      <th>Domain Name</th>
-                      <th>Mailboxes</th>
-                      <th>Disk Used / Limit</th>
-                      <th>Outbound IP Egress</th>
-                      <th>DKIM Status</th>
-                      <th className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {domains.map((dom) => (
-                      <tr key={dom.id} className="hover:bg-base-200/40">
-                        <td className="font-bold text-base-content">{dom.name}</td>
-                        <td>{dom.mailboxesCount} mailboxes</td>
-                        <td>
-                          <span className="font-mono">{dom.diskUsed}</span> / {dom.diskLimit}
-                        </td>
-                        <td>
-                          <span
-                            className={`badge badge-xs font-semibold ${
-                              dom.ipType === 'dedicated' ? 'badge-success text-white' : 'badge-ghost'
-                            }`}
-                          >
-                            {dom.ipType === 'dedicated' ? `Dedicated (${dom.assignedIp})` : 'Shared Pool'}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="badge badge-xs badge-info font-mono">2048-bit RSA</span>
-                        </td>
-                        <td className="text-right space-x-2">
-                          <button
-                            onClick={() => setSelectedDnsDomain(dom.name)}
-                            className="btn btn-ghost btn-xs text-primary font-medium"
-                          >
-                            View DNS
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`Delete domain ${dom.name}?`)) {
-                                setDomains(domains.filter((d) => d.id !== dom.id));
-                                onNotify(`Domain ${dom.name} removed.`, 'info');
-                              }
-                            }}
-                            className="btn btn-ghost btn-xs text-error font-medium"
-                          >
-                            Delete
-                          </button>
-                        </td>
+                <div className="overflow-x-auto w-full">
+                  <table className="table w-full text-xs min-w-[600px]">
+                    <thead className="bg-base-200/60 text-base-content/70">
+                      <tr>
+                        <th>Domain Name</th>
+                        <th>Mailboxes</th>
+                        <th>Disk Used / Limit</th>
+                        <th>Outbound IP Egress</th>
+                        <th>DKIM Status</th>
+                        <th className="text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {domains.map((dom) => (
+                        <tr key={dom.id} className="hover:bg-base-200/40">
+                          <td className="font-bold text-base-content">{dom.name}</td>
+                          <td>{dom.mailboxesCount} mailboxes</td>
+                          <td>
+                            <span className="font-mono">{dom.diskUsed}</span> / {dom.diskLimit}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge badge-xs font-semibold ${
+                                dom.ipType === 'dedicated' ? 'badge-success text-white' : 'badge-ghost'
+                              }`}
+                            >
+                              {dom.ipType === 'dedicated' ? `Dedicated (${dom.assignedIp})` : 'Shared Pool'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="badge badge-xs badge-info font-mono">2048-bit RSA</span>
+                          </td>
+                          <td className="text-right space-x-2">
+                            <button
+                              onClick={() => setSelectedDnsDomain(dom.name)}
+                              className="btn btn-ghost btn-xs text-primary font-medium"
+                            >
+                              View DNS
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Delete domain ${dom.name}?`)) {
+                                  setDomains(domains.filter((d) => d.id !== dom.id));
+                                  onNotify(`Domain ${dom.name} removed.`, 'info');
+                                }
+                              }}
+                              className="btn btn-ghost btn-xs text-error font-medium"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -544,14 +620,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* ===================== TAB 3: MAILBOXES ===================== */}
           {activeTab === 'mailboxes' && (
             <div className="space-y-6 max-w-6xl">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight">Mailbox Accounts</h2>
                   <p className="text-xs text-base-content/60">Create users, assign storage quotas and configure SmartHost routing</p>
                 </div>
                 <button
                   onClick={() => setShowAddMailboxModal(true)}
-                  className="btn btn-primary btn-sm gap-2 normal-case font-semibold"
+                  className="btn btn-primary btn-sm gap-2 normal-case font-semibold self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Create Mailbox</span>
@@ -559,60 +635,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div className="card bg-base-100 border border-base-300 rounded-xl overflow-hidden shadow-sm">
-                <table className="table w-full text-xs">
-                  <thead className="bg-base-200/60 text-base-content/70">
-                    <tr>
-                      <th>Email Address</th>
-                      <th>Domain</th>
-                      <th>Storage Quota</th>
-                      <th>Outbound Route</th>
-                      <th>Status</th>
-                      <th className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mailboxes.map((mb) => (
-                      <tr key={mb.id} className="hover:bg-base-200/40">
-                        <td className="font-bold text-base-content font-mono">{mb.email}</td>
-                        <td>{mb.domain}</td>
-                        <td>
-                          <span className="font-mono">{mb.used}</span> / {mb.quota}
-                        </td>
-                        <td>
-                          <span className="badge badge-xs badge-outline font-mono uppercase">
-                            {mb.route}
-                          </span>
-                        </td>
-                        <td>
-                          <span
-                            className={`badge badge-xs font-semibold ${
-                              mb.status === 'active' ? 'badge-success text-white' : 'badge-error text-white'
-                            }`}
-                          >
-                            {mb.status}
-                          </span>
-                        </td>
-                        <td className="text-right space-x-2">
-                          <button
-                            onClick={() => handleToggleMailboxStatus(mb.id)}
-                            className="btn btn-ghost btn-xs font-medium"
-                          >
-                            {mb.status === 'active' ? 'Suspend' : 'Unsuspend'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              const newP = prompt('Enter new password:');
-                              if (newP) onNotify(`Password for ${mb.email} updated.`, 'success');
-                            }}
-                            className="btn btn-ghost btn-xs text-primary font-medium"
-                          >
-                            Change Password
-                          </button>
-                        </td>
+                <div className="overflow-x-auto w-full">
+                  <table className="table w-full text-xs min-w-[620px]">
+                    <thead className="bg-base-200/60 text-base-content/70">
+                      <tr>
+                        <th>Email Address</th>
+                        <th>Domain</th>
+                        <th>Storage Quota</th>
+                        <th>Outbound Route</th>
+                        <th>Status</th>
+                        <th className="text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {mailboxes.map((mb) => (
+                        <tr key={mb.id} className="hover:bg-base-200/40">
+                          <td className="font-bold text-base-content font-mono">{mb.email}</td>
+                          <td>{mb.domain}</td>
+                          <td>
+                            <span className="font-mono">{mb.used}</span> / {mb.quota}
+                          </td>
+                          <td>
+                            <span className="badge badge-xs badge-outline font-mono uppercase">
+                              {mb.route}
+                            </span>
+                          </td>
+                          <td>
+                            <span
+                              className={`badge badge-xs font-semibold ${
+                                mb.status === 'active' ? 'badge-success text-white' : 'badge-error text-white'
+                              }`}
+                            >
+                              {mb.status}
+                            </span>
+                          </td>
+                          <td className="text-right space-x-2">
+                            <button
+                              onClick={() => handleToggleMailboxStatus(mb.id)}
+                              className="btn btn-ghost btn-xs font-medium"
+                            >
+                              {mb.status === 'active' ? 'Suspend' : 'Unsuspend'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                const newP = prompt('Enter new password:');
+                                if (newP) onNotify(`Password for ${mb.email} updated.`, 'success');
+                              }}
+                              className="btn btn-ghost btn-xs text-primary font-medium"
+                            >
+                              Change Password
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -620,14 +698,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* ===================== TAB 4: IP POOLS ===================== */}
           {activeTab === 'ippools' && (
             <div className="space-y-6 max-w-6xl">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-bold tracking-tight">Multi-IP Pools & Egress Router</h2>
                   <p className="text-xs text-base-content/60">Manage dedicated & shared outbound IP addresses and automated 30-day warm-up</p>
                 </div>
                 <button
                   onClick={() => onNotify('New IP binding added to Stalwart listener.', 'success')}
-                  className="btn btn-primary btn-sm gap-2 normal-case font-semibold"
+                  className="btn btn-primary btn-sm gap-2 normal-case font-semibold self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Bind New Outbound IP</span>
@@ -842,7 +920,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* ===================== MODAL: ADD VIRTUAL DOMAIN ===================== */}
       {showAddDomainModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="card bg-base-100 border border-base-300 w-full max-w-md p-6 rounded-2xl shadow-2xl space-y-4">
+          <div className="card bg-base-100 border border-base-300 w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-xl sm:rounded-2xl shadow-2xl space-y-4">
             <h3 className="text-base font-bold">Add New Virtual Domain</h3>
             <div className="space-y-3 text-xs">
               <div>
@@ -885,7 +963,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* ===================== MODAL: CREATE MAILBOX ===================== */}
       {showAddMailboxModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="card bg-base-100 border border-base-300 w-full max-w-md p-6 rounded-2xl shadow-2xl space-y-4">
+          <div className="card bg-base-100 border border-base-300 w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-xl sm:rounded-2xl shadow-2xl space-y-4">
             <h3 className="text-base font-bold">Create Mailbox Account</h3>
             <div className="space-y-3 text-xs">
               <div>
@@ -952,7 +1030,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* ===================== MODAL: DNS RECORDS & DKIM ===================== */}
       {selectedDnsDomain && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="card bg-base-100 border border-base-300 w-full max-w-2xl p-6 rounded-2xl shadow-2xl space-y-4">
+          <div className="card bg-base-100 border border-base-300 w-full max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 rounded-xl sm:rounded-2xl shadow-2xl space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-base font-bold">DNS Records for {selectedDnsDomain}</h3>
               <button onClick={() => setSelectedDnsDomain(null)} className="btn btn-ghost btn-circle btn-xs">

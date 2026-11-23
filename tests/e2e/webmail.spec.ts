@@ -66,4 +66,13 @@ test.describe('AffinMail Gmail-Grade Webmail Client E2E', () => {
     // Expect alert toast
     await expect(page.locator('text=exceeds your hosting plan\'s attachment limit of 25 MB')).toBeVisible();
   });
+
+  test('supports mobile viewport with responsive hamburger drawer', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    const menuBtn = page.locator('button[aria-label="Toggle navigation menu"]');
+    await expect(menuBtn).toBeVisible();
+    await menuBtn.click();
+    await expect(page.locator('role=dialog')).toBeVisible();
+    await expect(page.locator('text=Navigation')).toBeVisible();
+  });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Sun, Moon, ShieldCheck, Mail, Server } from 'lucide-react';
+import { Search, Sun, Moon, ShieldCheck, Mail, Server, Menu } from 'lucide-react';
 import { PlanQuota, UserProfile } from '../types';
 
 interface HeaderBarProps {
@@ -11,6 +11,7 @@ interface HeaderBarProps {
   user: UserProfile;
   quota: PlanQuota;
   onSwitchToAdmin?: () => void;
+  onToggleMobileNav?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -22,38 +23,49 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   user,
   quota,
   onSwitchToAdmin,
+  onToggleMobileNav,
 }) => {
   return (
-    <header className="h-16 border-b border-base-300 bg-base-100 px-4 flex items-center justify-between gap-4 select-none shrink-0">
-      {/* Brand & Logo */}
-      <div className="flex items-center gap-3 w-64 shrink-0">
-        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md shadow-primary/30">
-          <Mail className="w-5 h-5 stroke-[2.5]" />
+    <header className="h-16 border-b border-base-300 bg-base-100 px-3 sm:px-4 flex items-center justify-between gap-2 sm:gap-4 select-none shrink-0">
+      {/* Brand & Mobile Hamburger */}
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {onToggleMobileNav && (
+          <button
+            onClick={onToggleMobileNav}
+            className="btn btn-ghost btn-circle btn-sm md:hidden text-base-content/70 hover:bg-base-200"
+            title="Toggle Menu"
+            aria-label="Toggle navigation menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md shadow-primary/30 shrink-0">
+          <Mail className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
         </div>
-        <div>
+        <div className="hidden xs:block sm:block">
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-lg tracking-tight text-base-content">AffinMail</span>
-            <span className="badge badge-xs badge-primary font-semibold">CORE</span>
+            <span className="font-bold text-base sm:text-lg tracking-tight text-base-content">AffinMail</span>
+            <span className="badge badge-xs badge-primary font-semibold hidden sm:inline-flex">CORE</span>
           </div>
-          <span className="text-[11px] text-base-content/60 font-medium block -mt-0.5">
+          <span className="text-[11px] text-base-content/60 font-medium hidden sm:block -mt-0.5">
             Rust Engine • {user.domain}
           </span>
         </div>
       </div>
 
       {/* Global Search Input */}
-      <div className="flex-1 max-w-2xl relative">
+      <div className="flex-1 max-w-2xl relative min-w-0">
         <div className="relative flex items-center">
-          <Search className="absolute left-3.5 w-4 h-4 text-base-content/40" />
+          <Search className="absolute left-3 w-4 h-4 text-base-content/40" />
           <input
             ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search mail, labels, senders (Press '/' to focus)..."
-            className="input input-bordered w-full pl-10 pr-12 h-10 bg-base-200/70 border-base-300 focus:bg-base-100 focus:border-primary text-sm rounded-lg"
+            placeholder="Search mail (Press '/' to focus)..."
+            className="input input-bordered w-full pl-9 pr-3 sm:pr-10 h-9 sm:h-10 bg-base-200/70 border-base-300 focus:bg-base-100 focus:border-primary text-xs sm:text-sm rounded-lg"
           />
-          <kbd className="absolute right-3 kbd kbd-xs bg-base-300 text-base-content/60 text-[10px] font-mono">
+          <kbd className="absolute right-3 kbd kbd-xs bg-base-300 text-base-content/60 text-[10px] font-mono hidden sm:inline-flex">
             /
           </kbd>
         </div>

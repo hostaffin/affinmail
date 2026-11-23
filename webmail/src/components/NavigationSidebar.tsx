@@ -11,6 +11,8 @@ import {
   Tag,
   HardDrive,
   Cpu,
+  X,
+  Mail,
 } from 'lucide-react';
 import { MailboxFolderId, PlanQuota } from '../types';
 
@@ -22,6 +24,8 @@ interface NavigationSidebarProps {
   onOpenCompose: () => void;
   unreadCount: number;
   quota: PlanQuota;
+  isOpenMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
@@ -32,6 +36,8 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   onOpenCompose,
   unreadCount,
   quota,
+  isOpenMobile = false,
+  onCloseMobile,
 }) => {
   const folders = [
     { id: 'inbox' as MailboxFolderId, name: 'Inbox', icon: Inbox, count: unreadCount },
@@ -50,12 +56,32 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
     { name: 'Operations', color: 'bg-teal-500' },
   ];
 
-  return (
-    <aside className="w-64 border-r border-base-300 bg-base-100 flex flex-col justify-between p-3 select-none shrink-0 h-full">
+  const renderContent = (isMobile = false) => (
+    <div className="flex flex-col justify-between h-full">
       <div className="flex flex-col gap-4">
+        {isMobile && (
+          <div className="flex items-center justify-between pb-2 border-b border-base-200">
+            <div className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-primary" />
+              <span className="font-bold text-sm text-base-content">Navigation</span>
+            </div>
+            <button
+              onClick={onCloseMobile}
+              className="btn btn-ghost btn-circle btn-xs text-base-content/60"
+              title="Close"
+              aria-label="Close navigation"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Compose Button */}
         <button
-          onClick={onOpenCompose}
+          onClick={() => {
+            onOpenCompose();
+            if (isMobile) onCloseMobile?.();
+          }}
           className="btn btn-primary w-full shadow-md shadow-primary/25 rounded-xl flex items-center justify-between px-4 h-11 normal-case font-semibold text-sm hover:scale-[1.01] transition-transform"
         >
           <div className="flex items-center gap-2.5">
@@ -78,6 +104,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                 onClick={() => {
                   onSelectFolder(folder.id);
                   onSelectLabel(null);
+                  if (isMobile) onCloseMobile?.();
                 }}
                 className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
                   isActive
@@ -115,7 +142,10 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
               return (
                 <button
                   key={lbl.name}
-                  onClick={() => onSelectLabel(isLblActive ? null : lbl.name.toLowerCase())}
+                  onClick={() => {
+                    onSelectLabel(isLblActive ? null : lbl.name.toLowerCase());
+                    if (isMobile) onCloseMobile?.();
+                  }}
                   className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs transition-colors ${
                     isLblActive
                       ? 'bg-base-200 text-base-content font-semibold'
@@ -134,7 +164,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
       </div>
 
       {/* Bottom Card: Plan Usage & Quota Guard Indicator */}
-      <div className="bg-base-200/70 border border-base-300 rounded-xl p-3 flex flex-col gap-2">
+      <div className="bg-base-200/70 border border-base-300 rounded-xl p-3 flex flex-col gap-2 mt-4">
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-1.5 text-base-content/70 font-medium">
             <HardDrive className="w-3.5 h-3.5 text-primary" />
@@ -172,6 +202,28 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
           </span>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Persistent Sidebar */}
+      <aside className="hidden md:flex w-64 border-r border-base-300 bg-base-100 flex-col justify-between p-3 select-none shrink-0 h-full">
+        {renderContent(false)}
+      </aside>
+
+      {/* Mobile Drawer */}
+      {isOpenMobile && (
+        <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={onCloseMobile}
+          />
+          <aside className="relative w-72 max-w-[85vw] bg-base-100 h-full shadow-2xl p-4 z-10 flex flex-col justify-between overflow-y-auto">
+            {renderContent(true)}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };

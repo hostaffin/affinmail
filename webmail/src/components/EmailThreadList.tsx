@@ -60,87 +60,164 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
           <div
             key={thread.id}
             onClick={() => onSelectThread(thread)}
-            className={`group flex items-center gap-3 px-4 py-2.5 cursor-pointer text-xs transition-colors select-none ${
+            className={`group cursor-pointer text-xs transition-colors select-none ${
               isCursor ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''
             } ${
               isSelected ? 'bg-primary/10' : isUnread ? 'bg-base-200/40' : 'hover:bg-base-200/70'
             }`}
           >
-            {/* Checkbox */}
-            <div
-              className="flex items-center"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleSelectCheckbox(thread.id);
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => {}}
-                className="checkbox checkbox-xs checkbox-primary rounded"
-              />
-            </div>
-
-            {/* Star Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleStar(thread.id);
-              }}
-              className="btn btn-ghost btn-circle btn-xs -ml-1 text-base-content/40 hover:text-amber-500"
-              title="Star email (s)"
-            >
-              <Star
-                className={`w-3.5 h-3.5 ${
-                  thread.isStarred
-                    ? 'fill-amber-400 text-amber-500'
-                    : 'text-base-content/40 group-hover:text-base-content/70'
-                }`}
-              />
-            </button>
-
-            {/* Sender Name */}
-            <div className="w-44 shrink-0 truncate flex items-center gap-1.5">
-              <span className={`truncate ${isUnread ? 'font-bold text-base-content' : 'text-base-content/80'}`}>
-                {thread.senderName}
-              </span>
-              {thread.messageCount > 1 && (
-                <span className="text-[10px] text-base-content/50 font-semibold font-mono">
-                  ({thread.messageCount})
-                </span>
-              )}
-            </div>
-
-            {/* Labels Badges */}
-            <div className="flex items-center gap-1 shrink-0">
-              {thread.labels.filter(l => l !== 'inbox').map((lbl) => (
-                <span key={lbl} className={`badge badge-xs capitalize font-medium ${getBadgeClass(lbl)}`}>
-                  {lbl}
-                </span>
-              ))}
-            </div>
-
-            {/* Subject & Snippet */}
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className={`truncate ${isUnread ? 'font-semibold text-base-content' : 'text-base-content/70'}`}>
-                {thread.subject}
-              </span>
-              <span className="text-base-content/40 truncate text-[11px] hidden md:inline">
-                - {thread.snippet}
-              </span>
-            </div>
-
-            {/* Attachment Indicator */}
-            {thread.hasAttachments && (
-              <div className="shrink-0 text-base-content/40" title="Has attachments">
-                <Paperclip className="w-3.5 h-3.5" />
+            {/* Desktop Row Layout (sm and up) */}
+            <div className="hidden sm:flex items-center gap-3 px-4 py-2.5">
+              {/* Checkbox */}
+              <div
+                className="flex items-center"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelectCheckbox(thread.id);
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => {}}
+                  className="checkbox checkbox-xs checkbox-primary rounded"
+                  aria-label={`Select thread ${thread.subject}`}
+                />
               </div>
-            )}
 
-            {/* Time / Date */}
-            <div className="w-20 text-right shrink-0 font-mono text-[11px] text-base-content/60">
-              {thread.latestReceivedAt}
+              {/* Star Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleStar(thread.id);
+                }}
+                className="btn btn-ghost btn-circle btn-xs -ml-1 text-base-content/40 hover:text-amber-500"
+                title="Star email (s)"
+              >
+                <Star
+                  className={`w-3.5 h-3.5 ${
+                    thread.isStarred
+                      ? 'fill-amber-400 text-amber-500'
+                      : 'text-base-content/40 group-hover:text-base-content/70'
+                  }`}
+                />
+              </button>
+
+              {/* Sender Name */}
+              <div className="w-40 md:w-44 shrink-0 truncate flex items-center gap-1.5">
+                <span className={`truncate ${isUnread ? 'font-bold text-base-content' : 'text-base-content/80'}`}>
+                  {thread.senderName}
+                </span>
+                {thread.messageCount > 1 && (
+                  <span className="text-[10px] text-base-content/50 font-semibold font-mono">
+                    ({thread.messageCount})
+                  </span>
+                )}
+              </div>
+
+              {/* Labels Badges */}
+              <div className="flex items-center gap-1 shrink-0">
+                {thread.labels.filter(l => l !== 'inbox').map((lbl) => (
+                  <span key={lbl} className={`badge badge-xs capitalize font-medium ${getBadgeClass(lbl)}`}>
+                    {lbl}
+                  </span>
+                ))}
+              </div>
+
+              {/* Subject & Snippet */}
+              <div className="flex-1 min-w-0 flex items-center gap-2">
+                <span className={`truncate ${isUnread ? 'font-semibold text-base-content' : 'text-base-content/70'}`}>
+                  {thread.subject}
+                </span>
+                <span className="text-base-content/40 truncate text-[11px] hidden md:inline">
+                  - {thread.snippet}
+                </span>
+              </div>
+
+              {/* Attachment Indicator */}
+              {thread.hasAttachments && (
+                <div className="shrink-0 text-base-content/40" title="Has attachments">
+                  <Paperclip className="w-3.5 h-3.5" />
+                </div>
+              )}
+
+              {/* Time / Date */}
+              <div className="w-20 text-right shrink-0 font-mono text-[11px] text-base-content/60">
+                {thread.latestReceivedAt}
+              </div>
+            </div>
+
+            {/* Mobile Card Layout (below sm) */}
+            <div className="flex sm:hidden flex-col gap-1 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className="flex items-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSelectCheckbox(thread.id);
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}}
+                      className="checkbox checkbox-xs checkbox-primary rounded"
+                      aria-label={`Select thread ${thread.subject}`}
+                    />
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleStar(thread.id);
+                    }}
+                    className="btn btn-ghost btn-circle btn-xs -ml-1 text-base-content/40 hover:text-amber-500"
+                    title="Star email"
+                  >
+                    <Star
+                      className={`w-3.5 h-3.5 ${
+                        thread.isStarred ? 'fill-amber-400 text-amber-500' : 'text-base-content/40'
+                      }`}
+                    />
+                  </button>
+                  <span className={`truncate text-xs ${isUnread ? 'font-bold text-base-content' : 'text-base-content/80'}`}>
+                    {thread.senderName}
+                  </span>
+                  {thread.messageCount > 1 && (
+                    <span className="text-[10px] text-base-content/50 font-semibold font-mono">
+                      ({thread.messageCount})
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {thread.hasAttachments && <Paperclip className="w-3 h-3 text-base-content/40" />}
+                  <span className="font-mono text-[10px] text-base-content/60">
+                    {thread.latestReceivedAt}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pl-6">
+                <div className={`truncate text-xs ${isUnread ? 'font-semibold text-base-content' : 'text-base-content/80'}`}>
+                  {thread.subject}
+                </div>
+                <p className="text-[11px] text-base-content/50 truncate mt-0.5">
+                  {thread.snippet}
+                </p>
+              </div>
+
+              {thread.labels.filter((l) => l !== 'inbox').length > 0 && (
+                <div className="pl-6 flex flex-wrap gap-1 mt-0.5">
+                  {thread.labels
+                    .filter((l) => l !== 'inbox')
+                    .map((lbl) => (
+                      <span key={lbl} className={`badge badge-xs capitalize font-medium ${getBadgeClass(lbl)}`}>
+                        {lbl}
+                      </span>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
         );

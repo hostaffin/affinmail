@@ -95,12 +95,12 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
 
   return (
     <div
-      className={`fixed z-50 transition-all duration-200 shadow-2xl rounded-t-xl overflow-hidden border border-base-300 bg-base-100 flex flex-col ${
+      className={`fixed z-50 transition-all duration-200 shadow-2xl overflow-hidden border border-base-300 bg-base-100 flex flex-col ${
         isMaximized
-          ? 'inset-6 rounded-xl'
+          ? 'inset-0 sm:inset-6 rounded-none sm:rounded-xl'
           : isMinimized
-          ? 'bottom-0 right-10 w-72 h-11'
-          : 'bottom-0 right-10 w-[580px] h-[540px]'
+          ? 'bottom-0 left-0 right-0 sm:left-auto sm:right-6 w-full sm:w-72 h-11 rounded-t-lg'
+          : 'inset-0 sm:inset-auto sm:bottom-0 sm:right-6 w-full sm:w-[580px] h-full sm:h-[540px] rounded-none sm:rounded-t-xl'
       }`}
     >
       {/* Modal Header */}
@@ -184,27 +184,27 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
           </div>
 
           {/* Rich Text Toolbar (TipTap Simulation) */}
-          <div className="h-9 border-y border-base-200 bg-base-200/40 px-3 flex items-center gap-1 select-none shrink-0">
-            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content" title="Bold">
+          <div className="h-9 border-y border-base-200 bg-base-200/40 px-3 flex items-center gap-1 select-none shrink-0 overflow-x-auto">
+            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content shrink-0" title="Bold">
               <Bold className="w-3.5 h-3.5" />
             </button>
-            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content" title="Italic">
+            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content shrink-0" title="Italic">
               <Italic className="w-3.5 h-3.5" />
             </button>
-            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content" title="Underline">
+            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content shrink-0" title="Underline">
               <Underline className="w-3.5 h-3.5" />
             </button>
-            <div className="h-3.5 w-px bg-base-300 mx-1"></div>
-            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content" title="Bullet List">
+            <div className="h-3.5 w-px bg-base-300 mx-1 shrink-0"></div>
+            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content shrink-0" title="Bullet List">
               <List className="w-3.5 h-3.5" />
             </button>
-            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content" title="Numbered List">
+            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content shrink-0" title="Numbered List">
               <ListOrdered className="w-3.5 h-3.5" />
             </button>
-            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content" title="Code Block">
+            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content shrink-0" title="Code Block">
               <Code className="w-3.5 h-3.5" />
             </button>
-            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content" title="Insert Link">
+            <button className="btn btn-ghost btn-circle btn-xs text-base-content/70 hover:text-base-content shrink-0" title="Insert Link">
               <Link2 className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -253,11 +253,11 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
           />
 
           {/* Bottom Action Footer */}
-          <div className="p-3 border-t border-base-200 bg-base-100 flex items-center justify-between">
+          <div className="p-3 border-t border-base-200 bg-base-100 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <button
                 onClick={handleSend}
-                className="btn btn-primary btn-sm px-5 gap-2 normal-case font-semibold shadow-sm shadow-primary/20"
+                className="btn btn-primary btn-sm px-4 sm:px-5 gap-2 normal-case font-semibold shadow-sm shadow-primary/20"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Send</span>
@@ -271,8 +271,8 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                 <Paperclip className="w-4 h-4" />
               </button>
 
-              <span className="text-[11px] text-base-content/50 font-mono">
-                Plan Limit: {planLimitMb} MB
+              <span className="text-[11px] text-base-content/50 font-mono hidden sm:inline">
+                Limit: {planLimitMb} MB
               </span>
             </div>
 

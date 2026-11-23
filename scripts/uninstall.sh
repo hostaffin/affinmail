@@ -70,6 +70,15 @@ rm -f /usr/local/bin/affinmail
 if [ "$PURGE_DATA" = true ]; then
     echo -e "\n${RED}[4/4] Purging all AffinMail directories and data volumes...${NC}"
     rm -rf "${INSTALL_DIR}"
+
+    # Clean firewalld on AlmaLinux/RHEL if present
+    if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld; then
+        for P in 2087/tcp 2083/tcp 25/tcp 465/tcp 587/tcp 993/tcp 4190/tcp; do
+            firewall-cmd --permanent --remove-port="$P" >/dev/null 2>&1 || true
+        done
+        firewall-cmd --reload >/dev/null 2>&1 || true
+    fi
+
     echo -e "${GREEN}[*] All application data, databases, and blobs have been purged.${NC}"
 else
     echo -e "\n${YELLOW}[4/4] Preserving data in ${INSTALL_DIR} for future re-install.${NC}"
