@@ -175,6 +175,8 @@ ufw allow 22/tcp comment 'SSH'
 ufw allow 80/tcp comment 'HTTP ACME'
 ufw allow 443/tcp comment 'HTTPS Webmail'
 ufw allow 443/udp comment 'HTTP/3 QUIC'
+ufw allow 2087/tcp comment 'AffinMail Admin Panel (WHM-Style)'
+ufw allow 2083/tcp comment 'AffinMail Client Webmail'
 ufw allow 25/tcp comment 'Inbound SMTP'
 ufw allow 465/tcp comment 'SMTP Submission SSL'
 ufw allow 587/tcp comment 'SMTP Submission STARTTLS'
@@ -245,11 +247,12 @@ ADMIN_KEY=$(grep "STALWART_ADMIN_SECRET" "${INSTALL_DIR}/deploy/.env" | cut -d= 
 echo -e "\n${CYAN}==================================================================${NC}"
 echo -e "${GREEN}${BOLD}      AffinMail Server Successfully Installed & Running!          ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
-echo -e "Webmail URL:           ${YELLOW}https://${HOSTNAME_INPUT}${NC}"
-echo -e "Hostaffin API Secret:  ${YELLOW}${ADMIN_KEY}${NC}"
-echo -e "Outbound Egress IPv4:  ${YELLOW}${SHARED_IP_INPUT}${NC}"
-echo -e "Storage Engine:        ${YELLOW}${STORAGE_TYPE_INPUT}${NC}"
-echo -e "Management CLI:        ${CYAN}affinmail [status|restart|update|logs|backup]${NC}"
+echo -e "WHM Admin Control Panel: ${YELLOW}https://${HOSTNAME_INPUT}:2087${NC} (or https://${SHARED_IP_INPUT}:2087)"
+echo -e "Client Webmail Portal:   ${YELLOW}https://${HOSTNAME_INPUT}:2083${NC} (or https://${HOSTNAME_INPUT})"
+echo -e "Admin API Secret:        ${YELLOW}${ADMIN_KEY}${NC}"
+echo -e "Outbound Egress IPv4:    ${YELLOW}${SHARED_IP_INPUT}${NC}"
+echo -e "Storage Engine:          ${YELLOW}${STORAGE_TYPE_INPUT}${NC}"
+echo -e "Management CLI:          ${CYAN}affinmail [status|restart|update|logs|backup]${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 if [ "$SETUP_MODE" == "2" ]; then
     echo -e "${GREEN}Mode Note: Express setup completed. You can now connect this node to Hostaffin WHMCS${NC}"

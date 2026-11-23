@@ -10,6 +10,7 @@ interface HeaderBarProps {
   searchInputRef: React.RefObject<HTMLInputElement | null>;
   user: UserProfile;
   quota: PlanQuota;
+  onSwitchToAdmin?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -20,6 +21,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   searchInputRef,
   user,
   quota,
+  onSwitchToAdmin,
 }) => {
   return (
     <header className="h-16 border-b border-base-300 bg-base-100 px-4 flex items-center justify-between gap-4 select-none shrink-0">
@@ -110,6 +112,17 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               </div>
             </li>
             <div className="divider my-1"></div>
+            {onSwitchToAdmin && (
+              <li>
+                <button
+                  onClick={onSwitchToAdmin}
+                  className="text-xs font-semibold text-primary hover:bg-primary/10 flex items-center justify-between"
+                >
+                  <span>WHM Admin Console</span>
+                  <span className="badge badge-xs badge-warning font-mono">:2087</span>
+                </button>
+              </li>
+            )}
             <li>
               <a className="text-xs font-medium">Settings & Sieve Filters</a>
             </li>

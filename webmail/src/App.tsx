@@ -6,6 +6,7 @@ import { EmailThreadList } from './components/EmailThreadList';
 import { ConversationView } from './components/ConversationView';
 import { DockedComposeModal } from './components/DockedComposeModal';
 import { ToastAlert, ToastMessage } from './components/ToastAlert';
+import { AdminPanel } from './components/AdminPanel';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { EmailThread, MailboxFolderId, PlanQuota, UserProfile } from './types';
 
@@ -66,6 +67,18 @@ const INITIAL_THREADS: EmailThread[] = [
 ];
 
 export const App: React.FC = () => {
+  // Admin Mode detection (Port 2087, /admin, or ?mode=admin)
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return (
+        window.location.port === '2087' ||
+        window.location.pathname.startsWith('/admin') ||
+        window.location.search.includes('mode=admin')
+      );
+    }
+    return false;
+  });
+
   // Theme state
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('affinmail_theme') as 'light' | 'dark') || 'light';
@@ -331,6 +344,20 @@ export const App: React.FC = () => {
     true
   );
 
+  if (isAdminMode) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-base-100">
+        <AdminPanel
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onSwitchToWebmail={() => setIsAdminMode(false)}
+          onNotify={addToast}
+        />
+        <ToastAlert toasts={toasts} onDismiss={removeToast} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 select-none">
       {/* 1. Header Bar */}
@@ -342,6 +369,7 @@ export const App: React.FC = () => {
         searchInputRef={searchInputRef}
         user={user}
         quota={quota}
+        onSwitchToAdmin={() => setIsAdminMode(true)}
       />
 
       {/* 2. Main Workspace Layout */}
