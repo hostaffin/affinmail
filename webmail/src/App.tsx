@@ -12,6 +12,7 @@ import { Login } from './components/Login';
 import { CalendarView } from './components/CalendarView';
 import { ContactsView } from './components/ContactsView';
 import { SettingsView } from './components/SettingsView';
+import { ImportView } from './components/ImportView';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { EmailMessage, EmailThread, MailboxFolderId, PlanQuota, UserProfile } from './types';
 import { subscribeStateChanges } from './lib/collab';
@@ -38,7 +39,7 @@ import {
 /** Stalwart has no inbox category tabbing; everything lives in Primary. */
 const CATEGORY: EmailThread['category'] = 'primary';
 
-type AppView = 'mail' | 'calendar' | 'contacts' | 'settings';
+type AppView = 'mail' | 'calendar' | 'contacts' | 'settings' | 'import';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -760,6 +761,7 @@ export const App: React.FC = () => {
           onCloseMobile={() => setIsMobileNavOpen(false)}
           onOpenCalendar={() => setView('calendar')}
           onOpenContacts={() => setView('contacts')}
+          onOpenImport={() => setView('import')}
         />
 
         {/* Central Content Area (Gmail Rounded Card) */}
@@ -769,7 +771,9 @@ export const App: React.FC = () => {
           ) : view === 'contacts' ? (
             <ContactsView onNotify={addToast} />
           ) : view === 'settings' ? (
-            <SettingsView onNotify={addToast} userEmail={currentUser.email} />
+            <SettingsView onNotify={addToast} userEmail={currentUser.email} onOpenImport={() => setView('import')} />
+          ) : view === 'import' ? (
+            <ImportView onNotify={addToast} userEmail={currentUser.email} />
           ) : (
             <>
           {/* Action Toolbar */}

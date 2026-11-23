@@ -21,6 +21,7 @@ import {
   Calendar,
   CalendarDays,
   Users,
+  Upload,
 } from 'lucide-react';
 import { MailboxFolderId, PlanQuota } from '../types';
 
@@ -38,6 +39,7 @@ interface NavigationSidebarProps {
   onCloseMobile?: () => void;
   onOpenCalendar?: () => void;
   onOpenContacts?: () => void;
+  onOpenImport?: () => void;
 }
 
 export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
@@ -54,6 +56,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   onCloseMobile,
   onOpenCalendar,
   onOpenContacts,
+  onOpenImport,
 }) => {
   const [isMoreExpanded, setIsMoreExpanded] = useState(false);
 
@@ -219,6 +222,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
           {[
             { name: 'Calendar', icon: CalendarDays, action: onOpenCalendar },
             { name: 'Contacts', icon: Users, action: onOpenContacts },
+            { name: 'Import', icon: Upload, action: onOpenImport },
           ].map((app) => {
             const Icon = app.icon;
             if (isMini) {

@@ -1,0 +1,10 @@
+From: Import Test <import-test-eml@affinmail.local>
+To: target@affinmail.local
+Subject: Import Test EML
+Message-ID: <import-test-eml-1@affinmail.local>
+Date: Tue, 24 Nov 2026 12:30:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+This is a single .eml message used by the AffinMail import tests.
+It has no Status header, so it must be imported without flags.

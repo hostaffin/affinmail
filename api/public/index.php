@@ -1152,6 +1152,815 @@ function healthCheck(): never
     ]);
 }
 
+/* ---------------------------------------------------------------- import: job storage */
+
+function ensureImportTables(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS import_jobs (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            target_email VARCHAR(255) NOT NULL,
+            target_folder TEXT,
+            status TEXT NOT NULL DEFAULT 'running',
+            total INTEGER NOT NULL DEFAULT 0,
+            imported INTEGER NOT NULL DEFAULT 0,
+            skipped_duplicates INTEGER NOT NULL DEFAULT 0,
+            errors JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_import_jobs_target ON import_jobs(target_email, created_at DESC);
+        CREATE TABLE IF NOT EXISTS imported_messages (
+            target_email VARCHAR(255) NOT NULL,
+            message_id TEXT NOT NULL,
+            email_id TEXT,
+            imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (target_email, message_id)
+        )"
+    );
+    $done = true;
+}
+
+function importJobOut(array $r): array
+{
+    return [
+        'id'                => (string)$r['id'],
+        'type'              => (string)$r['type'],
+        'status'            => (string)$r['status'],
+        'targetEmail'       => (string)$r['target_email'],
+        'targetFolder'      => $r['target_folder'] === null ? null : (string)$r['target_folder'],
+        'total'             => (int)$r['total'],
+        'imported'          => (int)$r['imported'],
+        'skippedDuplicates' => (int)$r['skipped_duplicates'],
+        'errors'            => is_array($r['errors'] ?? null) ? $r['errors'] : (json_decode((string)($r['errors'] ?? '[]'), true) ?: []),
+        'createdAt'         => $r['created_at'],
+        'finishedAt'        => $r['finished_at'],
+    ];
+}
+
+function importUuid(): string
+{
+    $b = random_bytes(16);
+    $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
+    $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($b), 4));
+}
+
+/* ---------------------------------------------------------------- import: JMAP as user */
+
+function userSession(string $email, string $password): array
+{
+    static $cache = [];
+    $key = strtolower($email);
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+
+    $ch = curl_init(cfg('STALWART_URL', 'http://127.0.0.1:8080') . '/jmap/session');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_USERPWD        => $email . ':' . $password,
+    ]);
+    $raw = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $code !== 200) {
+        throw new RuntimeException('target mailbox authentication failed (http ' . $code . ')' . ($err !== '' ? ': ' . $err : ''));
+    }
+    $d = json_decode($raw, true);
+    $acct = $d['primaryAccounts']['urn:ietf:params:jmap:mail'] ?? array_key_first($d['accounts'] ?? []);
+    if (!is_string($acct) || $acct === '') {
+        throw new RuntimeException('target mailbox session has no mail account');
+    }
+    return $cache[$key] = ['accountId' => $acct, 'session' => $d];
+}
+
+function jmapAsUser(string $email, string $password, string $method, array $args): array
+{
+    $payload = json_encode([
+        'using'       => ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:stalwart:jmap'],
+        'methodCalls' => [[$method, $args, 'c1']],
+    ], JSON_UNESCAPED_SLASHES);
+
+    $ch = curl_init(cfg('STALWART_URL', 'http://127.0.0.1:8080') . '/jmap');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 60,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_USERPWD        => $email . ':' . $password,
+    ]);
+    $raw = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $code !== 200) {
+        throw new RuntimeException('jmap ' . $method . ' failed (http ' . $code . ')' . ($err !== '' ? ': ' . $err : ''));
+    }
+    $d = json_decode($raw, true);
+    if (!is_array($d) || !isset($d['methodResponses'][0])) {
+        throw new RuntimeException('jmap ' . $method . ' returned malformed response');
+    }
+    [$name, $res] = [$d['methodResponses'][0][0], $d['methodResponses'][0][1]];
+    if ($name === 'error') {
+        throw new RuntimeException('jmap ' . ($res['type'] ?? 'error') . ': ' . ($res['description'] ?? 'request failed'));
+    }
+    return $res;
+}
+
+function userUploadBlob(string $email, string $password, string $accountId, string $raw): string
+{
+    $ch = curl_init(cfg('STALWART_URL', 'http://127.0.0.1:8080') . '/jmap/upload/' . rawurlencode($accountId) . '/');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $raw,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 120,
+        CURLOPT_HTTPHEADER     => ['Content-Type: message/rfc822'],
+        CURLOPT_USERPWD        => $email . ':' . $password,
+    ]);
+    $body = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($body === false || $code < 200 || $code >= 300) {
+        throw new RuntimeException('blob upload failed (http ' . $code . ')' . ($err !== '' ? ': ' . $err : ''));
+    }
+    $d = json_decode($body, true);
+    $blobId = $d['blobId'] ?? null;
+    if (!is_string($blobId) || $blobId === '') {
+        throw new RuntimeException('blob upload returned no blobId');
+    }
+    return $blobId;
+}
+
+function userMailboxId(string $email, string $password, string $accountId, string $folder): string
+{
+    $res = jmapAsUser($email, $password, 'Mailbox/get', ['accountId' => $accountId, 'ids' => null]);
+    $list = $res['list'] ?? [];
+
+    foreach ($list as $mb) {
+        $role = (string)($mb['role'] ?? '');
+        $name = (string)($mb['name'] ?? '');
+        if ($folder === '' ? $role === 'inbox' : strcasecmp($name, $folder) === 0) {
+            return (string)$mb['id'];
+        }
+    }
+    if ($folder === '') {
+        foreach ($list as $mb) {
+            if (($mb['role'] ?? null) === 'inbox') {
+                return (string)$mb['id'];
+            }
+        }
+        if ($list !== []) {
+            return (string)$list[0]['id'];
+        }
+        throw new RuntimeException('target mailbox has no folders');
+    }
+
+    $set = jmapAsUser($email, $password, 'Mailbox/set', [
+        'accountId' => $accountId,
+        'create'    => ['n1' => ['name' => $folder]],
+    ]);
+    $id = $set['created']['n1']['id'] ?? null;
+    if (!is_string($id) || $id === '') {
+        throw new RuntimeException('could not create target folder: ' . json_encode($set['notCreated'] ?? [], JSON_UNESCAPED_SLASHES));
+    }
+    return $id;
+}
+
+function importOneMessage(
+    string $email,
+    string $password,
+    string $accountId,
+    string $mailboxId,
+    string $raw,
+    array $keywords,
+    string $receivedAt
+): string {
+    $blobId = userUploadBlob($email, $password, $accountId, $raw);
+    $res = jmapAsUser($email, $password, 'Email/import', [
+        'accountId' => $accountId,
+        'emails'    => ['i1' => [
+            'blobId'     => $blobId,
+            'mailboxIds' => [$mailboxId => true],
+            'keywords'   => (object)$keywords,
+            'receivedAt' => $receivedAt,
+        ]],
+    ]);
+    $id = $res['created']['i1']['id'] ?? null;
+    if (!is_string($id) || $id === '') {
+        throw new RuntimeException('email import rejected: ' . json_encode($res['notCreated'] ?? $res, JSON_UNESCAPED_SLASHES));
+    }
+    return $id;
+}
+
+/* ---------------------------------------------------------------- import: parsing */
+
+function messageHeaders(string $raw): array
+{
+    $crlf = strpos($raw, "\r\n\r\n");
+    $lf = strpos($raw, "\n\n");
+    if ($lf !== false && ($crlf === false || $lf < $crlf)) {
+        $pos = $lf;
+    } else {
+        $pos = $crlf === false ? strlen($raw) : $crlf;
+    }
+    $block = substr($raw, 0, $pos);
+    $block = preg_replace("/\r?\n[ \t]+/", ' ', $block) ?? $block;
+
+    $out = [];
+    foreach (preg_split("/\r?\n/", $block) ?: [] as $line) {
+        if (!str_contains($line, ':')) {
+            continue;
+        }
+        [$k, $v] = explode(':', $line, 2);
+        $k = strtolower(trim($k));
+        if ($k === '') {
+            continue;
+        }
+        $out[$k] = isset($out[$k]) ? $out[$k] . ', ' . trim($v) : trim($v);
+    }
+    return $out;
+}
+
+function messageIdOf(array $headers): string
+{
+    $v = trim((string)($headers['message-id'] ?? ''));
+    if ($v === '') {
+        return '';
+    }
+    return preg_match('/<([^>]+)>/', $v, $m) === 1 ? trim($m[1]) : $v;
+}
+
+function isoFromDate(?string $date, ?int $fallback = null): string
+{
+    if (is_string($date) && $date !== '') {
+        $ts = strtotime($date);
+        if ($ts !== false) {
+            return gmdate('Y-m-d\TH:i:s\Z', $ts);
+        }
+    }
+    return gmdate('Y-m-d\TH:i:s\Z', $fallback ?? time());
+}
+
+/** mbox Status/X-Status -> JMAP keywords. */
+function mboxKeywords(array $headers): array
+{
+    $kw = [];
+    $status = strtoupper((string)($headers['status'] ?? ''));
+    if (str_contains($status, 'R')) {
+        $kw['$seen'] = true;
+    }
+    $xs = strtoupper((string)($headers['x-status'] ?? ''));
+    if (str_contains($xs, 'A')) {
+        $kw['$answered'] = true;
+    }
+    if (str_contains($xs, 'F')) {
+        $kw['$flagged'] = true;
+    }
+    if (str_contains($xs, 'D')) {
+        $kw['$draft'] = true;
+    }
+    return $kw;
+}
+
+function imapKeywords(string $flags): array
+{
+    $kw = [];
+    if (stripos($flags, '\Seen') !== false) {
+        $kw['$seen'] = true;
+    }
+    if (stripos($flags, '\Flagged') !== false) {
+        $kw['$flagged'] = true;
+    }
+    if (stripos($flags, '\Answered') !== false) {
+        $kw['$answered'] = true;
+    }
+    if (stripos($flags, '\Draft') !== false) {
+        $kw['$draft'] = true;
+    }
+    return $kw;
+}
+
+function looksLikeMbox(string $raw): bool
+{
+    return preg_match('/^From \S+ (Mon|Tue|Wed|Thu|Fri|Sat|Sun) /m', $raw) === 1;
+}
+
+function parseMbox(string $raw): array
+{
+    $norm = str_replace("\r\n", "\n", $raw);
+    $messages = [];
+    $cur = [];
+    $fromDate = null;
+
+    // Strict "From sender Day Mon DD HH:MM:SS YYYY"; fall back to any "From " boundary
+    // for writers that use a non-standard separator date.
+    $strict = '/^From \S+ (?:\w{3} )?\w{3} [ \d]\d \d{2}:\d{2}:\d{2} \d{4}/';
+    $boundary = preg_match($strict . 'm', $norm) === 1 ? $strict : '/^From \S+ /';
+
+    $push = static function () use (&$messages, &$cur, &$fromDate): void {
+        $body = implode("\n", $cur);
+        if (trim($body) !== '') {
+            $messages[] = ['raw' => $body . "\n", 'keywords' => null, 'receivedAt' => null, 'fromDate' => $fromDate];
+        }
+        $cur = [];
+    };
+
+    foreach (explode("\n", $norm) as $line) {
+        if (str_starts_with($line, 'From ') && preg_match($boundary, $line) === 1) {
+            $push();
+            $ts = strtotime(substr($line, 5));
+            $fromDate = $ts === false ? null : $ts;
+            continue;
+        }
+        // mboxrd unescape: ">From " -> "From ", ">>From " -> ">From "
+        if (preg_match('/^>+From /', $line) === 1) {
+            $line = substr($line, 1);
+        }
+        $cur[] = $line;
+    }
+    $push();
+    return $messages;
+}
+
+/* ---------------------------------------------------------------- import: raw IMAP client */
+
+final class ImapClient
+{
+    /** @var resource */
+    private $sock;
+    private int $seq = 0;
+
+    public function __construct(string $host, int $port, bool $ssl, bool $starttls = false, int $timeout = 30)
+    {
+        $verify = cfg('IMPORT_IMAP_INSECURE') === '1' ? false : true;
+        $ctx = stream_context_create(['ssl' => [
+            'verify_peer'       => $verify,
+            'verify_peer_name'  => $verify,
+            'SNI_enabled'       => true,
+        ]]);
+        $scheme = $ssl ? 'ssl' : 'tcp';
+        $lastError = null;
+        set_error_handler(static function (int $no, string $str) use (&$lastError): bool {
+            $lastError = $str;
+            return true;
+        });
+        try {
+            $sock = stream_socket_client(
+                $scheme . '://' . $host . ':' . $port,
+                $errno,
+                $errstr,
+                $timeout,
+                STREAM_CLIENT_CONNECT,
+                $ctx
+            );
+        } finally {
+            restore_error_handler();
+        }
+        if (!is_resource($sock)) {
+            $why = $errstr !== '' ? $errstr : ($lastError ?? 'connection refused or TLS handshake failed');
+            throw new RuntimeException('IMAP connect to ' . $host . ':' . $port . ' failed: ' . $why
+                . ($ssl ? ' (if the server uses a self-signed certificate, set IMPORT_IMAP_INSECURE=1)' : ''));
+        }
+        stream_set_timeout($sock, $timeout);
+        $this->sock = $sock;
+
+        $greet = $this->readLine();
+        if (preg_match('/^\* (OK|PREAUTH)\b/i', $greet) !== 1) {
+            throw new RuntimeException('IMAP server rejected connection: ' . trim($greet));
+        }
+        if ($starttls) {
+            [$raw, $ok] = $this->command('STARTTLS');
+            if (!$ok) {
+                throw new RuntimeException('IMAP STARTTLS failed: ' . self::lastLine($raw));
+            }
+            if (!stream_socket_enable_crypto($this->sock, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                throw new RuntimeException('IMAP STARTTLS negotiation failed');
+            }
+        }
+    }
+
+    public function login(string $user, string $password): void
+    {
+        [$raw, $ok] = $this->command('LOGIN ' . self::quote($user) . ' ' . self::quote($password));
+        if (!$ok) {
+            throw new RuntimeException('IMAP login failed: ' . self::lastLine($raw));
+        }
+    }
+
+    public function fetchAll(string $folder, int $limit = 0): array
+    {
+        [$raw, $ok] = $this->command('SELECT ' . self::quote($folder));
+        if (!$ok) {
+            throw new RuntimeException('IMAP folder open failed: ' . self::lastLine($raw));
+        }
+        [$raw, $ok] = $this->command('FETCH 1:* (FLAGS INTERNALDATE BODY.PEEK[])');
+        if (!$ok) {
+            throw new RuntimeException('IMAP fetch failed: ' . self::lastLine($raw));
+        }
+        $messages = self::parseFetch($raw);
+        if ($limit > 0 && count($messages) > $limit) {
+            $messages = array_slice($messages, 0, $limit);
+        }
+        return $messages;
+    }
+
+    public function logout(): void
+    {
+        try {
+            $this->command('LOGOUT');
+        } catch (Throwable) {
+        }
+        if (is_resource($this->sock)) {
+            @fclose($this->sock);
+        }
+    }
+
+    private static function quote(string $s): string
+    {
+        return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $s) . '"';
+    }
+
+    private static function lastLine(string $raw): string
+    {
+        $lines = preg_split('/\r?\n/', trim($raw)) ?: [];
+        return (string)($lines === [] ? '' : end($lines));
+    }
+
+    private function readLine(): string
+    {
+        $line = fgets($this->sock);
+        if ($line === false) {
+            throw new RuntimeException('IMAP connection closed unexpectedly');
+        }
+        return $line;
+    }
+
+    /** @return array{0:string,1:bool} raw response text + tagged OK flag */
+    private function command(string $cmd): array
+    {
+        $tag = 'A' . (++$this->seq);
+        if (fwrite($this->sock, $tag . ' ' . $cmd . "\r\n") === false) {
+            throw new RuntimeException('IMAP write failed');
+        }
+        $raw = '';
+        while (true) {
+            $line = $this->readLine();
+            $raw .= $line;
+            if (preg_match('/\{(\d+)\}\r\n$/', $line, $m) === 1) {
+                $need = (int)$m[1];
+                $lit = '';
+                while (strlen($lit) < $need) {
+                    $chunk = fread($this->sock, $need - strlen($lit));
+                    if ($chunk === false || $chunk === '') {
+                        throw new RuntimeException('IMAP literal read failed');
+                    }
+                    $lit .= $chunk;
+                }
+                $raw .= $lit;
+                continue;
+            }
+            if (str_starts_with($line, $tag . ' ')) {
+                return [$raw, preg_match('/^' . preg_quote($tag, '/') . ' OK\b/i', $line) === 1];
+            }
+        }
+    }
+
+    private static function findFetchStart(string $raw, int $offset): ?int
+    {
+        return preg_match('/\* \d+ FETCH \(/i', $raw, $m, PREG_OFFSET_CAPTURE, $offset) === 1 ? $m[0][1] : null;
+    }
+
+    private static function parseFetch(string $raw): array
+    {
+        $messages = [];
+        $pos = 0;
+        $len = strlen($raw);
+
+        while ($pos < $len && ($start = self::findFetchStart($raw, $pos)) !== null) {
+            if (preg_match('/BODY\[\] \{(\d+)\}\r?\n/i', $raw, $bm, PREG_OFFSET_CAPTURE, $start) !== 1) {
+                $pos = $start + 1;
+                continue;
+            }
+            $bodyStart = $bm[0][1] + strlen($bm[0][0]);
+            $bodyLen = (int)$bm[1][0];
+            $head = substr($raw, $start, $bm[0][1] - $start);
+            $body = substr($raw, $bodyStart, $bodyLen);
+
+            $flags = '';
+            if (preg_match('/FLAGS \(([^)]*)\)/i', $head, $fm) === 1) {
+                $flags = $fm[1];
+            }
+            $receivedAt = null;
+            if (preg_match('/INTERNALDATE "([^"]*)"/i', $head, $im) === 1) {
+                foreach (['j-M-Y H:i:s O', 'd-M-Y H:i:s O'] as $fmt) {
+                    $dt = DateTime::createFromFormat($fmt, $im[1]);
+                    if ($dt !== false) {
+                        $receivedAt = $dt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+                        break;
+                    }
+                }
+            }
+
+            if ($body !== '') {
+                $messages[] = [
+                    'raw'        => $body,
+                    'keywords'   => imapKeywords($flags),
+                    'receivedAt' => $receivedAt,
+                    'fromDate'   => null,
+                ];
+            }
+            $pos = $bodyStart + $bodyLen;
+        }
+        return $messages;
+    }
+}
+
+/* ---------------------------------------------------------------- import: job runner */
+
+function importRemember(string $targetEmail, string $messageId, ?string $emailId): void
+{
+    static $st = null;
+    $st ??= db()->prepare(
+        'INSERT INTO imported_messages (target_email, message_id, email_id) VALUES (?, ?, ?)
+         ON CONFLICT (target_email, message_id) DO NOTHING'
+    );
+    $st->execute([strtolower($targetEmail), $messageId, $emailId]);
+}
+
+function importRun(string $type, string $targetEmail, string $targetFolder, string $targetPassword, array $messages): never
+{
+    ensureImportTables();
+    $targetEmail = strtolower(trim($targetEmail));
+    $targetFolder = trim($targetFolder);
+
+    if (!validEmail($targetEmail)) {
+        fail(400, 'field targetEmail must be a valid email address');
+    }
+    $ident = $GLOBALS['import_identity'] ?? ['kind' => 'admin', 'username' => null];
+    if ($ident['kind'] === 'user' && strcasecmp((string)$ident['username'], $targetEmail) !== 0) {
+        fail(403, 'targetEmail must match the authenticated user');
+    }
+    if ($messages === []) {
+        fail(400, 'no messages found to import');
+    }
+    if (count($messages) > 10000) {
+        fail(400, 'import exceeds 10000 messages');
+    }
+
+    $password = $targetPassword;
+    if ($password === '') {
+        $st = db()->prepare('SELECT secret_vault FROM mailboxes WHERE email = ?');
+        $st->execute([$targetEmail]);
+        $vault = $st->fetchColumn();
+        if (!is_string($vault) || $vault === '') {
+            fail(400, 'target mailbox not found in AffinMail or has no stored password; supply targetPassword');
+        }
+        try {
+            $password = vaultDecrypt($vault);
+        } catch (Throwable $e) {
+            fail(400, 'stored target password could not be decrypted: ' . $e->getMessage());
+        }
+    }
+
+    try {
+        $session = userSession($targetEmail, $password);
+        $accountId = (string)$session['accountId'];
+        $mailboxId = userMailboxId($targetEmail, $password, $accountId, $targetFolder);
+    } catch (RuntimeException $e) {
+        fail(400, $e->getMessage());
+    }
+
+    $pdo = db();
+    $jobId = importUuid();
+    $pdo->prepare(
+        'INSERT INTO import_jobs (id, type, target_email, target_folder, status, total)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute([$jobId, $type, $targetEmail, $targetFolder === '' ? null : $targetFolder, 'running', count($messages)]);
+
+    $imported = 0;
+    $skipped = 0;
+    $errors = [];
+    $seen = [];
+    $maxMessage = 25 * 1024 * 1024;
+
+    try {
+        foreach ($messages as $m) {
+            $raw = (string)($m['raw'] ?? '');
+            if ($raw === '') {
+                continue;
+            }
+            $headers = messageHeaders($raw);
+            $mid = messageIdOf($headers);
+            $key = $mid !== '' ? $mid : 'sha256:' . hash('sha256', $raw);
+
+            if (strlen($raw) > $maxMessage) {
+                $errors[] = ['messageId' => $key, 'error' => 'message exceeds 25MB limit'];
+                continue;
+            }
+            if (isset($seen[$key])) {
+                $skipped++;
+                continue;
+            }
+            $seen[$key] = true;
+
+            $st = $pdo->prepare('SELECT 1 FROM imported_messages WHERE target_email = ? AND message_id = ?');
+            $st->execute([$targetEmail, $key]);
+            if ($st->fetchColumn()) {
+                $skipped++;
+                continue;
+            }
+
+            if ($mid !== '') {
+                try {
+                    $q = jmapAsUser($targetEmail, $password, 'Email/query', [
+                        'accountId' => $accountId,
+                        'filter'    => ['header' => ['Message-ID', '<' . $mid . '>']],
+                        'limit'     => 1,
+                    ]);
+                    if (($q['ids'] ?? []) !== []) {
+                        $skipped++;
+                        importRemember($targetEmail, $key, null);
+                        continue;
+                    }
+                } catch (Throwable) {
+                    // best effort: server may not support header filters
+                }
+            }
+
+            $receivedAt = $m['receivedAt']
+                ?? isoFromDate($headers['date'] ?? null, $m['fromDate'] ?? null);
+            $keywords = $m['keywords'] ?? mboxKeywords($headers);
+
+            try {
+                $emailId = importOneMessage($targetEmail, $password, $accountId, $mailboxId, $raw, $keywords, $receivedAt);
+                $imported++;
+                importRemember($targetEmail, $key, $emailId);
+            } catch (Throwable $e) {
+                $errors[] = ['messageId' => $key, 'error' => $e->getMessage()];
+            }
+        }
+    } catch (Throwable $e) {
+        $pdo->prepare('UPDATE import_jobs SET status = ?, errors = ?::jsonb, finished_at = NOW() WHERE id = ?')
+            ->execute(['failed', json_encode([['messageId' => '', 'error' => $e->getMessage()]], JSON_UNESCAPED_SLASHES), $jobId]);
+        fail(500, $e->getMessage());
+    }
+
+    $pdo->prepare(
+        'UPDATE import_jobs SET status = ?, imported = ?, skipped_duplicates = ?, errors = ?::jsonb, finished_at = NOW()
+         WHERE id = ?'
+    )->execute(['completed', $imported, $skipped, json_encode($errors, JSON_UNESCAPED_SLASHES), $jobId]);
+
+    $st = $pdo->prepare('SELECT * FROM import_jobs WHERE id = ?');
+    $st->execute([$jobId]);
+    $row = $st->fetch();
+    if (!is_array($row)) {
+        fail(500, 'import job disappeared');
+    }
+    ok(importJobOut($row), 201);
+}
+
+/* ---------------------------------------------------------------- import: endpoints */
+
+function importUploadFile(): string
+{
+    $max = (int)cfg('IMPORT_MAX_BYTES', '52428800');
+
+    if (isset($_FILES['file']) && is_array($_FILES['file'])) {
+        $f = $_FILES['file'];
+        $err = (int)($f['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
+            fail(413, 'uploaded file exceeds the server limit');
+        }
+        if ($err !== UPLOAD_ERR_OK) {
+            fail(400, 'file upload failed (code ' . $err . ')');
+        }
+        $size = (int)($f['size'] ?? 0);
+        if ($size <= 0) {
+            fail(400, 'uploaded file is empty');
+        }
+        if ($size > $max) {
+            fail(413, 'file exceeds import limit of ' . $max . ' bytes');
+        }
+        $raw = file_get_contents((string)$f['tmp_name']);
+        if ($raw === false || $raw === '') {
+            fail(400, 'could not read uploaded file');
+        }
+        return $raw;
+    }
+
+    $raw = file_get_contents('php://input');
+    if ($raw === false || $raw === '') {
+        $len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($len > 0) {
+            fail(413, 'upload exceeded the PHP post_max_size limit (' . ini_get('post_max_size') . ')');
+        }
+        fail(400, "multipart field 'file' is required");
+    }
+    if (strlen($raw) > $max) {
+        fail(413, 'file exceeds import limit of ' . $max . ' bytes');
+    }
+    return $raw;
+}
+
+function importFormField(string $key): string
+{
+    $v = $_POST[$key] ?? $_GET[$key] ?? '';
+    return is_string($v) ? trim($v) : '';
+}
+
+function importMbox(): never
+{
+    $raw = importUploadFile();
+    importRun('mbox', importFormField('targetEmail'), importFormField('targetFolder'), importFormField('targetPassword'), parseMbox($raw));
+}
+
+function importEml(): never
+{
+    $raw = importUploadFile();
+    $messages = looksLikeMbox($raw)
+        ? parseMbox($raw)
+        : [['raw' => $raw, 'keywords' => null, 'receivedAt' => null, 'fromDate' => null]];
+    importRun('eml', importFormField('targetEmail'), importFormField('targetFolder'), importFormField('targetPassword'), $messages);
+}
+
+function importImap(): never
+{
+    $b = body();
+    $host = trim(stringField($b, 'host', 255));
+    if (preg_match('/^[A-Za-z0-9.\-:\[\]]+$/', $host) !== 1) {
+        fail(400, "field 'host' invalid");
+    }
+    $username = stringField($b, 'username', 255);
+    $password = stringField($b, 'password', 1024);
+    $ssl = (bool)($b['ssl'] ?? true);
+    $starttls = (bool)($b['starttls'] ?? false);
+    $port = intField($b, 'port', $ssl ? 993 : 143, 1, 65535);
+    $sourceFolder = stringField($b, 'sourceFolder', 255, false) ?: 'INBOX';
+    $targetEmail = stringField($b, 'targetEmail');
+    $targetFolder = stringField($b, 'targetFolder', 255, false);
+    $targetPassword = stringField($b, 'targetPassword', 1024, false);
+    $limit = intField($b, 'limit', 0, 0, 100000);
+
+    try {
+        $client = new ImapClient($host, $port, $ssl, $starttls);
+        $client->login($username, $password);
+        $messages = $client->fetchAll($sourceFolder, $limit);
+        $client->logout();
+    } catch (RuntimeException $e) {
+        fail(400, $e->getMessage());
+    }
+
+    importRun('imap', $targetEmail, $targetFolder, $targetPassword, $messages);
+}
+
+function importJobGet(string $id): never
+{
+    ensureImportTables();
+    $st = db()->prepare('SELECT * FROM import_jobs WHERE id = ?');
+    $st->execute([$id]);
+    $row = $st->fetch();
+    if (!is_array($row)) {
+        fail(404, 'import job not found');
+    }
+    $ident = $GLOBALS['import_identity'] ?? ['kind' => 'admin', 'username' => null];
+    if ($ident['kind'] === 'user' && strcasecmp((string)$row['target_email'], (string)$ident['username']) !== 0) {
+        fail(403, 'job belongs to another mailbox');
+    }
+    ok(importJobOut($row));
+}
+
+function importJobList(): never
+{
+    ensureImportTables();
+    $ident = $GLOBALS['import_identity'] ?? ['kind' => 'admin', 'username' => null];
+    $target = strtolower(trim((string)($_GET['targetEmail'] ?? '')));
+    if ($ident['kind'] === 'user') {
+        $target = (string)$ident['username'];
+    }
+    if ($target !== '') {
+        $st = db()->prepare('SELECT * FROM import_jobs WHERE target_email = ? ORDER BY created_at DESC LIMIT 50');
+        $st->execute([$target]);
+    } else {
+        $st = db()->query('SELECT * FROM import_jobs ORDER BY created_at DESC LIMIT 50');
+    }
+    $rows = $st->fetchAll();
+    ok(['jobs' => array_map('importJobOut', $rows), 'count' => count($rows)]);
+}
+
 /* ---------------------------------------------------------------- auth */
 
 function bearer(): string
@@ -1174,6 +1983,47 @@ function authenticate(): string
     return $given;
 }
 
+function basicCredentials(): ?array
+{
+    $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if (!is_string($h) || preg_match('/^Basic\s+(.+)$/i', $h, $m) !== 1) {
+        return null;
+    }
+    $decoded = base64_decode(trim($m[1]), true);
+    if (!is_string($decoded) || !str_contains($decoded, ':')) {
+        return null;
+    }
+    [$user, $pass] = explode(':', $decoded, 2);
+    return ['email' => $user, 'password' => $pass];
+}
+
+/**
+ * Import routes accept the admin Bearer token OR a user's Basic auth.
+ * Returns ['kind' => 'admin'] or ['kind' => 'user', 'username' => email].
+ */
+function authenticateImport(): array
+{
+    $basic = basicCredentials();
+    if ($basic !== null) {
+        if (!validEmail($basic['email'])) {
+            fail(401, 'unauthorized');
+        }
+        try {
+            userSession($basic['email'], $basic['password']);
+        } catch (RuntimeException) {
+            fail(401, 'unauthorized');
+        }
+        return ['kind' => 'user', 'username' => strtolower($basic['email'])];
+    }
+
+    $expected = cfg('AFFINMAIL_ADMIN_TOKEN');
+    $given = bearer();
+    if ($expected === '' || $given === '' || !hash_equals($expected, $given)) {
+        fail(401, 'unauthorized');
+    }
+    return ['kind' => 'admin', 'username' => null];
+}
+
 function rateLimit(string $token): void
 {
     $key = 'ratelimit:api:' . hash('sha256', $token !== '' ? $token : ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
@@ -1191,6 +2041,26 @@ function rateLimit(string $token): void
     }
 }
 
+/* ---------------------------------------------------------------- import: parser self-test */
+
+if (PHP_SAPI === 'cli' && in_array('--self-test-parsers', $argv ?? [], true)) {
+    $raw = file_get_contents(__DIR__ . '/../../tests/fixtures/sample.mbox');
+    $msgs = parseMbox((string)$raw);
+    assert(count($msgs) === 3);
+    $h = array_map(static fn(array $m): array => messageHeaders((string)$m['raw']), $msgs);
+    assert(messageIdOf($h[0]) === 'import-test-1@affinmail.local');
+    assert(messageIdOf($h[2]) === 'import-test-3@affinmail.local');
+    assert(mboxKeywords($h[1]) === ['$seen' => true]);
+    assert(mboxKeywords($h[0]) === []);
+    assert(str_contains((string)$msgs[1]['raw'], "\nFrom this line"), 'mboxrd >From must be unescaped');
+    assert(isoFromDate((string)$h[0]['date']) === '2026-11-24T10:00:00Z');
+    $eml = (string)file_get_contents(__DIR__ . '/../../tests/fixtures/sample.eml');
+    assert(!looksLikeMbox($eml));
+    assert(messageIdOf(messageHeaders($eml)) === 'import-test-eml-1@affinmail.local');
+    echo "parser self-test OK\n";
+    exit(0);
+}
+
 /* ---------------------------------------------------------------- dispatch */
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -1205,8 +2075,15 @@ if (!str_starts_with($path, API_PREFIX . '/')) {
     fail(404, 'not found');
 }
 
-$token = authenticate();
-rateLimit($token);
+$isImport = str_starts_with($path, API_PREFIX . '/import/');
+
+if ($isImport) {
+    $GLOBALS['import_identity'] = authenticateImport();
+    rateLimit((string)($GLOBALS['import_identity']['username'] ?? bearer()));
+} else {
+    $token = authenticate();
+    rateLimit($token);
+}
 $GLOBALS['audit'] = [
     'agent'  => $_SERVER['HTTP_X_AGENT_ID'] ?? 'unknown',
     'method' => $method,
@@ -1277,6 +2154,18 @@ try {
         // sso
         case $n === 2 && $seg[0] === 'auth' && $seg[1] === 'sso-token' && $method === 'POST':
             ssoToken();
+
+        // import / migration
+        case $n === 2 && $seg[0] === 'import' && $seg[1] === 'mbox' && $method === 'POST':
+            importMbox();
+        case $n === 2 && $seg[0] === 'import' && $seg[1] === 'eml' && $method === 'POST':
+            importEml();
+        case $n === 2 && $seg[0] === 'import' && $seg[1] === 'imap' && $method === 'POST':
+            importImap();
+        case $n === 2 && $seg[0] === 'import' && $seg[1] === 'jobs' && $method === 'GET':
+            importJobList();
+        case $n === 3 && $seg[0] === 'import' && $seg[1] === 'jobs' && $method === 'GET':
+            importJobGet($seg[2]);
 
         default:
             fail(404, 'not found');

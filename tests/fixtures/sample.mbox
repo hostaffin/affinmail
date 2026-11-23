@@ -1,0 +1,35 @@
+From import-test-one@affinmail.local Tue Nov 24 10:00:00 2026
+From: Import Test <import-test-1@affinmail.local>
+To: target@affinmail.local
+Subject: Import Test One
+Message-ID: <import-test-1@affinmail.local>
+Date: Tue, 24 Nov 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Message one body. Plain text, a few lines long, used by the mbox import test.
+It should be imported without any keyword flags.
+
+From import-test-two@affinmail.local Tue Nov 24 11:00:00 2026
+From: Import Test <import-test-2@affinmail.local>
+To: target@affinmail.local
+Subject: Import Test Two
+Message-ID: <import-test-2@affinmail.local>
+Date: Tue, 24 Nov 2026 11:00:00 +0000
+Status: R
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Message two body. The Status: R header must map to the $seen keyword.
+>From this line was escaped with a greater-than sign by the mbox writer.
+
+From import-test-three@affinmail.local Tue Nov 24 12:00:00 2026
+From: Import Test <import-test-3@affinmail.local>
+To: target@affinmail.local
+Subject: Import Test Three
+Message-ID: <import-test-3@affinmail.local>
+Date: Tue, 24 Nov 2026 12:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Message three body. Plain text, last message in the sample mailbox.

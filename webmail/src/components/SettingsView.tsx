@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Calendar, Filter, KeyRound, Loader2, Plus, Save, Trash2, User, Zap } from 'lucide-react';
+import { Calendar, Filter, KeyRound, Loader2, Plus, Save, Trash2, Upload, User, Zap } from 'lucide-react';
 import {
   buildVacationSieve,
   changePassword,
@@ -18,13 +18,14 @@ import {
 interface SettingsViewProps {
   onNotify: (message: string, type?: 'error' | 'success' | 'info') => void;
   userEmail: string;
+  onOpenImport?: () => void;
 }
 
 type Section = 'profile' | 'password' | 'filters' | 'vacation';
 
 const NEW_SCRIPT = `require ["fileinto"];\n\n# Example: file invoices into a folder\n# if header :contains "subject" "invoice" {\n#     fileinto "Invoices";\n# }\n`;
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail, onOpenImport }) => {
   const [section, setSection] = useState<Section>('profile');
 
   // Profile
@@ -228,6 +229,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail 
             </button>
           );
         })}
+        {onOpenImport && (
+          <button
+            onClick={onOpenImport}
+            className="w-full flex items-center gap-2.5 px-3 h-9 rounded-r-full text-xs font-medium transition-colors text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <Upload className="w-4 h-4" />
+            <span className="truncate">Import mail</span>
+          </button>
+        )}
       </nav>
 
       <div className="flex-1 overflow-y-auto p-5">
