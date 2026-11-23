@@ -1,0 +1,19 @@
+{
+  "@type": "PostgreSql",
+  "connectTimeout": 15000,
+  "responseTimeout": 120000,
+  "useTls": false,
+  "allowInvalidCerts": false,
+  "poolMaxConnections": null,
+  "poolRecyclingMethod": "fast",
+  "readReplicas": {},
+  "host": "127.0.0.1",
+  "port": 5432,
+  "database": "affinmail",
+  "authUsername": "affinmail_user",
+  "authSecret": {
+    "@type": "EnvironmentVariable",
+    "variableName": "STALWART_DB_PASSWORD"
+  },
+  "options": null
+}
