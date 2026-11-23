@@ -11,6 +11,9 @@ out/
 target/
 *.tar.gz
 *.zip
+# Keep production compiled webmail static assets for Caddy
+!webmail/dist/
+!webmail/dist/**
 
 # Environment & Credentials
 .env
