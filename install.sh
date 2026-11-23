@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AffinMail Standalone Production Universal Installer
+# AffinMail Standalone Production Universal Installer (Zero Docker Dependency)
 # Compatible with both curl and wget:
 # bash <(curl -fsSL https://raw.githubusercontent.com/.../install.sh 2>/dev/null || wget -qO- https://raw.githubusercontent.com/.../install.sh)
 # Supported OS: 
 #   - AlmaLinux 8 / 9, Rocky Linux 8 / 9, RHEL / CentOS Stream (x86_64 & ARM64)
 #   - Ubuntu 22.04 / 24.04 LTS, Debian 12 (x86_64 & ARM64)
+# Architecture:
+#   - 100% Native Bare-Metal execution (Native Systemd Services)
+#   - Zero Docker daemon, Zero container overhead
 # ==============================================================================
 
 set -uo pipefail
@@ -14,7 +17,7 @@ LOG_FILE="/var/log/affinmail-install.log"
 INSTALL_DIR="/opt/affinmail"
 REPO_URL="https://github.com/hostaffin/affinmail.git"
 REPO_BRANCH="${AFFINMAIL_BRANCH:-master}"
-VERSION="1.4.0"
+VERSION="2.0.0-native"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,7 +36,7 @@ chmod 600 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo -e "\n${CYAN}==================================================================${NC}"
-echo -e "${BLUE}${BOLD}   AffinMail Enterprise Email Server - Installer (v${VERSION})   ${NC}"
+echo -e "${BLUE}${BOLD}   AffinMail Enterprise Email Server - Native Installer (v${VERSION})   ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 echo -e "${GREEN}[*] Real-time installation log is being written to:${NC} ${BOLD}${LOG_FILE}${NC}"
 echo -e "${GREEN}[*] Timestamp:${NC} $(date -u)"
@@ -117,45 +120,92 @@ if [ "$TOTAL_SWAP_MB" -lt 512 ] && [ "$TOTAL_RAM_MB" -lt 3500 ]; then
     fi
 fi
 
-# 7. Bootstrap Essential Packages Based on OS Family
-echo -e "\n${BLUE}[1/6] Bootstrapping Essential System Packages...${NC}"
+# 7. Bootstrap Essential Native System Packages (Zero Docker)
+echo -e "\n${BLUE}[1/6] Bootstrapping Native System Packages (PostgreSQL, Redis, Firewalls)...${NC}"
 if [ "$OS_FAMILY" == "rhel" ]; then
     # AlmaLinux / Rocky / RHEL
     echo -e "${GREEN}[*] Installing packages via DNF (AlmaLinux/RHEL)...${NC}"
     dnf install -y epel-release || true
-    dnf install -y --skip-broken curl wget git firewalld bind-utils postgresql rsync tar jq openssl iptables
+    dnf install -y --skip-broken curl wget git firewalld bind-utils postgresql-server postgresql-contrib redis rsync tar jq openssl iptables procps-ng
+    # Initialize PostgreSQL data cluster if first time
+    if [ ! -f /var/lib/pgsql/data/PG_VERSION ]; then
+        echo -e "${GREEN}[*] Initializing PostgreSQL data directory...${NC}"
+        postgresql-setup --initdb 2>/dev/null || /usr/bin/postgresql-setup --initdb 2>/dev/null || true
+    fi
+    # Configure pg_hba.conf for localhost md5 authentication
+    if [ -f /var/lib/pgsql/data/pg_hba.conf ]; then
+        if ! grep -q "host    all             all             127.0.0.1/32" /var/lib/pgsql/data/pg_hba.conf; then
+            echo "host    all             all             127.0.0.1/32            md5" >> /var/lib/pgsql/data/pg_hba.conf
+        fi
+    fi
+    systemctl daemon-reload || true
+    systemctl enable --now postgresql
+    systemctl enable --now redis
 else
     # Ubuntu / Debian
     echo -e "${GREEN}[*] Installing packages via APT (Ubuntu/Debian)...${NC}"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq curl wget git ufw fail2ban dnsutils postgresql-client rsync tar jq openssl
+    apt-get install -y -qq curl wget git ufw fail2ban dnsutils postgresql postgresql-contrib redis-server rsync tar jq openssl procps
+    systemctl daemon-reload || true
+    systemctl enable --now postgresql
+    systemctl enable --now redis-server || systemctl enable --now redis
 fi
 
-# 8. Bootstrap Docker Engine
-echo -e "\n${BLUE}[2/6] Verifying / Installing Docker Engine...${NC}"
-if ! command -v docker &> /dev/null; then
-    echo -e "${GREEN}[*] Installing Docker Engine...${NC}"
-    if [ "$OS_FAMILY" == "rhel" ]; then
-        dnf install -y dnf-plugins-core
-        dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || true
-        # Use --allowerasing to resolve conflicting runc/podman packages on AlmaLinux
-        dnf install -y --allowerasing docker-ce docker-ce-cli containerd.io docker-compose-plugin || curl -fsSL https://get.docker.com | sh
-    else
-        curl -fsSL https://get.docker.com | sh
-    fi
-    systemctl daemon-reload || true
-    systemctl enable --now docker
+# 8. Install Native Standalone Binaries: Caddy & Stalwart Mail Engine
+echo -e "\n${BLUE}[2/6] Installing Native High-Performance Binaries (Caddy & Stalwart)...${NC}"
+
+# 8a. Install Native Caddy 2 Binary
+CADDY_ARCH="amd64"
+if [ "$ARCH" == "aarch64" ]; then
+    CADDY_ARCH="arm64"
+fi
+
+if ! command -v caddy &>/dev/null; then
+    echo -e "${GREEN}[*] Downloading native Caddy binary (${CADDY_ARCH})...${NC}"
+    curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=${CADDY_ARCH}" -o /usr/local/bin/caddy 2>/dev/null || \
+    curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_${CADDY_ARCH}.tar.gz" | tar -xz -C /tmp && mv /tmp/caddy /usr/local/bin/caddy
+    chmod 755 /usr/local/bin/caddy
+    echo -e "${GREEN}[*] Caddy installed successfully: $(/usr/local/bin/caddy version 2>/dev/null | head -n1)${NC}"
 else
-    echo -e "${GREEN}[*] Docker Engine already present: $(docker --version)${NC}"
-    systemctl enable --now docker
+    echo -e "${GREEN}[*] Caddy binary already present: $(caddy version 2>/dev/null | head -n1)${NC}"
+fi
+
+# 8b. Install Native Stalwart Mail Server Binary
+STALWART_ARCH="x86_64-unknown-linux-musl"
+if [ "$ARCH" == "aarch64" ]; then
+    STALWART_ARCH="aarch64-unknown-linux-musl"
+fi
+
+if [ ! -f /usr/local/bin/stalwart-mail ]; then
+    echo -e "${GREEN}[*] Downloading native Stalwart Mail Server binary (${STALWART_ARCH})...${NC}"
+    TMP_STALWART=$(mktemp -d)
+    if curl -fsSL "https://github.com/stalwartlabs/stalwart/releases/latest/download/stalwart-${STALWART_ARCH}.tar.gz" -o "${TMP_STALWART}/stalwart.tar.gz" 2>/dev/null; then
+        tar -xzf "${TMP_STALWART}/stalwart.tar.gz" -C "${TMP_STALWART}"
+        if [ -f "${TMP_STALWART}/stalwart-mail" ]; then
+            mv "${TMP_STALWART}/stalwart-mail" /usr/local/bin/stalwart-mail
+        elif [ -f "${TMP_STALWART}/stalwart" ]; then
+            mv "${TMP_STALWART}/stalwart" /usr/local/bin/stalwart-mail
+        fi
+    elif curl --proto '=https' --tlsv1.2 -sSf https://get.stalw.art/install.sh 2>/dev/null; then
+        curl --proto '=https' --tlsv1.2 -sSf https://get.stalw.art/install.sh | sh || true
+        if [ -f /usr/local/bin/stalwart ] && [ ! -f /usr/local/bin/stalwart-mail ]; then
+            ln -sf /usr/local/bin/stalwart /usr/local/bin/stalwart-mail
+        fi
+    fi
+    rm -rf "${TMP_STALWART}"
+    chmod 755 /usr/local/bin/stalwart-mail 2>/dev/null || true
+    ln -sf /usr/local/bin/stalwart-mail /usr/local/bin/stalwart 2>/dev/null || true
+    echo -e "${GREEN}[*] Stalwart native mail engine installed to /usr/local/bin/stalwart-mail${NC}"
+else
+    echo -e "${GREEN}[*] Stalwart mail engine binary already present at /usr/local/bin/stalwart-mail${NC}"
 fi
 
 # 9. Fetch / Clone Codebase to /opt/affinmail
 echo -e "\n${BLUE}[3/6] Preparing AffinMail Core in ${INSTALL_DIR}...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ -f "${SCRIPT_DIR}/deploy/docker-compose.yml" ]; then
+if [ -f "${SCRIPT_DIR}/deploy/Caddyfile" ] && [ -d "${SCRIPT_DIR}/webmail" ]; then
     # Running from local cloned repo
     mkdir -p "${INSTALL_DIR}"
     rsync -a --exclude='.git' --exclude='webmail/node_modules' "${SCRIPT_DIR}/" "${INSTALL_DIR}/"
@@ -167,24 +217,16 @@ else
     echo -e "${GREEN}[*] Fetching latest production release from GitHub...${NC}"
     rm -rf "${INSTALL_DIR}"
     git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" 2>/dev/null || {
-        # Fallback if git fails: tarball stream
         mkdir -p "${INSTALL_DIR}"
         curl -fsSL "https://github.com/hostaffin/affinmail/archive/refs/heads/${REPO_BRANCH}.tar.gz" | tar -xz --strip-components=1 -C "${INSTALL_DIR}"
     }
 fi
 
 mkdir -p "${INSTALL_DIR}/data/blobs"
+mkdir -p "${INSTALL_DIR}/data/queue"
 mkdir -p "${INSTALL_DIR}/backups"
+chmod -R 750 "${INSTALL_DIR}"
 cd "${INSTALL_DIR}"
-
-# SELinux Permissions Handling on AlmaLinux/RHEL
-if [ "$OS_FAMILY" == "rhel" ] && command -v getenforce &> /dev/null; then
-    if [ "$(getenforce)" != "Disabled" ]; then
-        echo -e "${GREEN}[*] Setting SELinux permissions for Docker volume mounts...${NC}"
-        chcon -Rt svirt_sandbox_file_t "${INSTALL_DIR}" 2>/dev/null || true
-        setsebool -P container_manage_cgroup 1 2>/dev/null || true
-    fi
-fi
 
 # Auto-detect Public IP
 AUTO_IP=$(curl -s -4 ifconfig.me 2>/dev/null || wget -qO- -4 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
@@ -285,7 +327,6 @@ PORTS=(
 
 if [ "$OS_FAMILY" == "rhel" ]; then
     # AlmaLinux Firewalld
-    # Pre-add SSH port offline before starting to prevent disconnect!
     if command -v firewall-offline-cmd &>/dev/null; then
         firewall-offline-cmd --add-port="${ACTIVE_SSH_PORT}/tcp" --add-service=ssh >/dev/null 2>&1 || true
     fi
@@ -310,26 +351,29 @@ else
     echo -e "${GREEN}[*] UFW rules configured successfully.${NC}"
 fi
 
-# 12. Cryptographic Credentials & Environment File
-echo -e "\n${BLUE}[5/6] Generating Strong Encryption Keys & .env Config...${NC}"
+# 12. Generate Credentials, .env Config & Initialize Native PostgreSQL
+echo -e "\n${BLUE}[5/6] Initializing Native Database & Configuration...${NC}"
+
 if [ ! -f "deploy/.env" ]; then
     DB_PASS=$(openssl rand -hex 16)
-    REDIS_PASS=$(openssl rand -hex 16)
     ADMIN_SECRET=$(openssl rand -hex 24)
 
     cat > deploy/.env <<EOF
 MAIL_HOSTNAME=${HOSTNAME_INPUT}
 SHARED_OUTBOUND_IPV4=${SHARED_IP_INPUT}
 
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
 POSTGRES_USER=affinmail_user
 POSTGRES_PASSWORD=${DB_PASS}
 POSTGRES_DB=affinmail
 
-REDIS_PASSWORD=${REDIS_PASS}
+STALWART_REDIS_URL=redis://127.0.0.1:6379
 STALWART_ADMIN_SECRET=${ADMIN_SECRET}
 
 STORAGE_BLOB_TYPE=${STORAGE_TYPE_INPUT}
 STORAGE_LOCAL_PATH=${INSTALL_DIR}/data/blobs
+WEBMAIL_ROOT=${INSTALL_DIR}/webmail/dist
 
 S3_BUCKET=${S3_BUCKET_VAL}
 S3_REGION=${S3_REGION_VAL}
@@ -345,15 +389,51 @@ EOF
     chmod 600 deploy/.env
 else
     echo -e "${YELLOW}[*] Existing deploy/.env found, preserving established credentials.${NC}"
+    DB_PASS=$(grep "POSTGRES_PASSWORD" deploy/.env | cut -d= -f2)
 fi
 
-# 13. Start Docker Stack
-echo -e "\n${BLUE}[6/6] Pulling Multi-Arch Container Images & Starting Services...${NC}"
-cd "${INSTALL_DIR}/deploy"
-docker compose pull
-docker compose up -d
+# Wait for PostgreSQL daemon to accept connections
+echo -e "${GREEN}[*] Connecting to native PostgreSQL daemon...${NC}"
+for i in {1..30}; do
+    if sudo -u postgres pg_isready >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
 
-# 14. Register Crons and CLI
+# Create native PostgreSQL user and database
+echo -e "${GREEN}[*] Configuring PostgreSQL user and database...${NC}"
+sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='affinmail_user'" | grep -q 1 || \
+sudo -u postgres psql -c "CREATE USER affinmail_user WITH ENCRYPTED PASSWORD '${DB_PASS}';"
+
+sudo -u postgres psql -c "ALTER USER affinmail_user WITH ENCRYPTED PASSWORD '${DB_PASS}';" 2>/dev/null || true
+
+sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='affinmail'" | grep -q 1 || \
+sudo -u postgres psql -c "CREATE DATABASE affinmail OWNER affinmail_user;"
+
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE affinmail TO affinmail_user;" 2>/dev/null || true
+sudo -u postgres psql -d affinmail -c "GRANT ALL ON SCHEMA public TO affinmail_user;" 2>/dev/null || true
+
+# Execute initial schema & seeds if tables not yet populated
+TABLE_COUNT=$(sudo -u postgres psql -d affinmail -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo 0)
+if [ "${TABLE_COUNT:-0}" -lt 5 ]; then
+    echo -e "${GREEN}[*] Running initial SQL schema & seed migrations...${NC}"
+    sudo -u postgres psql -d affinmail -f "${INSTALL_DIR}/sql/001_initial_schema.sql" >/dev/null 2>&1 || true
+    sudo -u postgres psql -d affinmail -f "${INSTALL_DIR}/sql/002_seed_demo_data.sql" >/dev/null 2>&1 || true
+fi
+
+# 13. Install Native Systemd Units & Launch Services
+echo -e "\n${BLUE}[6/6] Registering & Starting Native Systemd Services (Zero Docker)...${NC}"
+cp "${INSTALL_DIR}/deploy/systemd/stalwart-mail.service" /etc/systemd/system/stalwart-mail.service
+cp "${INSTALL_DIR}/deploy/systemd/affinmail-caddy.service" /etc/systemd/system/affinmail-caddy.service
+cp "${INSTALL_DIR}/deploy/systemd/affinmail.target" /etc/systemd/system/affinmail.target
+
+systemctl daemon-reload
+systemctl enable --now stalwart-mail.service
+systemctl enable --now affinmail-caddy.service
+systemctl enable affinmail.target
+
+# 14. Register Crons and Master CLI
 chmod +x "${INSTALL_DIR}/scripts/"*.sh
 
 CRON_FILE="/etc/cron.d/affinmail"
@@ -373,11 +453,11 @@ ADMIN_KEY=$(grep "STALWART_ADMIN_SECRET" "${INSTALL_DIR}/deploy/.env" | cut -d= 
 trap - EXIT
 
 echo -e "\n${CYAN}==================================================================${NC}"
-echo -e "${GREEN}${BOLD}      AffinMail Server Successfully Installed & Running!          ${NC}"
+echo -e "${GREEN}${BOLD}   AffinMail Native Bare-Metal Server Successfully Installed!    ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
-echo -e "Operating System:        ${GREEN}${OS_NAME} (${ARCH})${NC}"
+echo -e "Operating System:        ${GREEN}${OS_NAME} (${ARCH}) [Zero Docker]${NC}"
 echo -e "WHM Admin Control Panel: ${YELLOW}https://${HOSTNAME_INPUT}:2087${NC} (or https://${SHARED_IP_INPUT}:2087)"
-echo -e "Client Webmail Portal:   ${YELLOW}https://${HOSTNAME_INPUT}:2083${NC} (or https://${HOSTNAME_INPUT})"
+echo -e "Client Webmail Portal:   ${YELLOW}https://${HOSTNAME_INPUT}:2083${NC} (or https://${SHARED_IP_INPUT}:2083 / port 443)"
 echo -e "Admin API Secret:        ${YELLOW}${ADMIN_KEY}${NC}"
 echo -e "Outbound Egress IPv4:    ${YELLOW}${SHARED_IP_INPUT}${NC}"
 echo -e "Storage Engine:          ${YELLOW}${STORAGE_TYPE_INPUT}${NC}"

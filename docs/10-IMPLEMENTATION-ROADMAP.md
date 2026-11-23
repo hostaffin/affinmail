@@ -14,11 +14,11 @@ AffinMail/
 │   ├── 05-UI-UX-DESIGN-SYSTEM.md       # DaisyUI, Tailwind & Keyboard engine
 │   ├── 06-SECURITY-DELIVERABILITY.md   # 10/10 Deliverability & Anti-spam
 │   ├── 07-HOSTAFFIN-INTEGRATION.md     # 20 WHMCS Lifecycle methods & SSO
-│   ├── 08-DEVOPS-DEPLOYMENT.md         # Caddy 2, Docker & Single-VPS guide
+│   ├── 08-DEVOPS-DEPLOYMENT.md         # Native Systemd, Caddy 2 & Single-VPS guide
 │   ├── 09-TESTING-QA-STRATEGY.md       # Vitest, Playwright, PHPUnit specs
 │   └── 10-IMPLEMENTATION-ROADMAP.md    # This step-by-step roadmap
 ├── deploy/                             # Infrastructure as Code
-│   ├── docker-compose.yml              # Caddy + Stalwart + PG16 + Redis7
+│   ├── systemd/                        # Native systemd services (stalwart, caddy, target)
 │   ├── Caddyfile                       # Reverse proxy & Webmail static hosting
 │   └── stalwart.toml                   # Core mail server configuration
 ├── sql/                                # Database Migration & Seed Scripts
@@ -54,7 +54,7 @@ AffinMail/
 ### Phase 1: Database & Core Infrastructure Configuration
 - [ ] Initialize repository structure and environment configuration.
 - [ ] Implement `sql/001_initial_schema.sql` (Domains, Mailboxes, Aliases, Sieve, Threads, Messages, Usage).
-- [ ] Set up `deploy/docker-compose.yml`, `stalwart.toml`, and `Caddyfile`.
+- [ ] Set up `deploy/systemd/` services, `stalwart.toml`, and `Caddyfile`.
 - [ ] Verify local database initialization and PostgreSQL GIN full-text index setup.
 
 ### Phase 2: Hostaffin Server Driver Module Implementation

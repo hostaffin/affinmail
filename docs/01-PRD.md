@@ -97,7 +97,7 @@ AffinMail re-engineers modern business email from the ground up:
 ### 4.9 Multi-Architecture CPU Compatibility (x86_64 & ARM64)
 * **FR-CPU-01:** All services (Stalwart, Caddy, PostgreSQL, Redis, and Webmail container) MUST support native execution on both `linux/amd64` (x86_64) and `linux/arm64` (ARMv8 / AArch64).
 * **FR-CPU-02:** The deployment stack MUST run seamlessly on low-cost high-efficiency ARM instances (e.g. Hetzner CAX21 Ampere Altra, AWS Graviton3/4, Oracle Cloud Ampere A1) with parity to x86_64 (AMD EPYC / Intel Xeon).
-* **FR-CPU-03:** Docker Compose and build images MUST be multi-platform manifest compliant.
+* **FR-CPU-03:** Zero Docker Dependency: Core binaries (Stalwart, Caddy) and stack daemons MUST execute natively across both ARM64 and x86_64 bare-metal environments via systemd without requiring Docker.
 
 ### 4.10 Pluggable Dynamic Storage Backends (Local, S3 & SFTP)
 * **FR-STR-01:** The system MUST decouple raw email payloads (.eml) and attachments from the database into an abstract Blob Store.

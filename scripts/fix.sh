@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AffinMail Emergency Diagnosis & Auto-Fix Script
-# Resolves SSH lockouts, firewall misconfigurations, Docker stalls, OOM issues,
+# AffinMail Emergency Diagnosis & Auto-Fix Script (Zero Docker Native Bare-Metal)
+# Resolves SSH lockouts, firewall misconfigurations, systemd failures, OOM issues,
 # and displays recent installer error logs.
 # Usage: affinmail fix   OR   bash /opt/affinmail/scripts/fix.sh
 # ==============================================================================
@@ -20,7 +20,7 @@ LOG_FILE="/var/log/affinmail-install.log"
 INSTALL_DIR="/opt/affinmail"
 
 echo -e "${CYAN}==================================================================${NC}"
-echo -e "${BLUE}${BOLD}        AffinMail Emergency Diagnosis & Auto-Recovery Tool        ${NC}"
+echo -e "${BLUE}${BOLD}   AffinMail Emergency Diagnosis & Auto-Recovery Tool (Native)     ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 
 if [ "$EUID" -ne 0 ]; then
@@ -91,47 +91,55 @@ if command -v ufw &>/dev/null; then
     echo -e "${GREEN}[*] UFW rules verified successfully.${NC}"
 fi
 
-# 4. Docker Service Recovery
-echo -e "\n${BLUE}[4/6] Verifying Docker Engine Status...${NC}"
-if ! command -v docker &>/dev/null; then
-    echo -e "${RED}[!] Docker is missing. Attempting emergency installation...${NC}"
-    curl -fsSL https://get.docker.com | sh || true
-fi
-
-systemctl daemon-reload || true
-systemctl restart docker || true
-if systemctl is-active --quiet docker; then
-    echo -e "${GREEN}[*] Docker Engine is running: $(docker --version)${NC}"
+# 4. Native Database & Redis Recovery
+echo -e "\n${BLUE}[4/6] Verifying Native PostgreSQL & Redis Daemons...${NC}"
+systemctl restart postgresql 2>/dev/null || true
+if systemctl is-active --quiet postgresql; then
+    echo -e "${GREEN}[*] PostgreSQL is active.${NC}"
 else
-    echo -e "${RED}[ERROR] Failed to start Docker Engine. Check: journalctl -xeu docker${NC}"
+    echo -e "${RED}[ERROR] PostgreSQL failed to start. Review: journalctl -xeu postgresql${NC}"
 fi
 
-# 5. SELinux Permissions Fix (AlmaLinux/RHEL)
-if command -v getenforce &>/dev/null; then
-    if [ "$(getenforce)" != "Disabled" ] && [ -d "$INSTALL_DIR" ]; then
-        echo -e "\n${BLUE}[5/6] Re-applying SELinux Container Permissions...${NC}"
-        chcon -Rt svirt_sandbox_file_t "${INSTALL_DIR}" 2>/dev/null || true
-        setsebool -P container_manage_cgroup 1 2>/dev/null || true
-        echo -e "${GREEN}[*] SELinux permissions re-applied for ${INSTALL_DIR}.${NC}"
+systemctl restart redis 2>/dev/null || systemctl restart redis-server 2>/dev/null || true
+if systemctl is-active --quiet redis || systemctl is-active --quiet redis-server; then
+    echo -e "${GREEN}[*] Redis is active.${NC}"
+else
+    echo -e "${YELLOW}[!] Redis check failed. Review: journalctl -xeu redis${NC}"
+fi
+
+# 5. Binaries & Systemd Service Recovery
+echo -e "\n${BLUE}[5/6] Verifying Stalwart & Caddy Native Services...${NC}"
+
+# Re-register systemd units if missing
+if [ -d "${INSTALL_DIR}/deploy/systemd" ]; then
+    cp "${INSTALL_DIR}/deploy/systemd/stalwart-mail.service" /etc/systemd/system/stalwart-mail.service 2>/dev/null || true
+    cp "${INSTALL_DIR}/deploy/systemd/affinmail-caddy.service" /etc/systemd/system/affinmail-caddy.service 2>/dev/null || true
+    cp "${INSTALL_DIR}/deploy/systemd/affinmail.target" /etc/systemd/system/affinmail.target 2>/dev/null || true
+    systemctl daemon-reload
+fi
+
+# Verify Caddyfile syntax
+if command -v caddy &>/dev/null && [ -f "${INSTALL_DIR}/deploy/Caddyfile" ]; then
+    caddy validate --config "${INSTALL_DIR}/deploy/Caddyfile" >/dev/null 2>&1 || {
+        echo -e "${YELLOW}[!] Warning: Caddyfile syntax error detected. Check /opt/affinmail/deploy/Caddyfile${NC}"
+    }
+fi
+
+systemctl restart stalwart-mail.service 2>/dev/null || true
+systemctl restart affinmail-caddy.service 2>/dev/null || true
+
+# 6. Final Status Summary
+echo -e "\n${BLUE}[6/6] Final Diagnostic Summary...${NC}"
+for SVC in postgresql redis redis-server stalwart-mail affinmail-caddy; do
+    if systemctl list-unit-files "${SVC}.service" &>/dev/null; then
+        STATE=$(systemctl is-active "$SVC" 2>/dev/null || echo "inactive")
+        if [ "$STATE" == "active" ]; then
+            echo -e "  [●] ${GREEN}${SVC}.service${NC}: active (running)"
+        else
+            echo -e "  [○] ${RED}${SVC}.service${NC}: ${STATE}"
+        fi
     fi
-fi
+done
 
-# 6. Container Stack Health & Restart
-echo -e "\n${BLUE}[6/6] Orchestrating Container Stack Recovery...${NC}"
-if [ -d "${INSTALL_DIR}/deploy" ]; then
-    cd "${INSTALL_DIR}/deploy"
-    docker compose up -d --remove-orphans || true
-    sleep 3
-    echo -e "\n${CYAN}=== Container Services Status ===${NC}"
-    docker compose ps
-else
-    echo -e "${YELLOW}[!] Install directory ${INSTALL_DIR} not found. Please run install.sh.${NC}"
-fi
-
-echo -e "\n${CYAN}==================================================================${NC}"
-echo -e "${GREEN}${BOLD}           AffinMail Diagnostic & Fix Completed!                 ${NC}"
-echo -e "${CYAN}==================================================================${NC}"
-echo -e "To inspect full real-time logs:  ${YELLOW}cat ${LOG_FILE}${NC}"
-echo -e "To monitor container logs:       ${YELLOW}docker compose -f ${INSTALL_DIR}/deploy/docker-compose.yml logs -f${NC}"
-echo -e "To re-run installer:             ${CYAN}bash ${INSTALL_DIR}/install.sh${NC}"
-echo -e "${CYAN}==================================================================${NC}"
+echo -e "\n${GREEN}[*] Diagnosis and recovery procedure complete.${NC}"
+echo -e "To view live logs: ${YELLOW}affinmail logs stalwart${NC} or ${YELLOW}affinmail logs caddy${NC}"

@@ -1,0 +1,24 @@
+[Unit]
+Description=AffinMail Caddy Web Server & Reverse Proxy
+Documentation=https://github.com/hostaffin/affinmail
+After=network.target network-online.target stalwart-mail.service
+Wants=network-online.target
+PartOf=affinmail.target
+
+[Service]
+Type=notify
+User=root
+WorkingDirectory=/opt/affinmail/deploy
+EnvironmentFile=-/opt/affinmail/deploy/.env
+ExecStart=/usr/local/bin/caddy run --environ --config /opt/affinmail/deploy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /opt/affinmail/deploy/Caddyfile
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+LimitNPROC=512
+Restart=always
+RestartSec=3s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target affinmail.target

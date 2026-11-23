@@ -1,11 +1,12 @@
-# AffinMail Core Engine Configuration (Stalwart v0.8+)
-# Architecture: Rust Tokio Async Core, Multi-IP Egress, Dynamic Storage
+# AffinMail Native Core Engine Configuration (Stalwart Native Core)
+# Architecture: Bare-Metal Native Rust Async Tokio Core, Zero Docker Dependency
+# Multi-IP Egress, Local NVMe / S3 / SFTP Pluggable Storage
 
 [server]
-hostname = "mail.hostaffin.com"
+hostname = "%{env:MAIL_HOSTNAME:-mail.hostaffin.com}%"
 threads = 4
 
-# Protocol Listeners
+# Protocol Listeners (Native Bindings)
 [server.listener."smtp"]
 bind = ["0.0.0.0:25", "[::]:25"]
 protocol = "smtp"
@@ -25,35 +26,35 @@ protocol = "imap"
 tls.implicit = true
 
 [server.listener."http"]
-bind = ["0.0.0.0:8080", "[::]:8080"]
+bind = ["127.0.0.1:8080"]
 protocol = "http"
 
 [server.listener."managesieve"]
 bind = ["0.0.0.0:4190", "[::]:4190"]
 protocol = "managesieve"
 
-# Database Backend (PostgreSQL 16)
+# Database Backend (Native PostgreSQL 16 on 127.0.0.1)
 [store."postgres"]
 type = "sql"
 driver = "postgresql"
-host = "postgres"
+host = "%{env:POSTGRES_HOST:-127.0.0.1}%"
 port = 5432
-database = "affinmail"
-user = "affinmail_user"
-password = "%{env:STALWART_DB_PASSWORD}%"
+database = "%{env:POSTGRES_DB:-affinmail}%"
+user = "%{env:POSTGRES_USER:-affinmail_user}%"
+password = "%{env:POSTGRES_PASSWORD}%"
 pool.max-connections = 20
 
-# Cache & Rate Limiting Backend (Redis 7)
+# Cache & Rate Limiting Backend (Native Redis on 127.0.0.1)
 [store."redis"]
 type = "redis"
-url = "%{env:STALWART_REDIS_URL}%"
+url = "%{env:STALWART_REDIS_URL:-redis://127.0.0.1:6379}%"
 pool.max-connections = 15
 
 # Dynamic Pluggable Storage Backend
-# Automatically switched based on STORAGE_BLOB_TYPE environment variable
+# Automatically switched based on STORAGE_BLOB_TYPE environment variable (fs | s3 | sftp)
 [storage.blob]
 type = "%{env:STORAGE_BLOB_TYPE:-fs}%"
-path = "/var/lib/stalwart/blobs"
+path = "%{env:STORAGE_LOCAL_PATH:-/opt/affinmail/data/blobs}%"
 bucket = "%{env:S3_BUCKET}%"
 region = "%{env:S3_REGION:-auto}%"
 endpoint = "%{env:S3_ENDPOINT}%"

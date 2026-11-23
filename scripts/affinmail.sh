@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AffinMail Master Unified Management CLI
-# Usage: affinmail [install|uninstall|update|status|restart|logs|fix|backup|info]
+# AffinMail Master Unified Management CLI (Zero Docker Native Bare-Metal)
+# Usage: affinmail [install|uninstall|update|status|restart|stop|start|logs|fix|backup|info]
 # ==============================================================================
 
 set -uo pipefail
@@ -45,25 +45,42 @@ case "$COMMAND" in
         bash "${BASE_DIR}/scripts/fix.sh" "$@"
         ;;
     status)
-        echo -e "${CYAN}=== AffinMail Cluster Status ===${NC}"
-        cd "${BASE_DIR}/deploy"
-        docker compose ps
+        echo -e "${CYAN}=== AffinMail Native Cluster Status ===${NC}"
+        echo -e "${BOLD}1. Systemd Services:${NC}"
+        for SVC in stalwart-mail affinmail-caddy postgresql redis redis-server; do
+            if systemctl list-unit-files "${SVC}.service" &>/dev/null; then
+                STATE=$(systemctl is-active "$SVC" 2>/dev/null || echo "inactive")
+                if [ "$STATE" == "active" ]; then
+                    echo -e "  [●] ${GREEN}${SVC}.service${NC}: active (running)"
+                else
+                    echo -e "  [○] ${RED}${SVC}.service${NC}: ${STATE}"
+                fi
+            fi
+        done
+
+        echo -e "\n${BOLD}2. Listening Network Ports:${NC}"
+        ss -tlnp 2>/dev/null | grep -E ':(25|80|443|465|587|993|2083|2087|4190|8080|5432|6379)\b' || true
         ;;
     restart)
-        echo -e "${BLUE}Restarting AffinMail Services...${NC}"
-        cd "${BASE_DIR}/deploy"
-        docker compose restart
-        docker compose ps
+        echo -e "${BLUE}Restarting Native AffinMail Services...${NC}"
+        systemctl restart postgresql 2>/dev/null || true
+        systemctl restart redis 2>/dev/null || systemctl restart redis-server 2>/dev/null || true
+        systemctl restart stalwart-mail.service
+        systemctl restart affinmail-caddy.service
+        echo -e "${GREEN}[*] All AffinMail native services restarted successfully.${NC}"
         ;;
     stop)
-        echo -e "${YELLOW}Stopping AffinMail Services...${NC}"
-        cd "${BASE_DIR}/deploy"
-        docker compose stop
+        echo -e "${YELLOW}Stopping AffinMail Mail & Web Services...${NC}"
+        systemctl stop stalwart-mail.service affinmail-caddy.service
+        echo -e "${YELLOW}[*] Stalwart and Caddy services stopped.${NC}"
         ;;
     start)
-        echo -e "${GREEN}Starting AffinMail Services...${NC}"
-        cd "${BASE_DIR}/deploy"
-        docker compose start
+        echo -e "${GREEN}Starting AffinMail Native Services...${NC}"
+        systemctl start postgresql 2>/dev/null || true
+        systemctl start redis 2>/dev/null || systemctl start redis-server 2>/dev/null || true
+        systemctl start stalwart-mail.service
+        systemctl start affinmail-caddy.service
+        echo -e "${GREEN}[*] All AffinMail native services started.${NC}"
         ;;
     logs)
         shift || true
@@ -75,49 +92,61 @@ case "$COMMAND" in
             else
                 echo -e "${YELLOW}No install log found at ${LOG_FILE}.${NC}"
             fi
+        elif [ "$SUB" == "stalwart" ] || [ "$SUB" == "mail" ]; then
+            journalctl -u stalwart-mail.service -f -n 100
+        elif [ "$SUB" == "caddy" ] || [ "$SUB" == "web" ]; then
+            journalctl -u affinmail-caddy.service -f -n 100
+        elif [ "$SUB" == "postgres" ] || [ "$SUB" == "db" ]; then
+            journalctl -u postgresql.service -f -n 100
+        elif [ "$SUB" == "redis" ]; then
+            journalctl -u redis.service -u redis-server.service -f -n 100
         else
-            cd "${BASE_DIR}/deploy"
-            if [ -n "$SUB" ]; then
-                docker compose logs -f "$SUB"
-            else
-                docker compose logs -f --tail=100
-            fi
+            echo -e "${GREEN}[*] Streaming logs for Stalwart & Caddy... (Ctrl+C to exit)${NC}"
+            journalctl -u stalwart-mail.service -u affinmail-caddy.service -f -n 100
         fi
         ;;
     backup)
         echo -e "${BLUE}Creating Immediate Database Backup...${NC}"
         mkdir -p "${BASE_DIR}/backups"
-        BKP_NAME="manual_backup_$(date +%Y%m%d_%H%M%S).sql.gz"
-        docker exec -t $(docker compose -f "${BASE_DIR}/deploy/docker-compose.yml" ps -q postgres) \
-            pg_dump -U affinmail_user affinmail | gzip > "${BASE_DIR}/backups/${BKP_NAME}"
-        echo -e "${GREEN}[*] Backup created successfully:${NC} ${BASE_DIR}/backups/${BKP_NAME}"
+        BKP_NAME="native_backup_$(date +%Y%m%d_%H%M%S).sql.gz"
+
+        if [ -f "${BASE_DIR}/deploy/.env" ]; then
+            DB_PASS=$(grep "POSTGRES_PASSWORD" "${BASE_DIR}/deploy/.env" | cut -d= -f2)
+            PGPASSWORD="$DB_PASS" pg_dump -h 127.0.0.1 -U affinmail_user affinmail | gzip > "${BASE_DIR}/backups/${BKP_NAME}" 2>/dev/null || \
+            sudo -u postgres pg_dump affinmail | gzip > "${BASE_DIR}/backups/${BKP_NAME}"
+        else
+            sudo -u postgres pg_dump affinmail | gzip > "${BASE_DIR}/backups/${BKP_NAME}"
+        fi
+
+        echo -e "${GREEN}[*] Native PostgreSQL backup created successfully:${NC} ${BASE_DIR}/backups/${BKP_NAME}"
         ;;
     info)
-        echo -e "${CYAN}=== AffinMail System Information ===${NC}"
+        echo -e "${CYAN}=== AffinMail Native System Information ===${NC}"
         if [ -f "${BASE_DIR}/deploy/.env" ]; then
-            grep -E "MAIL_HOSTNAME|SHARED_OUTBOUND_IPV4|STORAGE_BLOB_TYPE" "${BASE_DIR}/deploy/.env"
+            grep -E "MAIL_HOSTNAME|SHARED_OUTBOUND_IPV4|STORAGE_BLOB_TYPE|POSTGRES_HOST" "${BASE_DIR}/deploy/.env"
         fi
         echo "Architecture: $(uname -m)"
         echo "Root Path:    ${BASE_DIR}"
         echo "Install Log:  ${LOG_FILE}"
+        echo "Engine:       Stalwart Native (Rust Tokio Core) - Zero Docker"
+        echo "Web Server:   Caddy 2 Native Binary"
         ;;
     help|*)
         echo -e "${CYAN}==================================================================${NC}"
-        echo -e "${BLUE}${BOLD}           AffinMail Master Unified Management CLI                ${NC}"
+        echo -e "${BLUE}${BOLD}     AffinMail Master Unified Management CLI (Zero Docker)        ${NC}"
         echo -e "${CYAN}==================================================================${NC}"
         echo -e "Usage: ${GREEN}affinmail <command> [options]${NC}\n"
         echo "Commands:"
-        echo -e "  ${YELLOW}install${NC}         Run production installation"
-        echo -e "  ${YELLOW}update${NC}          Perform zero-downtime rolling update & DB migrations"
-        echo -e "  ${YELLOW}fix${NC}             Emergency auto-recovery, diagnose SSH, RAM swap, Docker & logs"
-        echo -e "  ${YELLOW}status${NC}          Check live Docker container & port status"
-        echo -e "  ${YELLOW}restart${NC}         Restart all AffinMail services"
-        echo -e "  ${YELLOW}start | stop${NC}    Start or stop running services"
-        echo -e "  ${YELLOW}logs${NC} [svc]      Stream container logs (e.g. affinmail logs stalwart)"
-        echo -e "  ${YELLOW}logs install${NC}    View real-time installation output log file"
+        echo -e "  ${YELLOW}install${NC}         Run production bare-metal native installation"
+        echo -e "  ${YELLOW}update${NC}          Zero-downtime binary & schema update"
+        echo -e "  ${YELLOW}fix${NC}             Emergency auto-recovery, diagnose SSH, RAM swap & systemd"
+        echo -e "  ${YELLOW}status${NC}          Check live systemd service & network port status"
+        echo -e "  ${YELLOW}restart${NC}         Restart all AffinMail native services"
+        echo -e "  ${YELLOW}start | stop${NC}    Start or stop running mail & web services"
+        echo -e "  ${YELLOW}logs${NC} [svc]      Stream logs (e.g. affinmail logs stalwart, caddy, install)"
         echo -e "  ${YELLOW}backup${NC}          Generate instant gzipped PostgreSQL database dump"
         echo -e "  ${YELLOW}info${NC}            Display current hostname, outbound IP, and storage engine"
-        echo -e "  ${YELLOW}uninstall${NC}       Cleanly remove services (--purge-all for complete wipe)"
+        echo -e "  ${YELLOW}uninstall${NC}       Cleanly remove native services (--purge-all for complete wipe)"
         echo -e "${CYAN}==================================================================${NC}"
         ;;
 esac

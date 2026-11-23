@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AffinMail Clean Uninstallation Script
+# AffinMail Clean Uninstallation Script (Zero Docker Native Bare-Metal)
 # ==============================================================================
 
 set -euo pipefail
@@ -15,7 +15,7 @@ NC='\033[0m'
 INSTALL_DIR="/opt/affinmail"
 
 echo -e "${RED}==================================================================${NC}"
-echo -e "${RED}          AffinMail Enterprise Email Server - Uninstaller         ${NC}"
+echo -e "${RED}   AffinMail Enterprise Email Server - Native Uninstaller         ${NC}"
 echo -e "${RED}==================================================================${NC}"
 
 if [ "$EUID" -ne 0 ]; then
@@ -35,7 +35,7 @@ PURGE_DATA=false
 if [[ "${1:-}" == "--purge" || "${1:-}" == "--purge-all" ]]; then
     PURGE_DATA=true
 else
-    echo -e "${YELLOW}[WARNING] This will stop and remove AffinMail services.${NC}"
+    echo -e "${YELLOW}[WARNING] This will stop and remove AffinMail native services.${NC}"
     echo -n "Are you sure you want to proceed? [y/N]: "
     read -r CONFIRM < "$TTY_INPUT"
     if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
@@ -50,15 +50,11 @@ else
     fi
 fi
 
-echo -e "\n${BLUE}[1/4] Stopping and removing Docker containers...${NC}"
-if [ -d "${INSTALL_DIR}/deploy" ]; then
-    cd "${INSTALL_DIR}/deploy"
-    if [ "$PURGE_DATA" = true ]; then
-        docker compose down -v --remove-orphans || true
-    else
-        docker compose down --remove-orphans || true
-    fi
-fi
+echo -e "\n${BLUE}[1/4] Stopping and disabling Native Systemd Services...${NC}"
+systemctl stop stalwart-mail.service affinmail-caddy.service affinmail.target 2>/dev/null || true
+systemctl disable stalwart-mail.service affinmail-caddy.service affinmail.target 2>/dev/null || true
+rm -f /etc/systemd/system/stalwart-mail.service /etc/systemd/system/affinmail-caddy.service /etc/systemd/system/affinmail.target
+systemctl daemon-reload
 
 echo -e "\n${BLUE}[2/4] Removing Scheduled Cron Jobs...${NC}"
 rm -f /etc/cron.d/affinmail
@@ -68,7 +64,13 @@ echo -e "\n${BLUE}[3/4] Removing Management CLI symlink...${NC}"
 rm -f /usr/local/bin/affinmail
 
 if [ "$PURGE_DATA" = true ]; then
-    echo -e "\n${RED}[4/4] Purging all AffinMail directories and data volumes...${NC}"
+    echo -e "\n${RED}[4/4] Purging all AffinMail directories, binaries and databases...${NC}"
+    
+    # Drop database
+    sudo -u postgres psql -c "DROP DATABASE IF EXISTS affinmail;" 2>/dev/null || true
+    sudo -u postgres psql -c "DROP USER IF EXISTS affinmail_user;" 2>/dev/null || true
+
+    rm -f /usr/local/bin/stalwart-mail /usr/local/bin/stalwart /usr/local/bin/caddy
     rm -rf "${INSTALL_DIR}"
 
     # Clean firewalld on AlmaLinux/RHEL if present

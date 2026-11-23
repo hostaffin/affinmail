@@ -884,7 +884,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </button>
 
                   <button
-                    onClick={() => onNotify('All Docker containers restarted smoothly.', 'info')}
+                    onClick={() => onNotify('All native systemd services restarted smoothly.', 'info')}
                     className="btn btn-outline btn-sm gap-2"
                   >
                     <RotateCw className="w-4 h-4 text-warning" />
