@@ -1073,6 +1073,15 @@ function backupCreate(): never
     ok(['file' => basename($file), 'path' => $file, 'size_bytes' => $size]);
 }
 
+/* ---------------------------------------------------------------- system */
+
+function systemRestart(): never
+{
+    // ponytail: detached systemd-run so the HTTP response returns before Stalwart stops.
+    exec('systemd-run --on-active=2 /usr/bin/systemctl restart stalwart.service >/dev/null 2>&1 &');
+    ok(['restarting' => 'stalwart.service']);
+}
+
 /* ---------------------------------------------------------------- sso */
 
 function ssoToken(): never
@@ -1260,6 +1269,10 @@ try {
             backupCreate();
         case $n === 1 && $seg[0] === 'backup' && $method === 'POST':
             backupCreate();
+
+        // system restart
+        case $n === 2 && $seg[0] === 'system' && $seg[1] === 'restart' && $method === 'POST':
+            systemRestart();
 
         // sso
         case $n === 2 && $seg[0] === 'auth' && $seg[1] === 'sso-token' && $method === 'POST':

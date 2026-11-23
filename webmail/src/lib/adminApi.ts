@@ -1,0 +1,198 @@
+// Thin client for the AffinMail admin REST API (api/public/index.php).
+// Token lives in sessionStorage only; never baked into the bundle.
+
+const BASE = '/api/v1';
+const TOKEN_KEY = 'affinmail_admin_token';
+
+export function getToken(): string | null {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string): void {
+  sessionStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+interface FetchOpts {
+  method?: string;
+  body?: unknown;
+  signal?: AbortSignal;
+}
+
+/** Calls the API, unwraps {status:'success',data}, throws Error(server message) otherwise. */
+export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}): Promise<T> {
+  const token = getToken();
+  const res = await fetch(BASE + path, {
+    method: opts.method ?? 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: opts.signal,
+  });
+
+  const payload = await res.json().catch(() => null);
+  if (!res.ok || payload?.status === 'error') {
+    if (res.status === 401) clearToken();
+    throw new Error(payload?.error || `HTTP ${res.status}`);
+  }
+  return payload?.data as T;
+}
+
+/* ---------------------------------------------------------------- types */
+
+export interface Health {
+  service: string;
+  version: string;
+  checks: { postgres: boolean; redis: boolean; stalwart: boolean };
+}
+
+export interface Domain {
+  domain: string;
+  maxMailboxes: number;
+  diskQuotaMb: number;
+  maxAttachmentMb: number;
+  hostaffinServiceId: number | null;
+  dkimSelector: string;
+  dkimPublicKey: string;
+  stalwartDomainId: string | null;
+  isActive: boolean;
+  assignedIpId: string | null;
+  mailboxCount: number | null;
+  createdAt: string;
+}
+
+export interface Mailbox {
+  id: string;
+  email: string;
+  displayName: string;
+  quotaLimitMb: number;
+  quotaUsedBytes: number;
+  hourlyRateLimit: number;
+  outboundRoute: string;
+  status: string;
+  domain: string | null;
+  stalwartAccountId: string | null;
+  createdAt: string;
+}
+
+export interface IpPool {
+  id: string;
+  ip_address: string;
+  ip_version: number;
+  pool_type: string;
+  rdns_hostname: string;
+  is_active: boolean;
+  is_blacklisted: boolean;
+  current_allocations: number;
+  max_allocations: number;
+  reputation_score: number;
+  createdAt: string;
+}
+
+export interface StorageStatus {
+  storage_type: string;
+  local_path: string;
+  used_bytes: number;
+  total_bytes: number;
+  free_bytes: number;
+}
+
+export interface BackupResult {
+  file: string;
+  path: string;
+  size_bytes: number;
+}
+
+export interface DnsRecord {
+  type: string;
+  name: string;
+  value: string;
+  priority?: number;
+}
+
+export interface DnsResult {
+  domain: string;
+  records: DnsRecord[];
+}
+
+/* ---------------------------------------------------------------- helpers */
+
+export const health = () => apiFetch<Health>('/health');
+
+export const listDomains = () => apiFetch<{ domains: Domain[]; count: number }>('/domains');
+
+export const createDomain = (body: {
+  domain: string;
+  maxMailboxes?: number;
+  diskQuotaMb?: number;
+  maxAttachmentMb?: number;
+}) => apiFetch<Domain>('/domains', { method: 'POST', body });
+
+export const deleteDomain = (domain: string) =>
+  apiFetch<{ deleted: string }>(`/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' });
+
+export const getDomainDns = (domain: string) =>
+  apiFetch<DnsResult>(`/domains/${encodeURIComponent(domain)}/dns`);
+
+export const listMailboxes = (domain?: string) =>
+  apiFetch<{ mailboxes: Mailbox[]; count: number }>(
+    domain ? `/mailboxes?domain=${encodeURIComponent(domain)}` : '/mailboxes'
+  );
+
+export const createMailbox = (body: {
+  email: string;
+  password: string;
+  displayName?: string;
+  quotaLimitMb?: number;
+  hourlyRateLimit?: number;
+  outboundRoute?: string;
+}) => apiFetch<Mailbox>('/mailboxes', { method: 'POST', body });
+
+export const setMailboxStatus = (email: string, status: 'active' | 'suspended') =>
+  apiFetch<Mailbox>(`/mailboxes/${encodeURIComponent(email)}/status`, {
+    method: 'PUT',
+    body: { status },
+  });
+
+export const deleteMailbox = (email: string) =>
+  apiFetch<{ deleted: string }>(`/mailboxes/${encodeURIComponent(email)}`, { method: 'DELETE' });
+
+export const listIpPools = () => apiFetch<{ ipPools: IpPool[]; count: number }>('/ip-pools');
+
+export const createIpPool = (body: {
+  ip_address: string;
+  pool_type?: 'shared' | 'dedicated';
+  rdns_hostname: string;
+  max_allocations?: number;
+}) => apiFetch<IpPool>('/ip-pools', { method: 'POST', body });
+
+export const assignIpPool = (domain: string, ipAddress: string) =>
+  apiFetch<{ domain: string; ipAddress: string }>('/ippools/assign', {
+    method: 'POST',
+    body: { domain, ip_address: ipAddress },
+  });
+
+export const getStorage = () => apiFetch<StorageStatus>('/storage');
+
+export const triggerBackup = () =>
+  apiFetch<BackupResult>('/system/backup', { method: 'POST' });
+
+export const restartSystem = () =>
+  apiFetch<{ restarting: string }>('/system/restart', { method: 'POST' });
+
+/** Probe a candidate token against a cheap authenticated route. */
+export async function validateToken(token: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/domains`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.status === 200;
+}

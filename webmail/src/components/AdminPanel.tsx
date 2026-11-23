@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Server,
   Globe,
@@ -7,14 +7,12 @@ import {
   ShieldCheck,
   Activity,
   Plus,
-  Key,
   Database,
   ArrowRight,
   Sun,
   Moon,
-  AlertTriangle,
   CheckCircle,
-  Copy,
+  AlertTriangle,
   RotateCw,
   Cpu,
   Layers,
@@ -23,6 +21,33 @@ import {
   X,
 } from 'lucide-react';
 import { AffinMailLogo } from './AffinMailLogo';
+import {
+  type Domain,
+  type Mailbox,
+  type IpPool,
+  type StorageStatus,
+  type Health,
+  type DnsRecord,
+  getToken,
+  setToken,
+  clearToken,
+  validateToken,
+  health as apiHealth,
+  listDomains,
+  createDomain,
+  deleteDomain,
+  getDomainDns,
+  listMailboxes,
+  createMailbox,
+  setMailboxStatus,
+  deleteMailbox,
+  listIpPools,
+  createIpPool,
+  assignIpPool,
+  getStorage,
+  triggerBackup,
+  restartSystem,
+} from '../lib/adminApi';
 
 interface AdminPanelProps {
   theme: 'light' | 'dark';
@@ -31,169 +56,352 @@ interface AdminPanelProps {
   onNotify: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
+type AdminTab = 'dashboard' | 'domains' | 'mailboxes' | 'ippools' | 'storage' | 'system';
+
+interface DomainRow {
+  id: string;
+  name: string;
+  mailboxesCount: number;
+  diskUsed: string;
+  diskLimit: string;
+  ipType: string;
+  assignedIp: string | null;
+  dkimStatus: string;
+  status: string;
+}
+
+interface MailboxRow {
+  id: string;
+  email: string;
+  domain: string;
+  quota: string;
+  used: string;
+  route: string;
+  status: string;
+}
+
+interface IpPoolRow {
+  id: string;
+  ip: string;
+  type: string;
+  rdns: string;
+  domainsCount: number;
+  rblClean: boolean;
+  warmupDay: number;
+}
+
+function fmtBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function isAuthError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg === 'unauthorized' || msg.includes('401');
+}
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   theme,
   onToggleTheme,
   onSwitchToWebmail,
   onNotify,
 }) => {
-  type AdminTab = 'dashboard' | 'domains' | 'mailboxes' | 'ippools' | 'storage' | 'system';
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Domains State
-  const [domains, setDomains] = useState([
-    {
-      id: 'd-1',
-      name: 'apexlogistics.com',
-      mailboxesCount: 2,
-      diskUsed: '3.2 GB',
-      diskLimit: '20 GB',
-      ipType: 'dedicated',
-      assignedIp: '195.201.10.102',
-      dkimStatus: 'active',
-      status: 'active',
-    },
-    {
-      id: 'd-2',
-      name: 'trendmart.com',
-      mailboxesCount: 2,
-      diskUsed: '1.0 GB',
-      diskLimit: '10 GB',
-      ipType: 'shared',
-      assignedIp: '195.201.10.101',
-      dkimStatus: 'active',
-      status: 'active',
-    },
-  ]);
+  // Auth gate
+  const [authed, setAuthed] = useState(() => !!getToken());
+  const [tokenInput, setTokenInput] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
 
-  // Mailboxes State
-  const [mailboxes, setMailboxes] = useState([
-    {
-      id: 'mb-1',
-      email: 'marcus@apexlogistics.com',
-      domain: 'apexlogistics.com',
-      quota: '10240 MB',
-      used: '3435 MB',
-      route: 'direct',
-      status: 'active',
-    },
-    {
-      id: 'mb-2',
-      email: 'support@apexlogistics.com',
-      domain: 'apexlogistics.com',
-      quota: '5120 MB',
-      used: '120 MB',
-      route: 'direct',
-      status: 'active',
-    },
-    {
-      id: 'mb-3',
-      email: 'elena@trendmart.com',
-      domain: 'trendmart.com',
-      quota: '5120 MB',
-      used: '1024 MB',
-      route: 'relay_ses',
-      status: 'active',
-    },
-  ]);
-
-  // IP Pools State
-  const [ipPools, setIpPools] = useState([
-    {
-      id: 'ip-1',
-      ip: '195.201.10.101',
-      type: 'shared',
-      rdns: 'mail-shared1.hostaffin.com',
-      domainsCount: 1,
-      rblClean: true,
-      warmupDay: 30,
-    },
-    {
-      id: 'ip-2',
-      ip: '195.201.10.102',
-      type: 'dedicated',
-      rdns: 'mail-dedicated1.hostaffin.com',
-      domainsCount: 1,
-      rblClean: true,
-      warmupDay: 5,
-    },
-  ]);
-
-  // Dynamic Storage State
-  const [storageType, setStorageType] = useState<'fs' | 's3' | 'sftp'>('fs');
-  const [s3Bucket, setS3Bucket] = useState('affinmail-blobs');
-  const [s3Endpoint, setS3Endpoint] = useState('https://<account_id>.r2.cloudflarestorage.com');
-  const [s3AccessKey, setS3AccessKey] = useState('cflare_r2_key_demo');
-  const [s3SecretKey, setS3SecretKey] = useState('********************************');
+  // Data
+  const [loading, setLoading] = useState(false);
+  const [domains, setDomains] = useState<DomainRow[]>([]);
+  const [mailboxes, setMailboxes] = useState<MailboxRow[]>([]);
+  const [ipPools, setIpPools] = useState<IpPoolRow[]>([]);
+  const [storage, setStorage] = useState<StorageStatus | null>(null);
+  const [healthData, setHealthData] = useState<Health | null>(null);
 
   // Modals
   const [showAddDomainModal, setShowAddDomainModal] = useState(false);
   const [newDomainName, setNewDomainName] = useState('');
-  const [newDomainIpType, setNewDomainIpType] = useState<'shared' | 'dedicated'>('shared');
+  const [newDomainIp, setNewDomainIp] = useState('');
+
   const [selectedDnsDomain, setSelectedDnsDomain] = useState<string | null>(null);
+  const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
+  const [dnsLoading, setDnsLoading] = useState(false);
 
   const [showAddMailboxModal, setShowAddMailboxModal] = useState(false);
   const [newMailboxUser, setNewMailboxUser] = useState('');
-  const [newMailboxDomain, setNewMailboxDomain] = useState(domains[0]?.name || '');
+  const [newMailboxDomain, setNewMailboxDomain] = useState('');
   const [newMailboxPass, setNewMailboxPass] = useState('');
   const [newMailboxQuota, setNewMailboxQuota] = useState('5120');
 
-  const handleCreateDomain = () => {
+  const [showAddIpModal, setShowAddIpModal] = useState(false);
+  const [newIpAddress, setNewIpAddress] = useState('');
+  const [newIpRdns, setNewIpRdns] = useState('');
+  const [newIpType, setNewIpType] = useState<'shared' | 'dedicated'>('shared');
+
+  const logout = useCallback((msg?: string) => {
+    clearToken();
+    setAuthed(false);
+    setDomains([]);
+    setMailboxes([]);
+    setIpPools([]);
+    setStorage(null);
+    setHealthData(null);
+    if (msg) onNotify(msg, 'error');
+  }, [onNotify]);
+
+  const fail = useCallback((e: unknown) => {
+    if (isAuthError(e)) {
+      logout('Session expired — sign in again');
+    } else {
+      onNotify(e instanceof Error ? e.message : 'Request failed', 'error');
+    }
+  }, [logout, onNotify]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [d, m, ip, st, h] = await Promise.all([
+        listDomains(),
+        listMailboxes(),
+        listIpPools(),
+        getStorage(),
+        apiHealth(),
+      ]);
+      const poolById = new Map(ip.ipPools.map((p) => [p.id, p]));
+      setDomains(
+        d.domains.map((dom: Domain): DomainRow => {
+          const pool = dom.assignedIpId ? poolById.get(dom.assignedIpId) : undefined;
+          return {
+            id: dom.domain,
+            name: dom.domain,
+            mailboxesCount: dom.mailboxCount ?? 0,
+            diskUsed: '—',
+            diskLimit: fmtBytes(dom.diskQuotaMb * 1024 * 1024),
+            ipType: pool?.pool_type ?? 'shared',
+            assignedIp: pool?.ip_address ?? null,
+            dkimStatus: dom.dkimPublicKey ? 'active' : 'missing',
+            status: dom.isActive ? 'active' : 'inactive',
+          };
+        })
+      );
+      setMailboxes(
+        m.mailboxes.map((mb: Mailbox): MailboxRow => ({
+          id: mb.id,
+          email: mb.email,
+          domain: mb.domain ?? mb.email.split('@')[1] ?? '',
+          quota: `${mb.quotaLimitMb} MB`,
+          used: fmtBytes(mb.quotaUsedBytes),
+          route: mb.outboundRoute,
+          status: mb.status,
+        }))
+      );
+      setIpPools(
+        ip.ipPools.map((p: IpPool): IpPoolRow => ({
+          id: p.id,
+          ip: p.ip_address,
+          type: p.pool_type,
+          rdns: p.rdns_hostname,
+          domainsCount: p.current_allocations,
+          rblClean: !p.is_blacklisted,
+          warmupDay: 0,
+        }))
+      );
+      setStorage(st);
+      setHealthData(h);
+      setNewMailboxDomain((prev) => prev || d.domains[0]?.domain || '');
+    } catch (e) {
+      fail(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed) void loadData();
+  }, [authed, loadData]);
+
+  useEffect(() => {
+    if (!selectedDnsDomain) return;
+    let cancelled = false;
+    setDnsLoading(true);
+    setDnsRecords([]);
+    getDomainDns(selectedDnsDomain)
+      .then((r) => {
+        if (!cancelled) setDnsRecords(r.records);
+      })
+      .catch((e) => {
+        if (!cancelled) fail(e);
+      })
+      .finally(() => {
+        if (!cancelled) setDnsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDnsDomain, fail]);
+
+  const handleLogin = async () => {
+    const token = tokenInput.trim();
+    if (!token) {
+      setAuthError('Enter an admin token');
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      if (await validateToken(token)) {
+        setToken(token);
+        setTokenInput('');
+        setAuthed(true);
+      } else {
+        setAuthError('Invalid admin token');
+      }
+    } catch {
+      setAuthError('Cannot reach the admin API');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleCreateDomain = async () => {
     if (!newDomainName.trim()) {
       onNotify('Enter a valid domain name', 'error');
       return;
     }
-    const newDom = {
-      id: `d-${Date.now()}`,
-      name: newDomainName.toLowerCase().trim(),
-      mailboxesCount: 0,
-      diskUsed: '0 MB',
-      diskLimit: '10 GB',
-      ipType: newDomainIpType,
-      assignedIp: newDomainIpType === 'dedicated' ? '195.201.10.102' : '195.201.10.101',
-      dkimStatus: 'active',
-      status: 'active',
-    };
-    setDomains([...domains, newDom]);
-    setNewDomainName('');
-    setShowAddDomainModal(false);
-    onNotify(`Domain ${newDom.name} provisioned with 2048-bit DKIM keys`, 'success');
+    const name = newDomainName.toLowerCase().trim();
+    try {
+      await createDomain({ domain: name });
+      if (newDomainIp) {
+        await assignIpPool(name, newDomainIp);
+      }
+      setNewDomainName('');
+      setNewDomainIp('');
+      setShowAddDomainModal(false);
+      onNotify(`Domain ${name} provisioned with 2048-bit DKIM keys`, 'success');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
   };
 
-  const handleCreateMailbox = () => {
-    if (!newMailboxUser.trim() || !newMailboxPass.trim()) {
-      onNotify('Username and password are required', 'error');
+  const handleDeleteDomain = async (name: string) => {
+    if (!confirm(`Delete domain ${name}? This removes its mailboxes.`)) return;
+    try {
+      await deleteDomain(name);
+      onNotify(`Domain ${name} removed`, 'info');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleAssignIp = async (name: string) => {
+    if (ipPools.length === 0) {
+      onNotify('No IP pools available', 'error');
+      return;
+    }
+    const ip = prompt(`Assign which IP to ${name}?\nAvailable: ${ipPools.map((p) => p.ip).join(', ')}`);
+    if (!ip) return;
+    try {
+      await assignIpPool(name, ip.trim());
+      onNotify(`IP ${ip.trim()} assigned to ${name}`, 'success');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleCreateMailbox = async () => {
+    if (!newMailboxUser.trim() || !newMailboxPass.trim() || !newMailboxDomain) {
+      onNotify('Username, domain, and password are required', 'error');
       return;
     }
     const fullEmail = `${newMailboxUser.trim()}@${newMailboxDomain}`;
-    const newMb = {
-      id: `mb-${Date.now()}`,
-      email: fullEmail,
-      domain: newMailboxDomain,
-      quota: `${newMailboxQuota} MB`,
-      used: '0 MB',
-      route: 'direct',
-      status: 'active',
-    };
-    setMailboxes([...mailboxes, newMb]);
-    setNewMailboxUser('');
-    setNewMailboxPass('');
-    setShowAddMailboxModal(false);
-    onNotify(`Mailbox ${fullEmail} created`, 'success');
+    try {
+      await createMailbox({
+        email: fullEmail,
+        password: newMailboxPass,
+        quotaLimitMb: Number(newMailboxQuota) || 5120,
+        outboundRoute: 'direct',
+      });
+      setNewMailboxUser('');
+      setNewMailboxPass('');
+      setShowAddMailboxModal(false);
+      onNotify(`Mailbox ${fullEmail} created`, 'success');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
   };
 
-  const handleToggleMailboxStatus = (id: string) => {
-    setMailboxes(
-      mailboxes.map((mb) =>
-        mb.id === id ? { ...mb, status: mb.status === 'active' ? 'suspended' : 'active' } : mb
-      )
-    );
-    onNotify('Mailbox status updated', 'info');
+  const handleToggleMailboxStatus = async (mb: MailboxRow) => {
+    const next = mb.status === 'active' ? 'suspended' : 'active';
+    try {
+      await setMailboxStatus(mb.email, next);
+      onNotify(`Mailbox ${mb.email} ${next}`, 'info');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
   };
 
-  const handleSaveStorage = () => {
-    onNotify(`Storage backend switched to ${storageType.toUpperCase()}`, 'success');
+  const handleDeleteMailbox = async (mb: MailboxRow) => {
+    if (!confirm(`Delete mailbox ${mb.email}?`)) return;
+    try {
+      await deleteMailbox(mb.email);
+      onNotify(`Mailbox ${mb.email} deleted`, 'info');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleCreateIpPool = async () => {
+    if (!newIpAddress.trim() || !newIpRdns.trim()) {
+      onNotify('IP address and rDNS hostname are required', 'error');
+      return;
+    }
+    try {
+      await createIpPool({
+        ip_address: newIpAddress.trim(),
+        pool_type: newIpType,
+        rdns_hostname: newIpRdns.trim(),
+      });
+      setNewIpAddress('');
+      setNewIpRdns('');
+      setShowAddIpModal(false);
+      onNotify(`Outbound IP ${newIpAddress.trim()} bound`, 'success');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleBackup = async () => {
+    try {
+      onNotify('Creating database backup…', 'info');
+      const r = await triggerBackup();
+      onNotify(`Backup ${r.file} (${fmtBytes(r.size_bytes)}) saved`, 'success');
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleRestart = async () => {
+    if (!confirm('Restart stalwart.service? Mail delivery pauses for a few seconds.')) return;
+    try {
+      const r = await restartSystem();
+      onNotify(`Restarting ${r.restarting}`, 'info');
+    } catch (e) {
+      fail(e);
+    }
   };
 
   const renderSidebarContent = (isMobile = false) => (
@@ -327,15 +535,112 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       <div className="p-3 bg-base-200 border border-base-300 rounded-lg text-xs space-y-1 text-base-content/70 mt-4 font-mono tabular-nums">
         <div className="flex justify-between font-medium text-base-content">
           <span>AffinMail core</span>
-          <span>v1.2.0</span>
+          <span>{healthData?.version ?? '—'}</span>
         </div>
         <p className="text-[11px] text-base-content/50">Rust Stalwart • PG16 • Redis7</p>
-        <p className="text-[11px] text-success flex items-center gap-1">
-          <CheckCircle className="w-3 h-3 stroke-[1.5]" /> Active
+        <p className={`text-[11px] flex items-center gap-1 ${healthData?.checks.stalwart ? 'text-success' : 'text-error'}`}>
+          <CheckCircle className="w-3 h-3 stroke-[1.5]" />
+          {healthData?.checks.stalwart ? 'Active' : 'Unreachable'}
         </p>
+        <button
+          onClick={() => logout()}
+          className="btn btn-ghost btn-xs h-7 w-full mt-2 border border-base-300 rounded font-medium"
+        >
+          Sign out
+        </button>
       </div>
     </div>
   );
+
+  /* ---------------------------------------------------------------- auth gate */
+
+  if (!authed) {
+    return (
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content">
+        <header className="h-14 border-b border-base-300 bg-base-100 px-3 sm:px-4 flex items-center justify-between shrink-0">
+          <AffinMailLogo
+            variant="admin"
+            size="sm"
+            tagline="Administration console"
+            withGlow
+          />
+          <button
+            onClick={onToggleTheme}
+            className="btn btn-ghost btn-circle btn-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
+            title="Toggle theme"
+          >
+            {theme === 'light' ? (
+              <Moon className="w-4 h-4 stroke-[1.5]" />
+            ) : (
+              <Sun className="w-4 h-4 stroke-[1.5]" />
+            )}
+          </button>
+        </header>
+
+        <main className="flex-1 flex items-center justify-center p-4">
+          <form
+            className="w-full max-w-sm bg-base-100 border border-base-300 rounded-lg p-5 space-y-4 shadow-sm"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleLogin();
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 stroke-[1.5] text-primary" />
+              <h1 className="text-sm font-semibold">Admin sign in</h1>
+            </div>
+            <p className="text-xs text-base-content/60">
+              Enter the AffinMail admin API token to manage this server.
+            </p>
+
+            <div className="space-y-1">
+              <label className="text-xs text-base-content/70 block" htmlFor="admin-token">
+                Admin token
+              </label>
+              <input
+                id="admin-token"
+                type="password"
+                autoComplete="off"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                className="input input-bordered input-sm w-full font-mono rounded"
+                autoFocus
+              />
+            </div>
+
+            {authError && (
+              <p className="text-xs text-error flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 stroke-[1.5]" />
+                {authError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={authBusy}
+              className="btn btn-primary btn-sm w-full rounded font-medium"
+            >
+              {authBusy ? 'Signing in…' : 'Sign in'}
+            </button>
+
+            <button
+              type="button"
+              onClick={onSwitchToWebmail}
+              className="btn btn-ghost btn-xs w-full text-base-content/60"
+            >
+              Back to webmail
+            </button>
+          </form>
+        </main>
+      </div>
+    );
+  }
+
+  /* ---------------------------------------------------------------- panel */
+
+  const storageUsed = storage ? fmtBytes(storage.used_bytes) : '—';
+  const checks = healthData?.checks;
+  const healthyCount = checks ? [checks.postgres, checks.redis, checks.stalwart].filter(Boolean).length : 0;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content select-none">
@@ -362,20 +667,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="hidden lg:flex items-center gap-5 text-xs text-base-content/60 font-mono tabular-nums">
           <div className="flex items-center gap-1.5">
             <Cpu className="w-3.5 h-3.5 stroke-[1.5] text-base-content/40" />
-            <span>CPU 4%</span>
+            <span>{healthData?.service ?? 'api'} {healthData?.version ?? ''}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Activity className="w-3.5 h-3.5 stroke-[1.5] text-base-content/40" />
-            <span>RAM 680 MB / 4 GB</span>
+            <span>Services {healthyCount} / 3</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 stroke-[1.5] text-success" />
-            <span>Deliverability 10/10</span>
+            <ShieldCheck
+              className={`w-3.5 h-3.5 stroke-[1.5] ${healthyCount === 3 ? 'text-success' : 'text-warning'}`}
+            />
+            <span>{healthyCount === 3 ? 'All systems nominal' : 'Degraded'}</span>
           </div>
         </div>
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => void loadData()}
+            className="btn btn-ghost btn-circle btn-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
+            title="Refresh"
+          >
+            <RotateCw className={`w-4 h-4 stroke-[1.5] ${loading ? 'animate-spin' : ''}`} />
+          </button>
           <button
             onClick={onToggleTheme}
             className="btn btn-ghost btn-circle btn-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
@@ -422,6 +736,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* Central Content Area */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-base-100">
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-base-content/60 font-mono">
+              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+              <span>Loading cluster data…</span>
+            </div>
+          )}
+
           {/* ===================== TAB 1: DASHBOARD ===================== */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 max-w-6xl">
@@ -440,7 +761,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <Globe className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
                   <div className="text-xl font-medium font-mono tabular-nums text-base-content">{domains.length}</div>
-                  <span className="text-[11px] text-base-content/50 font-mono">100% DKIM signed</span>
+                  <span className="text-[11px] text-base-content/50 font-mono">
+                    {domains.filter((d) => d.dkimStatus === 'active').length} DKIM signed
+                  </span>
                 </div>
 
                 <div className="bg-base-200 border border-base-300 p-3.5 rounded-lg space-y-1">
@@ -449,7 +772,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <Users className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
                   <div className="text-xl font-medium font-mono tabular-nums text-base-content">{mailboxes.length}</div>
-                  <span className="text-[11px] text-base-content/50 font-mono">All daemons active</span>
+                  <span className="text-[11px] text-base-content/50 font-mono">
+                    {mailboxes.filter((m) => m.status === 'active').length} active
+                  </span>
                 </div>
 
                 <div className="bg-base-200 border border-base-300 p-3.5 rounded-lg space-y-1">
@@ -457,17 +782,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <span>Cluster storage</span>
                     <HardDrive className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
-                  <div className="text-xl font-medium font-mono tabular-nums text-base-content">4.2 GB</div>
-                  <span className="text-[11px] text-base-content/50 font-mono">Engine: {storageType.toUpperCase()}</span>
+                  <div className="text-xl font-medium font-mono tabular-nums text-base-content">{storageUsed}</div>
+                  <span className="text-[11px] text-base-content/50 font-mono">
+                    Engine: {(storage?.storage_type ?? '—').toUpperCase()}
+                  </span>
                 </div>
 
                 <div className="bg-base-200 border border-base-300 p-3.5 rounded-lg space-y-1">
                   <div className="flex justify-between items-center text-xs font-normal text-base-content/60">
-                    <span>IP deliverability</span>
+                    <span>Service health</span>
                     <ShieldCheck className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
-                  <div className="text-xl font-medium font-mono tabular-nums text-base-content">10 / 10</div>
-                  <span className="text-[11px] text-success font-mono">0 blacklists flagged</span>
+                  <div className="text-xl font-medium font-mono tabular-nums text-base-content">{healthyCount} / 3</div>
+                  <span className={`text-[11px] font-mono ${healthyCount === 3 ? 'text-success' : 'text-error'}`}>
+                    {healthyCount === 3 ? 'All services up' : 'Service degraded'}
+                  </span>
                 </div>
               </div>
 
@@ -493,11 +822,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <span>Create mailbox</span>
                   </button>
                   <button
-                    onClick={() => onNotify('Rate limits flushed', 'info')}
+                    onClick={() => void loadData()}
                     className="btn btn-ghost btn-xs px-3 h-8 border border-base-300 gap-1.5 font-medium rounded hover:bg-base-100"
                   >
                     <RotateCw className="w-3.5 h-3.5 stroke-[1.5]" />
-                    <span>Flush rate limits</span>
+                    <span>Refresh stats</span>
                   </button>
                 </div>
               </div>
@@ -569,11 +898,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <span
                               className="px-1.5 py-0.5 rounded text-[11px] font-mono tabular-nums bg-base-200 border border-base-300 text-base-content/80"
                             >
-                              {dom.ipType === 'dedicated' ? `Dedicated (${dom.assignedIp})` : 'Shared pool'}
+                              {dom.assignedIp
+                                ? `${dom.ipType === 'dedicated' ? 'Dedicated' : 'Shared'} (${dom.assignedIp})`
+                                : 'Unassigned'}
                             </span>
                           </td>
                           <td>
-                            <span className="font-mono text-xs text-base-content/60">2048-bit RSA</span>
+                            <span className="font-mono text-xs text-base-content/60">
+                              {dom.dkimStatus === 'active' ? '2048-bit RSA' : 'missing key'}
+                            </span>
                           </td>
                           <td className="text-right space-x-1">
                             <button
@@ -583,12 +916,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               View DNS
                             </button>
                             <button
-                              onClick={() => {
-                                if (confirm(`Delete domain ${dom.name}?`)) {
-                                  setDomains(domains.filter((d) => d.id !== dom.id));
-                                  onNotify(`Domain ${dom.name} removed`, 'info');
-                                }
-                              }}
+                              onClick={() => void handleAssignIp(dom.name)}
+                              className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded"
+                            >
+                              Assign IP
+                            </button>
+                            <button
+                              onClick={() => void handleDeleteDomain(dom.name)}
                               className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded"
                             >
                               Delete
@@ -596,6 +930,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </td>
                         </tr>
                       ))}
+                      {domains.length === 0 && !loading && (
+                        <tr>
+                          <td colSpan={6} className="text-center text-xs text-base-content/50 py-6">
+                            No virtual domains yet
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -654,23 +995,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </td>
                           <td className="text-right space-x-1">
                             <button
-                              onClick={() => handleToggleMailboxStatus(mb.id)}
+                              onClick={() => void handleToggleMailboxStatus(mb)}
                               className="btn btn-ghost btn-xs font-medium text-base-content/70 hover:text-base-content rounded"
                             >
                               {mb.status === 'active' ? 'Suspend' : 'Unsuspend'}
                             </button>
                             <button
-                              onClick={() => {
-                                const newP = prompt('Enter new password:');
-                                if (newP) onNotify(`Password for ${mb.email} updated`, 'success');
-                              }}
-                              className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded"
+                              onClick={() => void handleDeleteMailbox(mb)}
+                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded"
                             >
-                              Change password
+                              Delete
                             </button>
                           </td>
                         </tr>
                       ))}
+                      {mailboxes.length === 0 && !loading && (
+                        <tr>
+                          <td colSpan={6} className="text-center text-xs text-base-content/50 py-6">
+                            No mailboxes yet
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -684,10 +1029,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold tracking-tight text-base-content">IP pools and egress routing</h2>
-                  <p className="text-xs text-base-content/60">Dedicated and shared outbound IP addresses with 30-day warmup progression</p>
+                  <p className="text-xs text-base-content/60">Dedicated and shared outbound IP addresses</p>
                 </div>
                 <button
-                  onClick={() => onNotify('New IP binding added', 'success')}
+                  onClick={() => setShowAddIpModal(true)}
                   className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded self-start sm:self-auto"
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[1.5]" />
@@ -715,131 +1060,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
                       <div className="flex justify-between text-base-content/70 font-mono">
                         <span>RBL status</span>
-                        <span className="text-success flex items-center gap-1 font-medium">
-                          <CheckCircle className="w-3.5 h-3.5 stroke-[1.5]" /> Clean (0 listings)
-                        </span>
+                        {pool.rblClean ? (
+                          <span className="text-success flex items-center gap-1 font-medium">
+                            <CheckCircle className="w-3.5 h-3.5 stroke-[1.5]" /> Clean
+                          </span>
+                        ) : (
+                          <span className="text-error flex items-center gap-1 font-medium">
+                            <AlertTriangle className="w-3.5 h-3.5 stroke-[1.5]" /> Blacklisted
+                          </span>
+                        )}
                       </div>
-                      <div className="flex justify-between items-center text-base-content/70 font-mono tabular-nums">
-                        <span>Warm-up progression</span>
-                        <span className="font-medium text-base-content">
-                          Day {pool.warmupDay} / 30 {pool.warmupDay >= 30 ? '(Completed)' : ''}
-                        </span>
-                      </div>
-                      <progress
-                        className="progress progress-primary w-full h-1 bg-base-300"
-                        value={pool.warmupDay}
-                        max="30"
-                      ></progress>
                     </div>
                   </div>
                 ))}
+                {ipPools.length === 0 && !loading && (
+                  <div className="text-xs text-base-content/50 py-6">No outbound IPs bound yet</div>
+                )}
               </div>
             </div>
           )}
 
-          {/* ===================== TAB 5: DYNAMIC STORAGE ===================== */}
+          {/* ===================== TAB 5: STORAGE ===================== */}
           {activeTab === 'storage' && (
             <div className="space-y-6 max-w-4xl">
               <div>
-                <h2 className="text-base font-semibold tracking-tight text-base-content">Dynamic storage engine</h2>
-                <p className="text-xs text-base-content/60">
-                  Switch blob and attachment storage between NVMe SSD, S3-compatible object storage, and SFTP.
-                </p>
+                <h2 className="text-base font-semibold tracking-tight text-base-content">Storage engine</h2>
+                <p className="text-xs text-base-content/60">Live blob storage status reported by the admin API.</p>
               </div>
 
-              {/* Storage Mode Selector */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div
-                  onClick={() => setStorageType('fs')}
-                  className={`p-3.5 rounded-lg border cursor-pointer transition-colors ${
-                    storageType === 'fs'
-                      ? 'border-base-content/40 bg-base-200'
-                      : 'border-base-300 bg-base-100 hover:bg-base-200/50'
-                  }`}
-                >
-                  <HardDrive className="w-5 h-5 mb-2 stroke-[1.5] text-base-content/60" />
-                  <h4 className="font-medium text-xs text-base-content">Local NVMe SSD</h4>
-                  <p className="text-[11px] text-base-content/50 mt-1">Direct local filesystem, sub-millisecond access</p>
+              <div className="bg-base-100 border border-base-300 p-4 rounded-lg space-y-3 text-xs">
+                <div className="flex justify-between items-center border-b border-base-300 pb-2">
+                  <span className="text-base-content/60">Backend</span>
+                  <span className="font-mono uppercase text-base-content">
+                    {storage?.storage_type ?? '—'}
+                  </span>
                 </div>
-
-                <div
-                  onClick={() => setStorageType('s3')}
-                  className={`p-3.5 rounded-lg border cursor-pointer transition-colors ${
-                    storageType === 's3'
-                      ? 'border-base-content/40 bg-base-200'
-                      : 'border-base-300 bg-base-100 hover:bg-base-200/50'
-                  }`}
-                >
-                  <Database className="w-5 h-5 mb-2 stroke-[1.5] text-base-content/60" />
-                  <h4 className="font-medium text-xs text-base-content">S3 object storage</h4>
-                  <p className="text-[11px] text-base-content/50 mt-1">Cloudflare R2, AWS S3, MinIO, Wasabi</p>
+                <div className="flex justify-between items-center gap-4">
+                  <span className="text-base-content/60">Path</span>
+                  <span className="font-mono text-base-content break-all text-right">
+                    {storage?.local_path ?? '—'}
+                  </span>
                 </div>
-
-                <div
-                  onClick={() => setStorageType('sftp')}
-                  className={`p-3.5 rounded-lg border cursor-pointer transition-colors ${
-                    storageType === 'sftp'
-                      ? 'border-base-content/40 bg-base-200'
-                      : 'border-base-300 bg-base-100 hover:bg-base-200/50'
-                  }`}
-                >
-                  <Server className="w-5 h-5 mb-2 stroke-[1.5] text-base-content/60" />
-                  <h4 className="font-medium text-xs text-base-content">SFTP storage box</h4>
-                  <p className="text-[11px] text-base-content/50 mt-1">Remote SSH/SFTP mounted storage box</p>
+                <div className="flex justify-between items-center">
+                  <span className="text-base-content/60">Used</span>
+                  <span className="font-mono tabular-nums text-base-content">
+                    {storage ? fmtBytes(storage.used_bytes) : '—'}
+                  </span>
                 </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-base-content/60">Free</span>
+                  <span className="font-mono tabular-nums text-base-content">
+                    {storage ? fmtBytes(storage.free_bytes) : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-base-content/60">Total</span>
+                  <span className="font-mono tabular-nums text-base-content">
+                    {storage ? fmtBytes(storage.total_bytes) : '—'}
+                  </span>
+                </div>
+                {storage && storage.total_bytes > 0 && (
+                  <progress
+                    className="progress progress-primary w-full h-1 bg-base-300"
+                    value={storage.used_bytes}
+                    max={storage.total_bytes}
+                  ></progress>
+                )}
               </div>
-
-              {/* S3 Configuration Form if S3 selected */}
-              {storageType === 's3' && (
-                <div className="bg-base-100 border border-base-300 p-4 rounded-lg space-y-3">
-                  <h4 className="text-xs font-semibold text-base-content">S3-compatible API credentials</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="label-text text-xs text-base-content/60 mb-1 block">Bucket name</label>
-                      <input
-                        type="text"
-                        value={s3Bucket}
-                        onChange={(e) => setS3Bucket(e.target.value)}
-                        className="input input-bordered input-xs h-8 w-full font-mono rounded"
-                      />
-                    </div>
-                    <div>
-                      <label className="label-text text-xs text-base-content/60 mb-1 block">S3 endpoint URL</label>
-                      <input
-                        type="text"
-                        value={s3Endpoint}
-                        onChange={(e) => setS3Endpoint(e.target.value)}
-                        className="input input-bordered input-xs h-8 w-full font-mono rounded"
-                      />
-                    </div>
-                    <div>
-                      <label className="label-text text-xs text-base-content/60 mb-1 block">Access key ID</label>
-                      <input
-                        type="text"
-                        value={s3AccessKey}
-                        onChange={(e) => setS3AccessKey(e.target.value)}
-                        className="input input-bordered input-xs h-8 w-full font-mono rounded"
-                      />
-                    </div>
-                    <div>
-                      <label className="label-text text-xs text-base-content/60 mb-1 block">Secret access key</label>
-                      <input
-                        type="password"
-                        value={s3SecretKey}
-                        onChange={(e) => setS3SecretKey(e.target.value)}
-                        className="input input-bordered input-xs h-8 w-full font-mono rounded"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={handleSaveStorage}
-                className="btn btn-primary btn-xs px-4 h-8 font-medium rounded"
-              >
-                Save storage configuration
-              </button>
             </div>
           )}
 
@@ -855,7 +1142,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <h3 className="text-xs font-semibold text-base-content">Cluster operations</h3>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => onNotify('PostgreSQL backup saved to /opt/affinmail/backups/', 'success')}
+                    onClick={() => void handleBackup()}
                     className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded font-medium gap-1.5"
                   >
                     <Database className="w-3.5 h-3.5 stroke-[1.5] text-base-content/60" />
@@ -863,21 +1150,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </button>
 
                   <button
-                    onClick={() => onNotify('Services restarted', 'info')}
+                    onClick={() => void handleRestart()}
                     className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded font-medium gap-1.5"
                   >
                     <RotateCw className="w-3.5 h-3.5 stroke-[1.5] text-base-content/60" />
-                    <span>Restart services</span>
-                  </button>
-
-                  <button
-                    onClick={() => onNotify('Spam filter cache purged', 'info')}
-                    className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded font-medium gap-1.5"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 stroke-[1.5] text-base-content/60" />
-                    <span>Purge filter cache</span>
+                    <span>Restart mail service</span>
                   </button>
                 </div>
+              </div>
+
+              <div className="bg-base-200 border border-base-300 p-4 rounded-lg font-mono text-xs space-y-2 tabular-nums">
+                <div className="flex justify-between items-center text-base-content/50 border-b border-base-300 pb-2">
+                  <span>Service checks</span>
+                  <span>{healthyCount} / 3 healthy</span>
+                </div>
+                {(['postgres', 'redis', 'stalwart'] as const).map((svc) => (
+                  <div key={svc} className="flex justify-between items-center">
+                    <span className="text-base-content/80">{svc}</span>
+                    <span className={healthData?.checks[svc] ? 'text-success' : 'text-error'}>
+                      {healthData?.checks[svc] ? 'up' : 'down'}
+                    </span>
+                  </div>
+                ))}
               </div>
 
               <div className="bg-base-200 border border-base-300 p-4 rounded-lg font-mono text-xs space-y-2 tabular-nums">
@@ -915,14 +1209,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <div>
-                <label className="text-xs text-base-content/70 mb-1 block">Outbound IP policy</label>
+                <label className="text-xs text-base-content/70 mb-1 block">Outbound IP (optional)</label>
                 <select
-                  value={newDomainIpType}
-                  onChange={(e) => setNewDomainIpType(e.target.value as 'shared' | 'dedicated')}
+                  value={newDomainIp}
+                  onChange={(e) => setNewDomainIp(e.target.value)}
                   className="select select-bordered select-xs h-8 w-full font-mono rounded"
                 >
-                  <option value="shared">Shared IP pool (195.201.10.101)</option>
-                  <option value="dedicated">Dedicated IP (195.201.10.102)</option>
+                  <option value="">No assignment</option>
+                  {ipPools.map((p) => (
+                    <option key={p.id} value={p.ip}>
+                      {p.ip} ({p.type})
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -931,7 +1229,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <button onClick={() => setShowAddDomainModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded font-medium">
                 Cancel
               </button>
-              <button onClick={handleCreateDomain} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
+              <button onClick={() => void handleCreateDomain()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
                 Provision domain
               </button>
             </div>
@@ -998,8 +1296,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <button onClick={() => setShowAddMailboxModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded font-medium">
                 Cancel
               </button>
-              <button onClick={handleCreateMailbox} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
+              <button onClick={() => void handleCreateMailbox()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
                 Create mailbox
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== MODAL: BIND OUTBOUND IP ===================== */}
+      {showAddIpModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-5 rounded-lg shadow-xl space-y-4">
+            <h3 className="text-sm font-semibold text-base-content">Bind new outbound IP</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-xs text-base-content/70 mb-1 block">IP address</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 195.201.10.103"
+                  value={newIpAddress}
+                  onChange={(e) => setNewIpAddress(e.target.value)}
+                  className="input input-bordered input-xs h-8 w-full font-mono rounded"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs text-base-content/70 mb-1 block">rDNS hostname</label>
+                <input
+                  type="text"
+                  placeholder="e.g. mail3.hostaffin.com"
+                  value={newIpRdns}
+                  onChange={(e) => setNewIpRdns(e.target.value)}
+                  className="input input-bordered input-xs h-8 w-full font-mono rounded"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-base-content/70 mb-1 block">Pool type</label>
+                <select
+                  value={newIpType}
+                  onChange={(e) => setNewIpType(e.target.value as 'shared' | 'dedicated')}
+                  className="select select-bordered select-xs h-8 w-full font-mono rounded"
+                >
+                  <option value="shared">Shared</option>
+                  <option value="dedicated">Dedicated</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
+              <button onClick={() => setShowAddIpModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded font-medium">
+                Cancel
+              </button>
+              <button onClick={() => void handleCreateIpPool()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
+                Bind IP
               </button>
             </div>
           </div>
@@ -1027,26 +1377,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-base-300">
-                  <tr>
-                    <td><span className="px-1.5 py-0.5 rounded text-[10px] bg-base-200 border border-base-300">MX</span></td>
-                    <td>@</td>
-                    <td>10 mail.hostaffin.com</td>
-                  </tr>
-                  <tr>
-                    <td><span className="px-1.5 py-0.5 rounded text-[10px] bg-base-200 border border-base-300">TXT</span></td>
-                    <td>@</td>
-                    <td>v=spf1 mx include:_spf.hostaffin.com ~all</td>
-                  </tr>
-                  <tr>
-                    <td><span className="px-1.5 py-0.5 rounded text-[10px] bg-base-200 border border-base-300">TXT</span></td>
-                    <td>affinmail._domainkey</td>
-                    <td className="break-all">v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w...</td>
-                  </tr>
-                  <tr>
-                    <td><span className="px-1.5 py-0.5 rounded text-[10px] bg-base-200 border border-base-300">TXT</span></td>
-                    <td>_dmarc</td>
-                    <td>v=DMARC1; p=quarantine; rua=mailto:dmarc@{selectedDnsDomain}</td>
-                  </tr>
+                  {dnsLoading && (
+                    <tr>
+                      <td colSpan={3} className="text-center text-base-content/50 py-4">
+                        Loading DNS records…
+                      </td>
+                    </tr>
+                  )}
+                  {!dnsLoading &&
+                    dnsRecords.map((rec, i) => (
+                      <tr key={`${rec.type}-${rec.name}-${i}`}>
+                        <td>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-base-200 border border-base-300">
+                            {rec.type}
+                          </span>
+                        </td>
+                        <td>{rec.name}</td>
+                        <td className="break-all">
+                          {rec.priority !== undefined ? `${rec.priority} ${rec.value}` : rec.value}
+                        </td>
+                      </tr>
+                    ))}
+                  {!dnsLoading && dnsRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="text-center text-base-content/50 py-4">
+                        No records returned
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
