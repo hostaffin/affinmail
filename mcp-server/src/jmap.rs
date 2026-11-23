@@ -5,6 +5,96 @@ const CORE: &str = "urn:ietf:params:jmap:core";
 const MAIL: &str = "urn:ietf:params:jmap:mail";
 const QUOTA: &str = "urn:ietf:params:jmap:quota";
 
+/// Pick the JMAP mail account id from a session document.
+fn account_id_from_session(session: &Value) -> Result<String, String> {
+    if let Some(id) = session
+        .pointer("/primaryAccounts/urn:ietf:params:jmap:mail")
+        .and_then(|v| v.as_str())
+    {
+        return Ok(id.to_string());
+    }
+    if let Some(id) = session
+        .get("accounts")
+        .and_then(|v| v.as_object())
+        .and_then(|o| o.keys().next())
+    {
+        return Ok(id.clone());
+    }
+    Err("JMAP session exposes no mail account (no primaryAccounts mail entry, no accounts)".to_string())
+}
+
+/// Resolve a mailbox NAME or ROLE (case-insensitive) to its real mailbox id.
+fn resolve_mailbox_id(list: &[Value], wanted: &str) -> Result<String, String> {
+    let wanted = wanted.to_lowercase();
+    for mb in list {
+        let name = mb.get("name").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+        let role = mb.get("role").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+        if let Some(id) = mb.get("id").and_then(|v| v.as_str()) {
+            if name == wanted || role == wanted {
+                return Ok(id.to_string());
+            }
+        }
+    }
+    Err(format!("Mailbox '{}' not found in account", wanted))
+}
+
+/// Combine Quota/get and Mailbox/get responses into the tool's summary object.
+fn build_quota_summary(
+    quota_raw: Value,
+    quota_error: Value,
+    mailbox_raw: Value,
+    mailbox_error: Value,
+) -> Value {
+    let mailbox_list = mailbox_raw
+        .pointer("/methodResponses/0/1/list")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let quota_list = quota_raw
+        .pointer("/methodResponses/0/1/list")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let primary = quota_list.first();
+
+    let used = primary
+        .and_then(|q| q.get("used"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let limit = primary
+        .and_then(|q| q.get("hardLimit").or_else(|| q.get("softLimit")))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    let sum = |key: &str| -> i64 {
+        mailbox_list
+            .iter()
+            .map(|mb| mb.get(key).and_then(|v| v.as_i64()).unwrap_or(0))
+            .sum()
+    };
+
+    json!({
+        "used": used,
+        "limit": limit,
+        "quotas": quota_list,
+        "mailboxes": {
+            "count": mailbox_list.len(),
+            "totalEmails": sum("totalEmails"),
+            "totalThreads": sum("totalThreads"),
+            "unreadEmails": sum("unreadEmails"),
+            "unreadThreads": sum("unreadThreads"),
+            "list": mailbox_list,
+        },
+        "raw": {
+            "quota": quota_raw,
+            "quotaError": quota_error,
+            "mailboxes": mailbox_raw,
+            "mailboxError": mailbox_error,
+        }
+    })
+}
+
 #[derive(Clone, Debug)]
 pub struct JmapClient {
     pub base_url: String,
@@ -31,9 +121,14 @@ impl JmapClient {
             }
         };
 
+        Self::with_token(base_url, api_token)
+    }
+
+    /// Explicit constructor for tests / embedders.
+    pub fn with_token(base_url: impl Into<String>, api_token: impl Into<String>) -> Self {
         Self {
-            base_url,
-            api_token,
+            base_url: base_url.into(),
+            api_token: api_token.into(),
             http_client: reqwest::Client::new(),
         }
     }
@@ -72,20 +167,7 @@ impl JmapClient {
         let session: Value = serde_json::from_str(&body)
             .map_err(|e| format!("Failed to parse JMAP session JSON: {}", e))?;
 
-        if let Some(id) = session
-            .pointer("/primaryAccounts/urn:ietf:params:jmap:mail")
-            .and_then(|v| v.as_str())
-        {
-            return Ok(id.to_string());
-        }
-        if let Some(id) = session
-            .get("accounts")
-            .and_then(|v| v.as_object())
-            .and_then(|o| o.keys().next())
-        {
-            return Ok(id.clone());
-        }
-        Err("JMAP session exposes no mail account (no primaryAccounts mail entry, no accounts)".to_string())
+        account_id_from_session(&session)
     }
 
     /// All mailboxes with the properties needed for folder resolution and quota sums.
@@ -115,19 +197,9 @@ impl JmapClient {
     }
 
     /// Resolve a mailbox NAME or ROLE (case-insensitive) to its real mailbox id.
-    async fn mailbox_id(&self, wanted: &str) -> Result<String, String> {
-        let wanted = wanted.to_lowercase();
+    pub async fn mailbox_id(&self, wanted: &str) -> Result<String, String> {
         let list = self.mailboxes().await?;
-
-        for mb in &list {
-            let name = mb.get("name").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-            let role = mb.get("role").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-            if (name == wanted || role == wanted) && mb.get("id").and_then(|v| v.as_str()).is_some() {
-                return Ok(mb["id"].as_str().unwrap_or_default().to_string());
-            }
-        }
-
-        Err(format!("Mailbox '{}' not found in account", wanted))
+        resolve_mailbox_id(&list, wanted)
     }
 
     /// Search emails by keyword, mailbox folder, and unread status.
@@ -448,54 +520,8 @@ impl JmapClient {
             Ok(v) => (v, Value::Null),
             Err(e) => (Value::Null, json!(e)),
         };
-        let mailbox_list = mailbox_raw
-            .pointer("/methodResponses/0/1/list")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
 
-        let quota_list = quota_raw
-            .pointer("/methodResponses/0/1/list")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let primary = quota_list.first();
-
-        let used = primary
-            .and_then(|q| q.get("used"))
-            .cloned()
-            .unwrap_or(Value::Null);
-        let limit = primary
-            .and_then(|q| q.get("hardLimit").or_else(|| q.get("softLimit")))
-            .cloned()
-            .unwrap_or(Value::Null);
-
-        let sum = |key: &str| -> i64 {
-            mailbox_list
-                .iter()
-                .map(|mb| mb.get(key).and_then(|v| v.as_i64()).unwrap_or(0))
-                .sum()
-        };
-
-        Ok(json!({
-            "used": used,
-            "limit": limit,
-            "quotas": quota_list,
-            "mailboxes": {
-                "count": mailbox_list.len(),
-                "totalEmails": sum("totalEmails"),
-                "totalThreads": sum("totalThreads"),
-                "unreadEmails": sum("unreadEmails"),
-                "unreadThreads": sum("unreadThreads"),
-                "list": mailbox_list,
-            },
-            "raw": {
-                "quota": quota_raw,
-                "quotaError": quota_error,
-                "mailboxes": mailbox_raw,
-                "mailboxError": mailbox_error,
-            }
-        }))
+        Ok(build_quota_summary(quota_raw, quota_error, mailbox_raw, mailbox_error))
     }
 
     async fn post_jmap(&self, payload: &Value) -> Result<Value, String> {
@@ -535,14 +561,11 @@ impl JmapClient {
 
 #[cfg(test)]
 mod tests {
-    use super::JmapClient;
+    use super::{account_id_from_session, build_quota_summary, resolve_mailbox_id, JmapClient};
+    use serde_json::{json, Value};
 
     fn client(base_url: &str) -> JmapClient {
-        JmapClient {
-            base_url: base_url.to_string(),
-            api_token: "user@example.com:secret".to_string(),
-            http_client: reqwest::Client::new(),
-        }
+        JmapClient::with_token(base_url, "user@example.com:secret")
     }
 
     #[test]
@@ -565,5 +588,59 @@ mod tests {
         let auth = req.headers().get("authorization").unwrap().to_str().unwrap();
         assert!(auth.starts_with("Basic "), "got {}", auth);
         assert_eq!(auth, "Basic dXNlckBleGFtcGxlLmNvbTpzZWNyZXQ=");
+    }
+
+    #[test]
+    fn account_id_prefers_primary_mail_account() {
+        let session = json!({
+            "accounts": {"acct-a": {}, "acct-b": {}},
+            "primaryAccounts": {"urn:ietf:params:jmap:mail": "acct-b"}
+        });
+        assert_eq!(account_id_from_session(&session).unwrap(), "acct-b");
+    }
+
+    #[test]
+    fn account_id_falls_back_to_first_account() {
+        let session = json!({"accounts": {"only": {}}});
+        assert_eq!(account_id_from_session(&session).unwrap(), "only");
+    }
+
+    #[test]
+    fn account_id_errors_without_accounts() {
+        assert!(account_id_from_session(&json!({})).is_err());
+    }
+
+    #[test]
+    fn mailbox_resolution_is_case_insensitive_and_skips_idless_entries() {
+        let list = vec![
+            json!({"name": "Inbox", "role": "inbox"}),
+            json!({"id": "mb-1", "name": "Archive", "role": "archive"}),
+        ];
+        assert_eq!(resolve_mailbox_id(&list, "ARCHIVE").unwrap(), "mb-1");
+        assert_eq!(resolve_mailbox_id(&list, "archive").unwrap(), "mb-1");
+        assert!(resolve_mailbox_id(&list, "trash").is_err());
+    }
+
+    #[test]
+    fn quota_summary_handles_missing_and_error_payloads() {
+        let summary = build_quota_summary(
+            Value::Null,
+            json!("quota down"),
+            Value::Null,
+            json!("mailbox down"),
+        );
+        assert_eq!(summary["used"], Value::Null);
+        assert_eq!(summary["limit"], Value::Null);
+        assert_eq!(summary["mailboxes"]["count"], json!(0));
+        assert_eq!(summary["raw"]["quotaError"], json!("quota down"));
+    }
+
+    #[test]
+    fn quota_summary_falls_back_to_soft_limit() {
+        let quota = json!({"methodResponses": [["Quota/get", {"list": [{"used": 5, "softLimit": 50}]}, "q"]]});
+        let mailboxes = json!({"methodResponses": [["Mailbox/get", {"list": [{"totalEmails": 2}]}, "m"]]});
+        let summary = build_quota_summary(quota, Value::Null, mailboxes, Value::Null);
+        assert_eq!(summary["limit"], json!(50));
+        assert_eq!(summary["mailboxes"]["totalEmails"], json!(2));
     }
 }

@@ -1,6 +1,10 @@
 <?php
 /**
  * PHPUnit Test Suite for AffinMail Driver Module
+ *
+ * Network tests target the LOCAL AffinMail API (127.0.0.1:8090). When the API
+ * rejects the placeholder key the driver falls back to its locally signed SSO
+ * token, so no external host is contacted.
  */
 
 require_once __DIR__ . '/../AffinMail.php';
@@ -18,8 +22,8 @@ class AffinMailTest extends TestCase
             'username' => 'admin',
             'password' => 'SecurePass1234!',
             'serviceid' => 9912,
-            'serverhostname' => 'mail.hostaffin.com',
-            'serverport' => '8080',
+            'serverhostname' => '127.0.0.1',
+            'serverport' => '8090',
             'serveraccesshash' => 'dummy_secret_hash',
             'configoption1' => '10240', // 10GB
             'configoption2' => '5',     // 5 mailboxes
@@ -70,6 +74,7 @@ class AffinMailTest extends TestCase
         $this->assertIsArray($result);
         $this->assertArrayHasKey('ssoUrl', $result);
         $this->assertStringContainsString('token=', $result['ssoUrl']);
+        $this->assertStringNotContainsString('mail.hostaffin.com:8080', $result['ssoUrl']);
     }
 
     public function testClientAreaReturnsExpectedTemplateVars()
@@ -80,5 +85,42 @@ class AffinMailTest extends TestCase
         $this->assertArrayHasKey('dnsRecords', $result['templateVariables']);
         $this->assertArrayHasKey('ssoUrl', $result['templateVariables']);
         $this->assertEquals('testcompany.com', $result['templateVariables']['domain']);
+    }
+
+    public function testTestConnectionAgainstLocalApi()
+    {
+        $socket = @fsockopen('127.0.0.1', 8090, $errno, $errstr, 1);
+        if (!$socket) {
+            $this->markTestSkipped('Local AffinMail API not listening on 127.0.0.1:8090');
+        }
+        fclose($socket);
+
+        $result = affinmail_TestConnection($this->testParams);
+        $this->assertTrue($result['success'], 'Local API health check failed: ' . ($result['error'] ?? ''));
+    }
+
+    public function testSuspendAccountReturnsErrorStringOnFailure()
+    {
+        // Unreachable local port: apiCall fails, SuspendAccount must surface the error
+        // string instead of reporting success.
+        $params = $this->testParams;
+        $params['serverport'] = '1';
+
+        $result = affinmail_SuspendAccount($params);
+        $this->assertIsString($result);
+        $this->assertNotEquals('success', $result);
+        $this->assertNotSame('', trim($result));
+    }
+
+    public function testMailboxEmailIsUrlEncoded()
+    {
+        $this->assertEquals('admin%40testcompany.com', affinmail_mailboxEmail($this->testParams));
+    }
+
+    public function testBase64UrlHasNoPadding()
+    {
+        $encoded = affinmail_base64url('any carnal pleasure.');
+        $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]+$/', $encoded);
+        $this->assertStringNotContainsString('=', $encoded);
     }
 }

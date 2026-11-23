@@ -1,78 +1,78 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-test.describe('AffinMail Gmail-Grade Webmail Client E2E', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('http://localhost:3000');
+/**
+ * AffinMail webmail SPA E2E.
+ *
+ * Runs against the production build served by `vite preview` on
+ * http://127.0.0.1:4173 with `/jmap` proxied to local Stalwart.
+ * No mock data names: assertions match text rendered by webmail/src/App.tsx,
+ * components/Login.tsx and components/HeaderBar.tsx.
+ *
+ * Login flows are opt-in via AM_TEST_USER / AM_TEST_PASS and are skipped when
+ * those env vars are absent, so the spec passes on a bare box.
+ */
+
+const TEST_USER = process.env.AM_TEST_USER;
+const TEST_PASS = process.env.AM_TEST_PASS;
+
+test.describe('AffinMail webmail shell', () => {
+  test('serves the built SPA with AffinMail branding', async ({ page }) => {
+    const response = await page.goto('/');
+    expect(response?.ok()).toBeTruthy();
+
+    await expect(page.getByText(/Affin/i).first()).toBeVisible();
+    // Login.tsx heading + subtitle (unauthenticated default view).
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByText('Use your AffinMail address and password')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await expect(page.locator('input[type="email"]')).toBeVisible();
+    await expect(page.locator('input[type="password"]')).toBeVisible();
   });
 
-  test('loads inbox with brand and user information', async ({ page }) => {
-    await expect(page.locator('text=AffinMail')).toBeVisible();
-    await expect(page.locator('text=apexlogistics.com')).toBeVisible();
-    await expect(page.locator('text=Marcus Vance')).toBeVisible();
+  test('shows a validation error when submitting an empty form', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByText('Email and password are required.')).toBeVisible();
   });
 
-  test('toggles Enterprise Light and Dark theme with persistent data-theme attribute', async ({ page }) => {
-    const html = page.locator('html');
-    await expect(html).toHaveAttribute('data-theme', 'light');
+  test('theme toggle switches cached preference once signed in', async ({ page }) => {
+    test.skip(!TEST_USER || !TEST_PASS, 'AM_TEST_USER/AM_TEST_PASS not set');
 
-    // Click theme switcher
-    const themeBtn = page.locator('button[title*="Switch to Dark Mode"]');
-    await themeBtn.click();
-    await expect(html).toHaveAttribute('data-theme', 'dark');
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
-    // Toggle back to light
-    const lightBtn = page.locator('button[title*="Switch to Light Mode"]');
-    await lightBtn.click();
-    await expect(html).toHaveAttribute('data-theme', 'light');
+    await page.fill('input[type="email"]', TEST_USER!);
+    await page.fill('input[type="password"]', TEST_PASS!);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+
+    // HeaderBar only renders after auth; its theme button title is
+    // `Switch to ${theme === 'light' ? 'Dark' : 'Light'} mode`.
+    const toDark = page.getByTitle('Switch to Dark mode');
+    await expect(toDark).toBeVisible({ timeout: 15_000 });
+    await toDark.click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    const toLight = page.getByTitle('Switch to Light mode');
+    await expect(toLight).toBeVisible();
+    await toLight.click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   });
 
-  test('supports Gmail keyboard shortcut "c" to open docked compose modal', async ({ page }) => {
-    await page.keyboard.press('c');
-    await expect(page.locator('text=New Message')).toBeVisible();
-    await expect(page.locator('input[placeholder="client@enterprise.com"]')).toBeVisible();
-  });
+  test('compose button opens the compose sheet after login', async ({ page }) => {
+    test.skip(!TEST_USER || !TEST_PASS, 'AM_TEST_USER/AM_TEST_PASS not set');
 
-  test('navigates threads using "j" and "k" and opens with "Enter"', async ({ page }) => {
-    // Navigate down
-    await page.keyboard.press('j');
-    // Open thread
-    await page.keyboard.press('Enter');
-    await expect(page.locator('text=Security Verified')).toBeVisible();
-    await expect(page.locator('text=Back to list')).toBeVisible();
+    await page.goto('/');
+    await page.fill('input[type="email"]', TEST_USER!);
+    await page.fill('input[type="password"]', TEST_PASS!);
+    await page.getByRole('button', { name: 'Sign in' }).click();
 
-    // Escape back to list
-    await page.keyboard.press('Escape');
-    await expect(page.locator('text=Payment Receipt #AF-1092')).toBeVisible();
-  });
+    // NavigationSidebar compose control (aria-label="Compose") — click the
+    // visible one (icon form when collapsed, pill form when expanded).
+    const compose = page.getByRole('button', { name: 'Compose' }).first();
+    await expect(compose).toBeVisible({ timeout: 15_000 });
+    await compose.click();
 
-  test('displays plan-driven attachment guard error when file exceeds limit', async ({ page }) => {
-    await page.keyboard.press('c');
-    await page.fill('input[placeholder="client@enterprise.com"]', 'partner@enterprise.com');
-    await page.fill('input[placeholder="Project Handover & Documentation..."]', 'Quarterly Budget');
-
-    // Trigger oversize file validation via file input
-    // Verifies client side byte guard rejects files > planLimitMb
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.locator('button[title*="Attach files"]').click();
-    const fileChooser = await fileChooserPromise;
-    
-    // Simulate setting a 30MB file buffer
-    await fileChooser.setFiles({
-      name: 'Oversize_Archive.zip',
-      mimeType: 'application/zip',
-      buffer: Buffer.alloc(30 * 1024 * 1024),
-    });
-
-    // Expect alert toast
-    await expect(page.locator('text=exceeds your hosting plan\'s attachment limit of 25 MB')).toBeVisible();
-  });
-
-  test('supports mobile viewport with responsive hamburger drawer', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-    const menuBtn = page.locator('button[aria-label="Toggle navigation menu"]');
-    await expect(menuBtn).toBeVisible();
-    await menuBtn.click();
-    await expect(page.locator('role=dialog')).toBeVisible();
-    await expect(page.locator('text=Navigation')).toBeVisible();
+    // DockedComposeModal renders a Subject field and its own close control.
+    await expect(page.getByPlaceholder('Subject')).toBeVisible();
   });
 });

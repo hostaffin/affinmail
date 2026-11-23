@@ -1,13 +1,9 @@
-mod admin;
-mod jmap;
-mod tools;
-mod types;
-
-use admin::AdminClient;
-use jmap::JmapClient;
+use affinmail_mcp_server::admin::AdminClient;
+use affinmail_mcp_server::jmap::JmapClient;
+use affinmail_mcp_server::tools;
+use affinmail_mcp_server::types::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::json;
 use std::io::{self, BufRead, Write};
-use types::{JsonRpcRequest, JsonRpcResponse};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

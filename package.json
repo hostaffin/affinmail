@@ -1,0 +1,8 @@
+{
+  "name": "affinmail-tests",
+  "private": true,
+  "description": "Root harness so tests/e2e/*.spec.ts can resolve @playwright/test when Playwright runs from the repo root",
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
+  }
+}

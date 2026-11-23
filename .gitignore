@@ -58,3 +58,10 @@ __pycache__/
 
 # Backups (dumps never committed)
 backups/
+
+# Playwright artifacts
+playwright-report/
+test-results/
+
+# PHPUnit cache
+.phpunit.cache/

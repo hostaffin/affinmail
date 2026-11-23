@@ -10,6 +10,12 @@ export default defineConfig({
       '/jmap': 'http://127.0.0.1:8080',
     },
   },
+  // `vite preview` (used by Playwright) needs the same proxy so login hits local Stalwart.
+  preview: {
+    proxy: {
+      '/jmap': 'http://127.0.0.1:8080',
+    },
+  },
   test: {
     globals: true,
   },

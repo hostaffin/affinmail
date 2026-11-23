@@ -117,7 +117,7 @@ function affinmail_apiCall($params, $endpoint, $method = 'GET', $data = [])
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError = curl_error($ch);
-    curl_close($ch);
+    unset($ch); // curl_close() is deprecated and a no-op since PHP 8.0
 
     if ($curlError) {
         return ['success' => false, 'error' => "cURL Error: {$curlError}"];

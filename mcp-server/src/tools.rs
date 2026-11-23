@@ -574,3 +574,33 @@ fn local_reputation(pool: &Value) -> Value {
         "grade": grade,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::list_tools;
+    use std::collections::HashSet;
+
+    #[test]
+    fn list_tools_is_complete_and_valid() {
+        let tools = list_tools();
+        assert!(tools.len() >= 14, "expected >= 14 tools, got {}", tools.len());
+
+        let mut seen = HashSet::new();
+        for tool in &tools {
+            assert!(!tool.name.is_empty(), "tool with empty name");
+            assert!(seen.insert(tool.name.clone()), "duplicate tool name: {}", tool.name);
+            assert!(!tool.description.trim().is_empty(), "{} has no description", tool.name);
+            assert_eq!(
+                tool.input_schema.get("type").and_then(|v| v.as_str()),
+                Some("object"),
+                "{} input_schema is not type object",
+                tool.name
+            );
+        }
+
+        assert!(
+            tools.iter().any(|t| t.name == "affinmail_search_emails"),
+            "affinmail_search_emails tool missing"
+        );
+    }
+}
