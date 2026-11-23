@@ -52,6 +52,13 @@ function affinmail_ConfigOptions() {
             'Default' => 'direct',
             'Description' => 'SmartHost routing policy for this hosting plan',
         ],
+        'ip_assignment' => [
+            'FriendlyName' => 'IP Allocation Policy',
+            'Type' => 'dropdown',
+            'Options' => 'shared,dedicated',
+            'Default' => 'shared',
+            'Description' => 'Allocate from shared IP pool or assign dedicated outbound IPv4',
+        ],
     ];
 }
 ```
@@ -68,11 +75,14 @@ Exports custom package configuration inputs to the Hostaffin Product configurati
 
 ### Method 3: `affinmail_CreateAccount(array $params)`
 1. Parses `domain`, `username`, `password`, and custom fields.
-2. Invokes Stalwart REST API `POST /api/v1/domains` to create the domain.
-3. Automatically provisions a 2048-bit DKIM keypair for the client domain.
-4. Creates the primary administrator mailbox via `POST /api/v1/mailboxes`.
-5. Sets initial quota, hourly rate limit, and outbound route.
-6. Returns `'success'`.
+2. Allocates IP address based on `ip_assignment`:
+   - If `dedicated`: Claims an available dedicated IPv4 from `ip_pools` table, binds it to domain, and enrolls domain into `ip_warmup_schedules`.
+   - If `shared`: Binds domain to the cluster's active shared rotational IP pool.
+3. Invokes Stalwart REST API `POST /api/v1/domains` with the assigned egress IP.
+4. Automatically provisions a 2048-bit DKIM keypair for the client domain.
+5. Creates the primary administrator mailbox via `POST /api/v1/mailboxes`.
+6. Sets initial quota, hourly rate limit, and outbound route.
+7. Returns `'success'`.
 
 ### Method 4: `affinmail_SuspendAccount(array $params)`
 Calls `PUT /api/v1/mailboxes/{email}/status` setting `status = 'suspended'`. Disables Webmail login, IMAP/POP3, and SMTP submission while allowing safe inbound mail queuing.
@@ -162,10 +172,19 @@ Calls Stalwart `POST /api/v1/auth/sso-token`, returns single-use signed JWT URL 
         <tr>
           <td><span class="badge badge-accent">TXT</span></td>
           <td><code>@</code></td>
-          <td><code>v=spf1 mx include:_spf.hostaffin.com ~all</code></td>
+          <td><code>v=spf1 mx {if $isDedicatedIp}ip4:{$assignedIp}{else}include:_spf.hostaffin.com{/if} ~all</code></td>
           <td>-</td>
-          <td><button class="btn btn-ghost btn-xs" onclick="copyText('v=spf1 mx include:_spf.hostaffin.com ~all')">Copy</button></td>
+          <td><button class="btn btn-ghost btn-xs" onclick="copyText('v=spf1 mx {if $isDedicatedIp}ip4:{$assignedIp}{else}include:_spf.hostaffin.com{/if} ~all')">Copy</button></td>
         </tr>
+        {if $isDedicatedIp}
+        <tr>
+          <td><span class="badge badge-success">A (PTR)</span></td>
+          <td><code>mail.{$domain}</code></td>
+          <td><code>{$assignedIp} (rDNS: {$rdnsHostname})</code></td>
+          <td>-</td>
+          <td><button class="btn btn-ghost btn-xs" onclick="copyText('{$assignedIp}')">Copy</button></td>
+        </tr>
+        {/if}
         <tr>
           <td><span class="badge badge-info">TXT</span></td>
           <td><code>affinmail._domainkey</code></td>

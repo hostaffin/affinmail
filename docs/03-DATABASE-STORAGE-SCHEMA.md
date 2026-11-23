@@ -20,12 +20,34 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- Enum types
 CREATE TYPE account_status AS ENUM ('active', 'suspended', 'pending_deletion');
 CREATE TYPE outbound_route_type AS ENUM ('direct', 'relay_ses', 'relay_sendgrid', 'relay_custom');
+CREATE TYPE ip_pool_type AS ENUM ('shared', 'dedicated');
 
--- 1. Domains Table
+-- 1. IP Pools Table (Multi-IP & Dedicated IP Management)
+CREATE TABLE ip_pools (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ip_address INET NOT NULL UNIQUE,
+    ip_version SMALLINT NOT NULL DEFAULT 4, -- 4 or 6
+    pool_type ip_pool_type NOT NULL DEFAULT 'shared',
+    rdns_hostname VARCHAR(255) NOT NULL, -- e.g. mail1.hostaffin.com
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE,
+    blacklist_details JSONB NULL,
+    current_allocations INTEGER NOT NULL DEFAULT 0,
+    max_allocations INTEGER NOT NULL DEFAULT 100, -- 1 for dedicated, 100+ for shared
+    reputation_score NUMERIC(3, 1) NOT NULL DEFAULT 10.0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_ip_pools_type_active ON ip_pools(pool_type, is_active, is_blacklisted);
+
+-- 2. Domains Table
 CREATE TABLE domains (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     domain_name VARCHAR(255) NOT NULL UNIQUE,
     hostaffin_service_id INTEGER NULL,
+    assigned_ip_id UUID NULL REFERENCES ip_pools(id) ON DELETE SET NULL,
+    is_dedicated_ip BOOLEAN NOT NULL DEFAULT FALSE,
     max_mailboxes INTEGER NOT NULL DEFAULT 5,
     max_attachment_size_mb INTEGER NOT NULL DEFAULT 25,
     disk_quota_mb INTEGER NOT NULL DEFAULT 10240, -- total domain quota
@@ -39,6 +61,36 @@ CREATE TABLE domains (
 
 CREATE INDEX idx_domains_name ON domains(domain_name);
 CREATE INDEX idx_domains_hostaffin_service ON domains(hostaffin_service_id);
+CREATE INDEX idx_domains_assigned_ip ON domains(assigned_ip_id);
+
+-- 3. Dedicated IP Warm-Up Schedules
+CREATE TABLE ip_warmup_schedules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    domain_id UUID NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    ip_id UUID NOT NULL REFERENCES ip_pools(id) ON DELETE CASCADE,
+    current_stage_day INTEGER NOT NULL DEFAULT 1,
+    max_daily_limit INTEGER NOT NULL DEFAULT 50, -- e.g. Day 1: 50, Day 2: 100, Day 7: 500
+    sent_today_count INTEGER NOT NULL DEFAULT 0,
+    last_reset_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_domain_ip_warmup UNIQUE (domain_id, ip_id)
+);
+
+CREATE INDEX idx_warmup_domain ON ip_warmup_schedules(domain_id);
+
+-- 4. IP RBL / Blacklist Monitoring Log
+CREATE TABLE ip_rbl_checks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ip_id UUID NOT NULL REFERENCES ip_pools(id) ON DELETE CASCADE,
+    rbl_provider VARCHAR(128) NOT NULL, -- e.g. zen.spamhaus.org, b.barracudacentral.org
+    is_listed BOOLEAN NOT NULL DEFAULT FALSE,
+    response_code VARCHAR(32) NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_rbl_ip_date ON ip_rbl_checks(ip_id, checked_at DESC);
 
 -- 2. Mailboxes Table
 CREATE TABLE mailboxes (

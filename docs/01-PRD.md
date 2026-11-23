@@ -27,6 +27,7 @@ AffinMail re-engineers modern business email from the ground up:
 * **Pluggable Dynamic Storage Tier:** Hot-swappable blob and attachment backend supporting **Local NVMe SSD**, **S3-Compatible Object Storage** (AWS, Cloudflare R2, MinIO, Wasabi), and **SFTP / Remote Storage Box** (Hetzner Storage Box).
 * **Modern Webmail (React 19, DaisyUI 5, Tailwind CSS v4):** Hyper-responsive SPA with strict dual-theme polish (Enterprise Light & Enterprise Dark), TipTap docked rich-text compose, and Gmail-standard hotkeys.
 * **Dual-Path SmartHost Deliverability:** Isolated routing channels ensuring corporate correspondence leaves via clean dedicated IPs while marketing/bulk mail flows via trusted SMTP relays (Amazon SES, SendGrid, Mailgun).
+* **Multi-IP Pool & Per-Domain Dedicated IP Architecture:** Flexible egress IP routing allowing shared IP pools for entry-tier plans and dedicated outbound IPs per client domain with automated rDNS/PTR verification and gradual IP warm-up throttling.
 * **Deep Hostaffin Automation:** Turnkey provisioning module with 20 WHMCS lifecycle methods, 1-click passwordless SSO, and automated DNS copy widgets.
 
 ---
@@ -106,6 +107,15 @@ AffinMail re-engineers modern business email from the ground up:
   3. **SFTP / Remote Storage Box:** Hetzner Storage Box or remote SSH/SFTP storage server via SSHFS/FUSE or native driver integration.
 * **FR-STR-03:** Switching storage backend MUST NOT require code modification—only environment variable or configuration toggle (`STORAGE_BLOB_TYPE=local|s3|sftp`).
 
+### 4.11 Multi-IP Pool & Per-Domain IP Assignment
+* **FR-MIP-01:** The system MUST support binding multiple public IPv4 and IPv6 addresses across server network interfaces.
+* **FR-MIP-02:** Support two distinct IP allocation policies per domain:
+  1. **Shared IP Pool:** Domain shares an outbound IP cluster with standard hosting tiers, managed via round-robin or least-loaded algorithm.
+  2. **Dedicated Outbound IP:** High-reputation VIP domain is pinned to a dedicated public IP address for all outbound Port 25 SMTP traffic.
+* **FR-MIP-03:** Each outbound IP MUST have strict rDNS / PTR alignment configured with its matching HELO/EHLO hostname (e.g. `mail1.hostaffin.com`, `mail2.hostaffin.com`).
+* **FR-MIP-04:** Automated IP Warm-Up Engine: Newly provisioned dedicated IPs MUST allow configuring a progressive daily sending ramp (e.g. Day 1: 50, Day 2: 100, Day 7: 500, Day 14: 2,000, Day 30: unthrottled) to establish flawless ISP domain reputation.
+* **FR-MIP-05:** Automated RBL / DNSBL Blacklist Guard: Hourly background scanner checks all pool IPs against major RBLs (Spamhaus, Barracuda, SORBS); if an IP is listed, outbound traffic is automatically re-routed to a clean standby IP.
+
 ---
 
 ## 5. Non-Functional Requirements (NFRs)
@@ -114,6 +124,7 @@ AffinMail re-engineers modern business email from the ground up:
 | :--- | :--- |
 | **CPU Architecture** | 100% native support for `x86_64` (AMD/Intel) and `ARM64` (Ampere/Graviton) |
 | **Storage Flexibility** | Dynamic backend abstraction: Local NVMe, S3 API, and SFTP/SSHFS |
+| **IP Egress Flexibility** | Multi-IP binding, Shared Pools & Dedicated IP isolation with automated warm-up |
 | **Idle Memory Footprint** | Core mail engine < 200 MB RAM |
 | **API Response Time** | JMAP queries < 50ms (p95), < 100ms (p99) |
 | **Concurrent Connections** | >= 5,000 active concurrent WebSocket/IMAP sessions on a 4GB VPS |

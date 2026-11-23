@@ -9,7 +9,8 @@ A modern, high-performance, privacy-first business email hosting platform combin
 4. **PostgreSQL 16 & Redis 7:** ACID persistence, GIN full-text search, and Leaky-Bucket rate limiting.
 5. **Gmail-Class Webmail SPA:** Built with React 19, DaisyUI 5, and Tailwind CSS v4 featuring strict Light & Dark enterprise themes, TipTap docked compose, and global keyboard shortcuts.
 6. **Dual-Path SmartHost Deliverability:** Clean Port 25 outbound delivery for corporate communications and dynamic relay routing (Amazon SES, SendGrid, Mailgun) for bulk mail.
-7. **Hostaffin Billing Automation:** 20 standard WHMCS lifecycle methods, 1-click passwordless SSO, and interactive copyable DNS records widget.
+7. **Multi-IP & Dedicated IP Pool Architecture:** Granular outbound IP routing per domain (rotational shared pools for entry plans, dedicated outbound IPv4 for VIP clients) with automated progressive IP warm-up schedules and 24/7 RBL monitoring.
+8. **Hostaffin Billing Automation:** 20 standard WHMCS lifecycle methods, 1-click passwordless SSO, and interactive copyable DNS records widget.
 
 ---
 

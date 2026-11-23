@@ -103,10 +103,16 @@ flowchart TD
 * **Security & Spam Evaluation Pipeline:**
   * Multi-stage spam inspection: Spamhaus Zen / DBL DNSBL lookup -> Greylisting -> SPF/DKIM/DMARC/ARC verification -> Statistical Bayes engine -> Sieve filter execution.
 
-### Layer 3: Outbound Delivery & SmartHost Relay Layer
-* **Dual-Path Routing Mechanism:**
-  * **Path A (Direct Outbound):** Transactional/Corporate emails are dispatched directly from the clean local IPv4/IPv6 address via Port 25 with opportunistic TLS 1.3 and DANE verification.
-  * **Path B (SmartHost Relay):** Bulk/Marketing mail, or accounts flagged as marketing senders, are automatically routed through external high-volume relays (Amazon SES, SendGrid, Mailgun, Brevo) with authenticated SMTP credentials.
+### Layer 3: Outbound Delivery & Multi-IP SmartHost Layer
+* **Multi-IP Egress Routing & Dedicated vs. Shared Pools:**
+  * **Shared IP Pool:** Multi-tenant domains share a rotational pool of vetted clean public IPs (IPv4 & IPv6). Traffic is distributed across the pool using round-robin with health checks.
+  * **Dedicated Per-Domain IP:** Premium/enterprise domains are assigned a dedicated public IP address bound to the server's network interface. All outbound Port 25 traffic for that domain is strictly bound to that dedicated IP (`bind = "<dedicated_ip>"` in Stalwart outbound listener rules).
+  * **rDNS / PTR Synchronicity:** Every outbound IP in the pool has a 1-to-1 matching PTR record pointing to its designated HELO/EHLO hostname (e.g., `ip-195-201-1-10.mail.hostaffin.com`).
+* **Automated IP Warm-Up Engine:**
+  * For newly allocated dedicated IPs, an automated throttle profile (Day 1: 50 msgs, Day 2: 100 msgs, Day 7: 500 msgs, etc.) prevents ISP spam trap triggers. Volume exceeding the daily warm-up threshold is seamlessly diverted to the warm shared IP pool or SmartHost relay.
+* **Dual-Path SmartHost Routing:**
+  * **Direct Route:** Corporate correspondence leaves via clean local IPs (Shared Pool or Dedicated IP).
+  * **SmartHost Relay:** Bulk newsletters or untrusted senders are routed through Amazon SES, SendGrid, or custom authenticated relays.
 * **Leaky-Bucket Rate Limiter:**
   * Tracks hourly sending frequency per mailbox in Redis.
   * If a mailbox exceeds its assigned threshold (e.g. 200/hr), subsequent submission requests are rejected with `451 4.7.1 Message rate limit exceeded. Try again in X minutes.`

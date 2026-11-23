@@ -113,15 +113,6 @@ services:
     networks:
       - affinmail-net
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
-    volumes:
-      - redis_data:/data
-    networks:
-      - affinmail-net
-
 networks:
   affinmail-net:
     driver: bridge
@@ -133,6 +124,36 @@ volumes:
   pg_data:
   redis_data:
 ```
+
+### 2.1 Multi-IP Host Interface & Egress Configuration
+For the mail server to bind to multiple distinct public IP addresses for dedicated domain egress:
+
+1. **Host Linux Network Setup (Netplan / Interface Aliases):**
+   ```yaml
+   # /etc/netplan/50-cloud-init.yaml
+   network:
+     version: 2
+     ethernets:
+       eth0:
+         addresses:
+           - 195.201.10.101/32 # Primary Shared IP
+           - 195.201.10.102/32 # Dedicated IP #1 (Client A)
+           - 195.201.10.103/32 # Dedicated IP #2 (Client B)
+           - 2a01:4f8:c011:100::1/64
+   ```
+2. **Stalwart Outbound Interface Binding:**
+   In `stalwart.toml`, the outbound delivery gateway binds each sender domain to its designated IP:
+   ```toml
+   # Per-domain outbound IP binding rule
+   [session.outbound.route]
+   bind = [
+     { if = "env.from.domain == 'apexlogistics.com'", then = "195.201.10.102" },
+     { if = "env.from.domain == 'trendmart.com'", then = "195.201.10.103" },
+     { else = "195.201.10.101" } # Default Shared IP Pool
+   ]
+   ```
+3. **Container Network Mode:**
+   For multi-IP outbound interface binding, deploy Stalwart with `network_mode: "host"` or assign an IP pool bridge, giving Stalwart direct visibility over all host IPs.
 
 ---
 

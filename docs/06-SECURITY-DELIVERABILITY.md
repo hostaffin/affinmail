@@ -54,6 +54,33 @@ Every outgoing and incoming email undergoes strict verification:
 | High-Volume Marketing / Newsletter | `relay_sendgrid` | SendGrid SMTP Relay |
 | Dedicated Enterprise Relay | `relay_custom` | Custom customer-provided SmartHost |
 
+### 2.3 Multi-IP Pool Management & Reputation Isolation
+To prevent cross-tenant deliverability contamination:
+1. **Shared IP Pool:** General hosting accounts route outbound email through a round-robin pool of clean shared IPs.
+2. **Dedicated Per-Domain IP:** Enterprise clients receive a private, dedicated public IPv4 address bound to their domain. No other domain can transmit packets from this IP address.
+3. **Automated PTR / HELO Binding:** Stalwart dynamically emits the exact EHLO matching the outbound interface IP (`bind = "<assigned_ip>"`), guaranteeing 100% rDNS consistency.
+
+### 2.4 Automated Dedicated IP Warm-Up Engine
+New dedicated IPs have no historical reputation with Gmail, Yahoo, or Microsoft, and sending large bursts immediately will trigger bulk spam throttling. AffinMail includes an automated progressive warm-up engine:
+
+| Warm-up Day | Max Daily Limit | Spillover Action |
+| :--- | :--- | :--- |
+| **Days 1–3** | 50 emails/day | Excess mail seamlessly routed to pre-warmed Shared Pool |
+| **Days 4–7** | 150 emails/day | Excess mail routed to Shared Pool |
+| **Days 8–14** | 500 emails/day | Excess mail routed to Shared Pool |
+| **Days 15–21** | 1,500 emails/day | Excess mail routed to Shared Pool |
+| **Days 22–30** | 5,000 emails/day | Excess mail routed to Shared Pool |
+| **Day 31+** | **Full Plan Quota (Unrestricted)** | Standard dedicated delivery |
+
+*Status is tracked in PostgreSQL `ip_warmup_schedules` table with daily midnight cron resets.*
+
+### 2.5 Continuous RBL / Blacklist Guard & Standby Failover
+* An hourly background daemon tests every IP in the pool against 15+ major DNSBLs (Spamhaus Zen, Barracuda, SORBS, SpamCop, Invaluement).
+* If an IP is flagged:
+  1. The IP's `is_blacklisted` flag is marked `TRUE` in PostgreSQL.
+  2. Outbound traffic for attached domains is immediately switched to a healthy Standby Clean IP.
+  3. An automated alert webhook is dispatched to the Hostaffin NOC team with delisting links.
+
 ---
 
 ## 3. Rate Limiting: Redis Leaky-Bucket Algorithm
