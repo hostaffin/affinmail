@@ -228,21 +228,31 @@ mkdir -p "${INSTALL_DIR}/backups"
 chmod -R 750 "${INSTALL_DIR}"
 cd "${INSTALL_DIR}"
 
-# Auto-detect Public IP
+# Auto-detect Public IP & System Hostname
 AUTO_IP=$(curl -s -4 ifconfig.me 2>/dev/null || wget -qO- -4 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
+AUTO_IP="${AUTO_IP// /}"
+SYS_HOSTNAME=$(hostname -f 2>/dev/null || hostname 2>/dev/null || uname -n 2>/dev/null || echo "")
+SYS_HOSTNAME="${SYS_HOSTNAME// /}"
+
+# Pick the real server hostname if valid FQDN; otherwise default directly to the server IP (No artificial mail.* prefix, no nip.io)
+if [[ -n "$SYS_HOSTNAME" && "$SYS_HOSTNAME" =~ \. && "$SYS_HOSTNAME" != *"localhost"* && "$SYS_HOSTNAME" != *"localdomain"* ]]; then
+    DEFAULT_SERVER_HOST="$SYS_HOSTNAME"
+else
+    DEFAULT_SERVER_HOST="${AUTO_IP:-127.0.0.1}"
+fi
 
 # 10. Setup Mode Selection (Interactive Now vs Express / Setup Later from Panel)
 echo -e "\n${CYAN}==================================================================${NC}"
 echo -e "${BOLD}Choose Installation Mode:${NC}"
-echo -e "  ${YELLOW}1)${NC} ${BOLD}Complete Interactive Setup Now${NC} (Configure Hostname, IP, Storage, Admin now)"
-echo -e "  ${YELLOW}2)${NC} ${BOLD}Express Setup (Setup Later from Panel)${NC} (Instant zero-touch start; configure domains, storage & mailboxes later from Hostaffin Panel / Web UI)"
+echo -e "  ${YELLOW}1)${NC} ${BOLD}Complete Interactive Setup Now${NC} (Configure Server Hostname, IP, Storage now)"
+echo -e "  ${YELLOW}2)${NC} ${BOLD}Express Setup (Setup Later from Panel)${NC} (Instant zero-touch start using Server Hostname/IP: ${DEFAULT_SERVER_HOST})"
 echo -e "${CYAN}==================================================================${NC}"
 echo -n "Select mode [1 or 2, default: 1]: "
 read -r SETUP_MODE < "$TTY_INPUT"
 SETUP_MODE="${SETUP_MODE:-1}"
 
 # Defaults
-HOSTNAME_INPUT="mail.${AUTO_IP}.nip.io"
+SERVER_HOST="${DEFAULT_SERVER_HOST}"
 SHARED_IP_INPUT="${AUTO_IP}"
 STORAGE_TYPE_INPUT="fs"
 S3_BUCKET_VAL="affinmail-blobs"
@@ -256,15 +266,12 @@ SFTP_PORT_VAL="22"
 
 if [ "$SETUP_MODE" == "1" ]; then
     # Full Interactive Walkthrough
-    echo -e "\n${CYAN}--- Interactive Configuration ---${NC}"
-    echo -n "Enter Primary Mail Hostname (e.g. mail.yourdomain.com): "
-    read -r HOSTNAME_INPUT < "$TTY_INPUT"
-    while [ -z "$HOSTNAME_INPUT" ]; do
-        echo -n "Hostname cannot be empty. Please enter mail hostname: "
-        read -r HOSTNAME_INPUT < "$TTY_INPUT"
-    done
+    echo -e "\n${CYAN}--- Server Hostname & Network Configuration ---${NC}"
+    echo -n "Enter Server Hostname or IP [default: ${DEFAULT_SERVER_HOST}]: "
+    read -r MANUAL_HOST < "$TTY_INPUT"
+    SERVER_HOST="${MANUAL_HOST:-$DEFAULT_SERVER_HOST}"
 
-    echo -n "Enter Primary Outbound IPv4 [$AUTO_IP]: "
+    echo -n "Enter Primary Outbound IPv4 [default: $AUTO_IP]: "
     read -r MANUAL_IP < "$TTY_INPUT"
     SHARED_IP_INPUT="${MANUAL_IP:-$AUTO_IP}"
 
@@ -303,9 +310,9 @@ if [ "$SETUP_MODE" == "1" ]; then
     esac
 else
     # Express Setup Mode: Instant Ready with smart defaults
-    echo -e "\n${GREEN}[*] Express Mode: Auto-configuring defaults (Server IP: ${AUTO_IP})...${NC}"
+    echo -e "\n${GREEN}[*] Express Mode: Auto-configuring defaults with Server Hostname/IP (${DEFAULT_SERVER_HOST})...${NC}"
     echo -e "${YELLOW}[*] You will be able to edit domains, storage, and mailboxes directly from Hostaffin Panel!${NC}"
-    HOSTNAME_INPUT="mail.${AUTO_IP//./-}.nip.io"
+    SERVER_HOST="${DEFAULT_SERVER_HOST}"
 fi
 
 # 11. Fail-Safe Firewall Configuration (Guarantees SSH Port Never Blocked)
@@ -359,7 +366,8 @@ if [ ! -f "deploy/.env" ]; then
     ADMIN_SECRET=$(openssl rand -hex 24)
 
     cat > deploy/.env <<EOF
-MAIL_HOSTNAME=${HOSTNAME_INPUT}
+SERVER_HOSTNAME=${SERVER_HOST}
+MAIL_HOSTNAME=${SERVER_HOST}
 SHARED_OUTBOUND_IPV4=${SHARED_IP_INPUT}
 
 POSTGRES_HOST=127.0.0.1
@@ -456,8 +464,9 @@ echo -e "\n${CYAN}==============================================================
 echo -e "${GREEN}${BOLD}   AffinMail Native Bare-Metal Server Successfully Installed!    ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 echo -e "Operating System:        ${GREEN}${OS_NAME} (${ARCH}) [Zero Docker]${NC}"
-echo -e "WHM Admin Control Panel: ${YELLOW}https://${HOSTNAME_INPUT}:2087${NC} (or https://${SHARED_IP_INPUT}:2087)"
-echo -e "Client Webmail Portal:   ${YELLOW}https://${HOSTNAME_INPUT}:2083${NC} (or https://${SHARED_IP_INPUT}:2083 / port 443)"
+echo -e "Server Hostname / IP:    ${GREEN}${SERVER_HOST}${NC}"
+echo -e "WHM Admin Control Panel: ${YELLOW}https://${SERVER_HOST}:2087${NC}"
+echo -e "Client Webmail Portal:   ${YELLOW}https://${SERVER_HOST}:2083${NC}"
 echo -e "Admin API Secret:        ${YELLOW}${ADMIN_KEY}${NC}"
 echo -e "Outbound Egress IPv4:    ${YELLOW}${SHARED_IP_INPUT}${NC}"
 echo -e "Storage Engine:          ${YELLOW}${STORAGE_TYPE_INPUT}${NC}"
