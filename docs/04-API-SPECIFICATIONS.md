@@ -232,16 +232,19 @@ Add the AffinMail User Panel MCP server to your AI environment (Antigravity, Cla
 {
   "mcpServers": {
     "affinmail-user": {
-      "command": "node",
-      "args": ["/opt/affinmail/mcp/index.js"],
+      "command": "/var/www/affinmail/mcp-server/target/release/affinmail-mcp-server",
       "env": {
-        "AFFINMAIL_JMAP_URL": "https://mail.yourdomain.com:2083/jmap/api",
-        "AFFINMAIL_API_TOKEN": "aff_user_tok_..."
+        "AFFINMAIL_JMAP_URL": "http://127.0.0.1:8080/jmap",
+        "AFFINMAIL_API_TOKEN": "user@example.com:password"
       }
     }
   }
 }
 ```
+
+`AFFINMAIL_API_TOKEN` is required: a JMAP bearer token, or `email:password` for a
+local Stalwart account (sent as HTTP Basic). The session document is fetched from
+the sibling `/jmap/session` to resolve the mail accountId.
 
 ### 5.2 Registered MCP Tool Definitions
 
@@ -252,7 +255,15 @@ Add the AffinMail User Panel MCP server to your AI environment (Antigravity, Cla
 | `affinmail_send_email` | `to: string[], subject: string, body: string, cc?: string[], bcc?: string[]` | Creates an RFC 5322 payload and dispatches via JMAP `EmailSubmission/set`. |
 | `affinmail_draft_email` | `to: string[], subject: string, body: string, draftId?: string` | Creates or updates an editable draft inside the user's Drafts folder. |
 | `affinmail_update_labels` | `threadId: string, addLabels?: string[], removeLabels?: string[]` | Archives, stars, marks as spam, or applies custom tags to a thread. |
-| `affinmail_get_quota` | *none* | Returns current mailbox byte usage, maximum plan limit, and assigned IP. |
+| `affinmail_get_quota` | *none* | Returns JMAP `Quota/get` usage/limit plus summed mailbox counters. |
+| `admin_get_system_health` | *none* | `GET /health` on the admin API; postgres/redis/stalwart daemon checks. |
+| `admin_create_domain` | `domain: string, storage_quota_mb: number, max_mailboxes?: number, max_attachment_mb?: number` | `POST /domains`; maps `storage_quota_mb` → `diskQuotaMb`. |
+| `admin_provision_mailbox` | `email: string, quota_mb: number, password: string, display_name?: string` | `POST /mailboxes`; maps `quota_mb` → `quotaLimitMb`. |
+| `admin_assign_egress_ip` | `domain: string, ip_address: string` | `POST /ippools/assign`. |
+| `admin_check_ip_reputation` | `ip_address?: string` | `GET /ip-pools`, reputation graded **locally** from stored `reputation_score`/flags. No DNSBL or network lookups. |
+| `admin_switch_storage_tier` | `tier: string` | `POST /storage/switch`; surfaces the API's 404 error text unchanged. |
+| `admin_trigger_auto_repair` | *none* | `POST /system/auto-repair`, falls back to `POST /system/restart` on 404 (fallback noted in result). |
+| `admin_create_backup` | *none* | `POST /system/backup`. |
 
 ### 5.3 Sample MCP Tool Invocation (`affinmail_search_emails`)
 ```json

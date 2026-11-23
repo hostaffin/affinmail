@@ -1,7 +1,9 @@
+mod admin;
 mod jmap;
 mod tools;
 mod types;
 
+use admin::AdminClient;
 use jmap::JmapClient;
 use serde_json::json;
 use std::io::{self, BufRead, Write};
@@ -10,11 +12,13 @@ use types::{JsonRpcRequest, JsonRpcResponse};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = JmapClient::new();
+    let admin = AdminClient::new();
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
     eprintln!("[INFO] AffinMail MCP Server started (Stdio JSON-RPC 2.0)");
     eprintln!("[INFO] Connected JMAP Target: {}", client.base_url);
+    eprintln!("[INFO] Admin API Target: {}", admin.base_url);
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -76,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default();
                 let tool_args = params.get("arguments").cloned().unwrap_or(json!({}));
 
-                let call_result = tools::handle_tool_call(tool_name, &tool_args, &client).await;
+                let call_result = tools::handle_tool_call(tool_name, &tool_args, &client, &admin).await;
                 Some(JsonRpcResponse::success(req_id, serde_json::to_value(call_result)?))
             }
             unknown_method => {
