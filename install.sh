@@ -233,6 +233,7 @@ AUTO_IP=$(curl -s -4 ifconfig.me 2>/dev/null || wget -qO- -4 icanhazip.com 2>/de
 AUTO_IP="${AUTO_IP// /}"
 SYS_HOSTNAME=$(hostname -f 2>/dev/null || hostname 2>/dev/null || uname -n 2>/dev/null || echo "")
 SYS_HOSTNAME="${SYS_HOSTNAME// /}"
+NIP_DOMAIN="${AUTO_IP}.nip.io"
 
 # Pick the real server hostname if valid FQDN; otherwise default directly to the server IP (No artificial mail.* prefix, no nip.io)
 if [[ -n "$SYS_HOSTNAME" && "$SYS_HOSTNAME" =~ \. && "$SYS_HOSTNAME" != *"localhost"* && "$SYS_HOSTNAME" != *"localdomain"* ]]; then
@@ -368,6 +369,7 @@ if [ ! -f "deploy/.env" ]; then
     cat > deploy/.env <<EOF
 SERVER_HOSTNAME=${SERVER_HOST}
 MAIL_HOSTNAME=${SERVER_HOST}
+NIP_DOMAIN=${NIP_DOMAIN}
 SHARED_OUTBOUND_IPV4=${SHARED_IP_INPUT}
 
 POSTGRES_HOST=127.0.0.1
@@ -466,7 +468,13 @@ echo -e "${CYAN}================================================================
 echo -e "Operating System:        ${GREEN}${OS_NAME} (${ARCH}) [Zero Docker]${NC}"
 echo -e "Server Hostname / IP:    ${GREEN}${SERVER_HOST}${NC}"
 echo -e "WHM Admin Control Panel: ${YELLOW}https://${SERVER_HOST}:2087${NC}"
+if [ -n "${NIP_DOMAIN:-}" ] && [ "${SERVER_HOST}" != "${NIP_DOMAIN}" ]; then
+    echo -e "           (via nip.io): ${YELLOW}https://${NIP_DOMAIN}:2087${NC}"
+fi
 echo -e "Client Webmail Portal:   ${YELLOW}https://${SERVER_HOST}:2083${NC}"
+if [ -n "${NIP_DOMAIN:-}" ] && [ "${SERVER_HOST}" != "${NIP_DOMAIN}" ]; then
+    echo -e "           (via nip.io): ${YELLOW}https://${NIP_DOMAIN}:2083${NC}"
+fi
 echo -e "Admin API Secret:        ${YELLOW}${ADMIN_KEY}${NC}"
 echo -e "Outbound Egress IPv4:    ${YELLOW}${SHARED_IP_INPUT}${NC}"
 echo -e "Storage Engine:          ${YELLOW}${STORAGE_TYPE_INPUT}${NC}"

@@ -123,7 +123,7 @@ case "$COMMAND" in
     info)
         echo -e "${CYAN}=== AffinMail Native System Information ===${NC}"
         if [ -f "${BASE_DIR}/deploy/.env" ]; then
-            grep -E "SERVER_HOSTNAME|MAIL_HOSTNAME|SHARED_OUTBOUND_IPV4|STORAGE_BLOB_TYPE|POSTGRES_HOST" "${BASE_DIR}/deploy/.env"
+            grep -E "SERVER_HOSTNAME|MAIL_HOSTNAME|NIP_DOMAIN|SHARED_OUTBOUND_IPV4|STORAGE_BLOB_TYPE|POSTGRES_HOST" "${BASE_DIR}/deploy/.env"
         fi
         echo "Architecture: $(uname -m)"
         echo "Root Path:    ${BASE_DIR}"

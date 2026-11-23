@@ -11,8 +11,9 @@
 
 # ==============================================================================
 # 1. AffinMail Admin Control Panel (WHM Equivalent) - Port 2087
+# Accessible via Server Hostname, nip.io domain, and Direct IP
 # ==============================================================================
-:2087, {$SERVER_HOSTNAME:{$MAIL_HOSTNAME:127.0.0.1}}:2087 {
+:2087, {$SERVER_HOSTNAME:127.0.0.1}:2087, {$NIP_DOMAIN:127.0.0.1.nip.io}:2087 {
     root * {$WEBMAIL_ROOT:/opt/affinmail/webmail/dist}
     file_server
     try_files {path} /index.html
@@ -40,8 +41,9 @@
 
 # ==============================================================================
 # 2. AffinMail Client Webmail - Port 2083 & Port 443 / 80
+# Accessible via Server Hostname, nip.io domain, and Direct IP
 # ==============================================================================
-:2083, {$SERVER_HOSTNAME:{$MAIL_HOSTNAME:127.0.0.1}}:2083, :80, :443, {$SERVER_HOSTNAME:{$MAIL_HOSTNAME:127.0.0.1}} {
+:2083, {$SERVER_HOSTNAME:127.0.0.1}:2083, {$NIP_DOMAIN:127.0.0.1.nip.io}:2083, :80, :443, {$SERVER_HOSTNAME:127.0.0.1}, {$NIP_DOMAIN:127.0.0.1.nip.io} {
     root * {$WEBMAIL_ROOT:/opt/affinmail/webmail/dist}
     file_server
     try_files {path} /index.html
