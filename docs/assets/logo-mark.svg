@@ -1,10 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254" width="1254" height="1254" role="img" aria-label="AffinMail Logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="147 124 960 960" width="960" height="960" role="img" aria-label="AffinMail Logo">
   <defs>
-    <radialGradient id="bg" cx="50%" cy="0%" r="80%">
-      <stop offset="0" stop-color="#0D1D45"/>
-      <stop offset="0.5" stop-color="#060E26"/>
-      <stop offset="1" stop-color="#040A1D"/>
-    </radialGradient>
     <linearGradient id="gUL" x1="0.15" y1="1" x2="0.85" y2="0">
       <stop offset="0" stop-color="#0A78FF"/>
       <stop offset="1" stop-color="#19B4FF"/>
@@ -49,12 +44,6 @@
       <path d="M376 578 H880 L670 714 Q628 742 586 714 Z"/>
     </clipPath>
   </defs>
-
-  <!-- Tile -->
-  <path d="M325 65 H930 C1085 65 1195 175 1195 325 V925 C1195 1075 1085 1185 930 1185 H325 C175 1185 60 1075 60 925 V325 C60 175 175 65 325 65 Z" fill="url(#bg)"/>
-
-  <!-- ground shadow -->
-  <ellipse cx="628" cy="905" rx="420" ry="22" fill="#000" opacity=".55" filter="url(#blur)"/>
 
   <!-- crossbar -->
   <rect x="400" y="578" width="456" height="238" fill="url(#gBase)"/>

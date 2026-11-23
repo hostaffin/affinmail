@@ -1,38 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254" width="1254" height="1254" role="img" aria-label="AffinMail Logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="147 124 960 960" width="960" height="960" role="img" aria-label="AffinMail Logo">
   <defs>
-    <radialGradient id="bg" cx="50%" cy="0%" r="80%">
-      <stop offset="0" stop-color="#0D1D45"/>
-      <stop offset="0.5" stop-color="#060E26"/>
-      <stop offset="1" stop-color="#040A1D"/>
-    </radialGradient>
+    <!-- Inner Apex Cavity Gradient -->
+    <linearGradient id="gCavity" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#060E26"/>
+      <stop offset="1" stop-color="#030A1D"/>
+    </linearGradient>
+
+    <!-- Upper Left Ribbon -->
     <linearGradient id="gUL" x1="0.15" y1="1" x2="0.85" y2="0">
       <stop offset="0" stop-color="#0A78FF"/>
       <stop offset="1" stop-color="#19B4FF"/>
     </linearGradient>
+
+    <!-- Upper Right Ribbon -->
     <linearGradient id="gUR" x1="0" y1="0.1" x2="0.9" y2="0.9">
       <stop offset="0" stop-color="#0731BE"/>
       <stop offset="0.3" stop-color="#0553E8"/>
       <stop offset="1" stop-color="#0A6CFB"/>
     </linearGradient>
+
+    <!-- Lower Left Leg -->
     <linearGradient id="gLL" x1="0.95" y1="0.05" x2="0.1" y2="0.95">
       <stop offset="0" stop-color="#169BFF"/>
       <stop offset="1" stop-color="#0653F2"/>
     </linearGradient>
+
+    <!-- Lower Right Leg -->
     <linearGradient id="gLR" x1="0.05" y1="0.1" x2="0.95" y2="0.9">
       <stop offset="0" stop-color="#0B84FF"/>
       <stop offset="0.6" stop-color="#14AAFF"/>
       <stop offset="1" stop-color="#00EBFF"/>
     </linearGradient>
+
+    <!-- Crossbar Base -->
     <linearGradient id="gBase" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#0932B8"/>
       <stop offset="0.4" stop-color="#1062EF"/>
       <stop offset="1" stop-color="#1C74F5"/>
     </linearGradient>
+
+    <!-- Envelope White Flap -->
     <linearGradient id="gFlap" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.8" stop-color="#F0F5FD"/>
       <stop offset="1" stop-color="#D6E4FA"/>
     </linearGradient>
-    <!-- fades flap ends into the leg colour so the corners merge smoothly -->
+
+    <!-- Flap edge highlight -->
     <linearGradient id="gEdge" gradientUnits="userSpaceOnUse" x1="376" y1="0" x2="880" y2="0">
       <stop offset="0" stop-color="#3C9BFF" stop-opacity=".9"/>
       <stop offset="0.1" stop-color="#5CB0FF" stop-opacity=".5"/>
@@ -41,8 +55,12 @@
       <stop offset="0.9" stop-color="#5CB0FF" stop-opacity=".5"/>
       <stop offset="1" stop-color="#3C9BFF" stop-opacity=".9"/>
     </linearGradient>
+
     <filter id="blur" x="-20%" y="-30%" width="140%" height="160%">
       <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <filter id="flapShadow" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#030A1D" flood-opacity="0.35"/>
     </filter>
     <clipPath id="clipA"><path d="M376 578 L188 890 H1068 L880 578 Z"/></clipPath>
     <clipPath id="clipFlap">
@@ -50,32 +68,35 @@
     </clipPath>
   </defs>
 
-  <!-- Tile -->
-  <path d="M325 65 H930 C1085 65 1195 175 1195 325 V925 C1195 1075 1085 1185 930 1185 H325 C175 1185 60 1075 60 925 V325 C60 175 175 65 325 65 Z" fill="url(#bg)"/>
+  <!-- 1. Inner triangular cavity behind apex & ribbon (prevents white navbar bleed) -->
+  <path d="M555 580 L600 422 L688 318 L700 580 Z" fill="url(#gCavity)"/>
 
-  <!-- ground shadow -->
-  <ellipse cx="628" cy="905" rx="420" ry="22" fill="#000" opacity=".55" filter="url(#blur)"/>
-
-  <!-- crossbar -->
+  <!-- 2. Crossbar -->
   <rect x="400" y="578" width="456" height="238" fill="url(#gBase)"/>
 
-  <!-- upper right stroke (behind) -->
+  <!-- 3. Upper right stroke (behind) -->
   <path d="M743 352 Q723 318 688 318 H600 V422 L694 578 H880 Z" fill="url(#gUR)"/>
-  <!-- upper left stroke (front, folds over) -->
+
+  <!-- 4. Upper left stroke (front, folds over) -->
   <path d="M513 352 Q533 318 568 318 H690 Q719 318 706 339 L562 578 H376 Z" fill="url(#gUL)"/>
 
-  <!-- lower legs (exact mirror of each other) -->
+  <!-- 5. Lower legs -->
   <path d="M376 578 L188 890 H330 C378 890 400 862 412 826 L562 578 Z" fill="url(#gLL)"/>
   <path d="M880 578 L1068 890 H926 C878 890 856 862 844 826 L694 578 Z" fill="url(#gLR)"/>
 
-  <!-- shadow cast by the envelope -->
+  <!-- 6. Shadow cast by the envelope on the crossbar -->
   <g clip-path="url(#clipA)">
     <path d="M400 578 H856 L670 714 Q628 742 586 714 Z" fill="#031047" opacity=".6" filter="url(#blur)" transform="translate(0 16)"/>
   </g>
 
-  <!-- envelope flap: spans the full A width so its corners sit exactly on the A's outer edges -->
-  <path d="M376 578 H880 L670 714 Q628 742 586 714 Z" fill="url(#gFlap)"/>
+  <!-- 7. Envelope flap: Crisp white with subtle drop-shadow so it never bleeds into white background -->
+  <path d="M376 578 H880 L670 714 Q628 742 586 714 Z" fill="url(#gFlap)" filter="url(#flapShadow)"/>
+  
+  <!-- 8. Flap edge blend highlight -->
   <g clip-path="url(#clipFlap)">
     <rect x="370" y="570" width="520" height="180" fill="url(#gEdge)"/>
   </g>
+
+  <!-- 9. Crisp top fold boundary line for absolute definition on light backgrounds -->
+  <line x1="376" y1="578" x2="880" y2="578" stroke="#CFE0FA" stroke-width="2.5" stroke-linecap="round"/>
 </svg>

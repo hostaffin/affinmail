@@ -55,6 +55,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             size="lg"
             tagline="Optimized Workspace of Efficient Business."
             withGlow
+            animated={true}
           />
         </div>
 

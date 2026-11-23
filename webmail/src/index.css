@@ -107,4 +107,112 @@ body {
   animation: pulseSubtle 2.2s ease-in-out infinite;
 }
 
+/* Gmail-Style Splash Staggered SVG Logo Animation */
+@keyframes ribbonRise {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.92);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ribbonFold {
+  0% {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.88);
+  }
+  60% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes flapDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-35px) scale(0.72);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(5px) scale(1.05);
+  }
+  85% {
+    transform: translateY(-2px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes crossbarFade {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.75);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes logoSheen {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 rgba(37, 99, 235, 0));
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(6, 182, 212, 0.4));
+  }
+}
+
+.anim-logo-sheen {
+  animation: logoSheen 2.4s ease-in-out infinite 0.7s;
+}
+
+.anim-crossbar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: crossbarFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+
+.anim-leg-left {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: ribbonRise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+.anim-fold-front {
+  transform-box: fill-box;
+  transform-origin: top center;
+  animation: ribbonFold 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+
+.anim-fold-back {
+  transform-box: fill-box;
+  transform-origin: top center;
+  animation: ribbonFold 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+}
+
+.anim-leg-right {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: ribbonRise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+
+.anim-envelope {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: flapDrop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.45s both;
+}
+
+
 
