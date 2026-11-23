@@ -1,0 +1,19 @@
+[Unit]
+Description=AffinMail Admin REST API (PHP built-in server)
+Documentation=https://github.com/hostaffin/affinmail
+After=network.target postgresql.service redis.service stalwart.service
+Wants=network.target
+
+[Service]
+User=root
+WorkingDirectory=/var/www/affinmail/api
+EnvironmentFile=/var/www/affinmail/api/.env
+Environment=PHP_CLI_SERVER_WORKERS=8
+ExecStart=/usr/bin/php -S 127.0.0.1:8090 -t /var/www/affinmail/api/public /var/www/affinmail/api/public/index.php
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
