@@ -4,10 +4,12 @@
 
 A modern, high-performance, privacy-first business email hosting platform combining:
 1. **Rust Core Engine (Stalwart):** Sub-150MB idle memory, memory-safe, ultra-fast JMAP/IMAP/SMTP/CalDAV/CardDAV server.
-2. **PostgreSQL 16 & Redis 7:** ACID persistence, GIN full-text search, and Leaky-Bucket rate limiting.
-3. **Gmail-Class Webmail SPA:** Built with React 19, DaisyUI 5, and Tailwind CSS v4 featuring strict Light & Dark enterprise themes, TipTap docked compose, and global keyboard shortcuts.
-4. **Dual-Path SmartHost Deliverability:** Clean Port 25 outbound delivery for corporate communications and dynamic relay routing (Amazon SES, SendGrid, Mailgun) for bulk mail.
-5. **Hostaffin Billing Automation:** 20 standard WHMCS lifecycle methods, 1-click passwordless SSO, and interactive copyable DNS records widget.
+2. **Dual-CPU Native Architecture:** 100% native compatibility and optimized OCI container manifests for both **ARM64** (Ampere Altra, AWS Graviton, Apple Silicon, Oracle ARM) and **x86_64** (Intel Xeon / AMD EPYC).
+3. **Pluggable Dynamic Storage Engine:** Hot-swappable blob and attachment storage supporting **Local NVMe SSD**, **S3-Compatible Object Storage** (AWS, Cloudflare R2, MinIO, Wasabi), and **SFTP / Remote Storage Box** (Hetzner Storage Box).
+4. **PostgreSQL 16 & Redis 7:** ACID persistence, GIN full-text search, and Leaky-Bucket rate limiting.
+5. **Gmail-Class Webmail SPA:** Built with React 19, DaisyUI 5, and Tailwind CSS v4 featuring strict Light & Dark enterprise themes, TipTap docked compose, and global keyboard shortcuts.
+6. **Dual-Path SmartHost Deliverability:** Clean Port 25 outbound delivery for corporate communications and dynamic relay routing (Amazon SES, SendGrid, Mailgun) for bulk mail.
+7. **Hostaffin Billing Automation:** 20 standard WHMCS lifecycle methods, 1-click passwordless SSO, and interactive copyable DNS records widget.
 
 ---
 
@@ -103,7 +105,9 @@ flowchart TD
 
 ## Quick Reference: Hardware Requirements
 
-* **Recommended VPS:** 2 vCPU, 4GB RAM, 80GB NVMe SSD (e.g. Hetzner CPX21 at ~€7/month).
+* **ARM64 VPS (Recommended for cost & efficiency):** 4 vCPUs (Ampere Altra), 8GB RAM, 80GB NVMe SSD (e.g. Hetzner CAX21 at ~€6/month or AWS Graviton t4g).
+* **x86_64 VPS:** 3 vCPUs (AMD EPYC), 4GB RAM, 80GB NVMe SSD (e.g. Hetzner CPX21 at ~€7/month).
+* **Dynamic Storage:** Local NVMe, or S3-Compatible Bucket (Cloudflare R2 for zero egress fees), or Hetzner Storage Box via SFTP.
 * **Capacity:** 2,000–5,000 active business mailboxes with concurrent WebSocket connections.
 * **Total Idle Stack Memory:** Under 800MB RAM total across all services.
 

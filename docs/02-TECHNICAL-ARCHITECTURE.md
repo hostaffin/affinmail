@@ -94,6 +94,7 @@ flowchart TD
 
 ### Layer 2: Core Mail & Security Engine (Rust Stalwart)
 * Built on **Stalwart Mail Server** (written in Rust), ensuring zero buffer-overflow vulnerabilities, ultra-low concurrency memory overhead (under 150MB), and asynchronous I/O via Tokio.
+* **Dual CPU Architecture Native:** Compiled and packaged with multi-architecture OCI manifests (`linux/amd64` and `linux/arm64`), running natively with maximum efficiency on Intel/AMD x86_64 and ARM64 processors (such as Hetzner Ampere Altra CAX, AWS Graviton3/4, Apple Silicon, and Oracle ARM).
 * **Protocol Engines:**
   * Inbound SMTP daemon listening on Port 25.
   * Authenticated submission engine with mandatory SASL (PLAIN, SCRAM-SHA-256).
@@ -110,14 +111,18 @@ flowchart TD
   * Tracks hourly sending frequency per mailbox in Redis.
   * If a mailbox exceeds its assigned threshold (e.g. 200/hr), subsequent submission requests are rejected with `451 4.7.1 Message rate limit exceeded. Try again in X minutes.`
 
-### Layer 4: Enterprise Persistence & Storage Tier
+### Layer 4: Enterprise Persistence & Dynamic Storage Tier
 * **PostgreSQL 16:**
   * Stores domains, mailboxes, aliases, routing configuration, Sieve scripts, and message metadata.
   * Leverages GIN indexes for rapid full-text search across email headers, subjects, and text bodies.
 * **Redis 7:**
   * In-memory cache for Leaky-Bucket counters, active JMAP/WebSocket session tracking, and temporary token blacklists.
-* **Blob Storage Engine (NVMe SSD / S3 / Hetzner Storage Box):**
-  * Content-addressable raw message payloads (`.eml`) and attachments stored either locally on high-speed NVMe or offloaded to S3-compatible object storage with SHA-256 deduplication.
+* **Dynamic Pluggable Blob Storage Engine (Local, S3, SFTP):**
+  * Content-addressable raw message payloads (`.eml`) and attachments are abstracted behind Stalwart's unified blob driver, allowing administrators to hot-switch backends via environment configuration:
+    1. **Local Filesystem:** High-performance direct NVMe SSD storage (`/var/lib/stalwart/blobs`).
+    2. **S3-Compatible Object Storage:** AWS S3, Cloudflare R2, MinIO, Wasabi, or Backblaze B2 via standard REST S3 endpoints with automated credential handling.
+    3. **SFTP / Remote Storage Box:** Secure remote storage over SFTP/SSHFS (e.g. Hetzner Storage Box) mounted via high-performance FUSE or remote SSH protocol, separating compute from large-scale email storage.
+  * **SHA-256 Deduplication:** Across all storage backends, identical attachments across multiple recipients are stored only once.
 
 ### Layer 5: JMAP & Management API Tier
 * **JMAP (RFC 8620 Core & RFC 8621 Mail):**

@@ -168,17 +168,84 @@ CREATE INDEX idx_usage_domain_date ON usage_records(domain_id, recorded_at);
 
 ---
 
-## 4. Blob Storage Architecture (NVMe / S3)
+## 4. Pluggable Dynamic Blob Storage Architecture (Local, S3 & SFTP)
 
-### Storage Layout
-Blobs are addressed using their SHA-256 digest:
+### 4.1 Storage Abstraction Model
+Raw email payloads (`.eml`) and file attachments are strictly decoupled from PostgreSQL and handled by a content-addressable Blob Storage driver. The system allows administrators to seamlessly switch backends via configuration without altering application code:
+
 ```
-/var/lib/stalwart/blobs/
-  ├── 3a/
-  │   └── 7f/
-  │       └── 3a7f4c919d80d... (MIME Raw Payload or Attachment)
+                      Stalwart Storage Driver
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         ▼                       ▼                       ▼
+  [Local Filesystem]     [S3-Compatible API]      [SFTP / Remote Box]
+  - NVMe SSD Mount        - AWS S3 / Cloudflare R2 - Hetzner Storage Box
+  - Lowest Latency        - Unlimited Scale        - Cost-Effective Remote
+  - Zero Cloud Costs      - High Redundancy        - Isolated From Compute
 ```
 
-### Dedup & Retention
-1. **Deduplication:** When an attachment is sent to multiple internal recipients, only one copy of the file blob is written to disk. All message records reference the same `blob_id`.
-2. **Reference Counting:** A background cleaner decrements reference counters upon message deletion and purges orphaned blobs.
+### 4.2 Storage Backend Configurations
+
+#### Option A: Local Filesystem (NVMe SSD)
+* **Configuration:**
+  ```toml
+  [storage.blob]
+  type = "fs"
+  path = "/var/lib/stalwart/blobs"
+  ```
+* **Directory Layout:**
+  Blobs are addressed using their SHA-256 digest with two-level prefix sharding:
+  ```
+  /var/lib/stalwart/blobs/
+    ├── 3a/
+    │   └── 7f/
+    │       └── 3a7f4c919d80d... (MIME Raw Payload or Attachment)
+  ```
+
+#### Option B: S3-Compatible Object Storage
+* **Supported Providers:** AWS S3, Cloudflare R2 (zero egress fees), MinIO, Wasabi, Backblaze B2.
+* **Configuration:**
+  ```toml
+  [storage.blob]
+  type = "s3"
+  bucket = "affinmail-blobs"
+  region = "auto" # or us-east-1, eu-central-1
+  endpoint = "https://<account_id>.r2.cloudflarestorage.com"
+  access-key = "${S3_ACCESS_KEY}"
+  secret-key = "${S3_SECRET_KEY}"
+  ```
+* **Object Key Hierarchy:**
+  `s3://affinmail-blobs/blobs/3a/7f/3a7f4c919d80d...`
+
+#### Option C: SFTP / Remote Storage Box (e.g. Hetzner Storage Box)
+* **Architecture:** Compute node connects to remote high-capacity storage via high-performance SSHFS/FUSE with automatic caching, or direct SFTP driver.
+* **FUSE Mount Configuration:**
+  ```bash
+  sshfs -o allow_other,default_permissions,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,cache=yes,kernel_cache \
+    uXXXXXX@uXXXXXX.your-storagebox.de:/home/affinmail-blobs /var/lib/stalwart/blobs
+  ```
+* **Stalwart Direct SFTP Integration:**
+  ```toml
+  [storage.blob]
+  type = "sftp"
+  host = "uXXXXXX.your-storagebox.de"
+  port = 23
+  user = "uXXXXXX"
+  key-path = "/etc/stalwart/sftp_id_rsa"
+  remote-path = "/home/affinmail-blobs"
+  ```
+
+### 4.3 Switching Storage Backends
+Administrators can switch storage backends at any time by updating environment variables in `deploy/.env` and restarting the container stack:
+```bash
+# Set active backend: fs | s3 | sftp
+STORAGE_BLOB_TYPE=s3
+S3_BUCKET=affinmail-blobs
+S3_ENDPOINT=https://your-s3-endpoint
+S3_ACCESS_KEY=your_key
+S3_SECRET_KEY=your_secret
+```
+
+### 4.4 Deduplication & Garbage Collection
+1. **Deduplication:** When an attachment is sent to multiple internal recipients or mailboxes, only one copy of the file blob is written. All message records reference the same `blob_id`.
+2. **Reference Counting & Purging:** A nightly background cleaner decrements reference counters upon message or account deletion and purges orphaned blobs across Local, S3, or SFTP targets.

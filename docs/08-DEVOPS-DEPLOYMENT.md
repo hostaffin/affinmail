@@ -4,14 +4,17 @@
 
 ## 1. Infrastructure Architecture & Sizing
 
-### 1.1 Single-Node VPS Blueprint (Optimal for 2,000–5,000 Mailboxes)
-* **Recommended Provider:** Hetzner Cloud (CPX21 or CPX31)
-* **Specifications:**
-  * CPU: 2 to 4 vCPUs (AMD EPYC)
-  * RAM: 4 GB to 8 GB DDR4
-  * Storage: 80 GB to 160 GB NVMe SSD
-  * Network: 1 Gbit/s unmetered port, Dedicated Clean IPv4 + /64 IPv6
-  * Base OS: Ubuntu 24.04 LTS (Noble Numbat) or Debian 12 (Bookworm)
+### 1.1 Multi-Architecture Hardware Blueprint (x86_64 & ARM64)
+AffinMail is engineered to run with 100% feature parity and native optimization across both CPU architectures:
+
+| Architecture | Recommended VPS / Instance | CPU Specification | RAM / NVMe | Monthly Est. |
+| :--- | :--- | :--- | :--- | :--- |
+| **x86_64 (AMD/Intel)** | Hetzner Cloud CPX21 | 3 vCPUs (AMD EPYC) | 4 GB RAM / 80 GB NVMe | ~€7.00 |
+| **ARM64 (AArch64)** | Hetzner Cloud CAX21 | 4 vCPUs (Ampere Altra ARM64) | 8 GB RAM / 80 GB NVMe | ~€6.00 |
+| **Cloud Alternative** | AWS Graviton (t4g.small / c7g) | 2 vCPUs (Graviton3/4) | 4-8 GB RAM / EBS gp3 | ~$15.00 |
+
+* **ARM64 Efficiency Advantage:** ARM instances (Ampere Altra / Graviton) deliver up to 35% better price-to-performance and lower thermals for Rust and Tokio async I/O.
+* **Network & OS:** 1 Gbit/s unmetered port, Dedicated Clean IPv4 + /64 IPv6, Ubuntu 24.04 LTS or Debian 12 (both offer native ARM64 & x86_64 kernels).
 
 ### 1.2 Memory Allocation Budget
 | Component | Idle RAM | Peak Concurrency RAM (5,000 users) |
@@ -22,13 +25,15 @@
 | **Caddy 2 Reverse Proxy** | ~25 MB | ~80 MB |
 | **React Webmail SPA** | 0 MB (Served statically by Caddy) | 0 MB |
 | **OS & Kernel Page Cache** | ~350 MB | Remaining RAM for disk cache |
-| **Total System RAM** | **< 800 MB** | **~ 2.5 GB (Safe headroom on 4GB node)** |
+| **Total System RAM** | **< 800 MB** | **~ 2.5 GB (Optimal on 4GB or 8GB node)** |
 
 ---
 
-## 2. Production Docker Compose Stack
+## 2. Multi-Arch Production Docker Compose Stack
 
 File: `deploy/docker-compose.yml`
+
+*All images natively support both `linux/amd64` and `linux/arm64`.*
 
 ```yaml
 version: '3.8'
@@ -67,9 +72,19 @@ services:
       - STALWART_DB_USER=affinmail_user
       - STALWART_DB_PASSWORD=${POSTGRES_PASSWORD}
       - STALWART_REDIS_URL=redis://redis:6379
+      # Dynamic Pluggable Storage Backend Selection: fs | s3 | sftp
+      - STORAGE_BLOB_TYPE=${STORAGE_BLOB_TYPE:-fs}
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - SFTP_HOST=${SFTP_HOST:-}
+      - SFTP_USER=${SFTP_USER:-}
+      - SFTP_PORT=${SFTP_PORT:-22}
     volumes:
       - ./stalwart.toml:/opt/stalwart/etc/config.toml
-      - stalwart_blobs:/var/lib/stalwart/blobs
+      # Local or SSHFS mounted storage for blobs
+      - ${STORAGE_LOCAL_PATH:-stalwart_blobs}:/var/lib/stalwart/blobs
     networks:
       - affinmail-net
     depends_on:
@@ -86,6 +101,15 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ../sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - affinmail-net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
     networks:
       - affinmail-net
 

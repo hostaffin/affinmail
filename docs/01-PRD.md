@@ -23,6 +23,8 @@ Traditional enterprise email hosting solutions suffer from severe drawbacks:
 ### 2.2 The AffinMail Solution
 AffinMail re-engineers modern business email from the ground up:
 * **Rust-Powered Engine (Stalwart):** High-throughput, memory-safe, unified JMAP/IMAP/SMTP/CalDAV/CardDAV server consuming under 150MB RAM.
+* **Dual CPU Architecture Support:** First-class native binary and container support for both **x86_64** (Intel/AMD) and **ARM64 / aarch64** (AWS Graviton, Ampere Altra, Apple Silicon, Oracle ARM).
+* **Pluggable Dynamic Storage Tier:** Hot-swappable blob and attachment backend supporting **Local NVMe SSD**, **S3-Compatible Object Storage** (AWS, Cloudflare R2, MinIO, Wasabi), and **SFTP / Remote Storage Box** (Hetzner Storage Box).
 * **Modern Webmail (React 19, DaisyUI 5, Tailwind CSS v4):** Hyper-responsive SPA with strict dual-theme polish (Enterprise Light & Enterprise Dark), TipTap docked rich-text compose, and Gmail-standard hotkeys.
 * **Dual-Path SmartHost Deliverability:** Isolated routing channels ensuring corporate correspondence leaves via clean dedicated IPs while marketing/bulk mail flows via trusted SMTP relays (Amazon SES, SendGrid, Mailgun).
 * **Deep Hostaffin Automation:** Turnkey provisioning module with 20 WHMCS lifecycle methods, 1-click passwordless SSO, and automated DNS copy widgets.
@@ -91,12 +93,27 @@ AffinMail re-engineers modern business email from the ground up:
 * **FR-BIL-02:** 1-Click passwordless SSO leveraging short-lived signed JWTs (120-second TTL).
 * **FR-BIL-03:** Interactive client area widget displaying MX, SPF, DKIM, and DMARC records with 1-click copy buttons.
 
+### 4.9 Multi-Architecture CPU Compatibility (x86_64 & ARM64)
+* **FR-CPU-01:** All services (Stalwart, Caddy, PostgreSQL, Redis, and Webmail container) MUST support native execution on both `linux/amd64` (x86_64) and `linux/arm64` (ARMv8 / AArch64).
+* **FR-CPU-02:** The deployment stack MUST run seamlessly on low-cost high-efficiency ARM instances (e.g. Hetzner CAX21 Ampere Altra, AWS Graviton3/4, Oracle Cloud Ampere A1) with parity to x86_64 (AMD EPYC / Intel Xeon).
+* **FR-CPU-03:** Docker Compose and build images MUST be multi-platform manifest compliant.
+
+### 4.10 Pluggable Dynamic Storage Backends (Local, S3 & SFTP)
+* **FR-STR-01:** The system MUST decouple raw email payloads (.eml) and attachments from the database into an abstract Blob Store.
+* **FR-STR-02:** The Blob Store backend MUST be hot-swappable or switchable via configuration between:
+  1. **Local Filesystem:** Local NVMe SSD mount.
+  2. **S3-Compatible Object Storage:** AWS S3, Cloudflare R2, MinIO, Wasabi, or Backblaze B2 via standard S3 API credentials.
+  3. **SFTP / Remote Storage Box:** Hetzner Storage Box or remote SSH/SFTP storage server via SSHFS/FUSE or native driver integration.
+* **FR-STR-03:** Switching storage backend MUST NOT require code modification—only environment variable or configuration toggle (`STORAGE_BLOB_TYPE=local|s3|sftp`).
+
 ---
 
 ## 5. Non-Functional Requirements (NFRs)
 
 | Metric | Target Requirement |
 | :--- | :--- |
+| **CPU Architecture** | 100% native support for `x86_64` (AMD/Intel) and `ARM64` (Ampere/Graviton) |
+| **Storage Flexibility** | Dynamic backend abstraction: Local NVMe, S3 API, and SFTP/SSHFS |
 | **Idle Memory Footprint** | Core mail engine < 200 MB RAM |
 | **API Response Time** | JMAP queries < 50ms (p95), < 100ms (p99) |
 | **Concurrent Connections** | >= 5,000 active concurrent WebSocket/IMAP sessions on a 4GB VPS |
