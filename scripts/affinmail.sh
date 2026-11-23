@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # AffinMail Master Unified Management CLI
-# Usage: affinmail [install|uninstall|update|status|restart|logs|backup|info]
+# Usage: affinmail [install|uninstall|update|status|restart|logs|fix|backup|info]
 # ==============================================================================
 
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 INSTALL_DIR="/opt/affinmail"
+LOG_FILE="/var/log/affinmail-install.log"
 
-# Resolve script directory if run locally
+# Resolve base directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -d "$INSTALL_DIR" ]; then
     BASE_DIR="$INSTALL_DIR"
@@ -28,7 +30,7 @@ COMMAND="${1:-help}"
 case "$COMMAND" in
     install)
         shift || true
-        bash "${BASE_DIR}/scripts/install.sh" "$@"
+        bash "${BASE_DIR}/install.sh" "$@"
         ;;
     uninstall)
         shift || true
@@ -38,8 +40,12 @@ case "$COMMAND" in
         shift || true
         bash "${BASE_DIR}/scripts/update.sh" "$@"
         ;;
+    fix|repair|diagnose)
+        shift || true
+        bash "${BASE_DIR}/scripts/fix.sh" "$@"
+        ;;
     status)
-        echo -e "${CYAN}=== AffinMail Service Status ===${NC}"
+        echo -e "${CYAN}=== AffinMail Cluster Status ===${NC}"
         cd "${BASE_DIR}/deploy"
         docker compose ps
         ;;
@@ -61,16 +67,25 @@ case "$COMMAND" in
         ;;
     logs)
         shift || true
-        SERVICE="${1:-}"
-        cd "${BASE_DIR}/deploy"
-        if [ -n "$SERVICE" ]; then
-            docker compose logs -f "$SERVICE"
+        SUB="${1:-}"
+        if [ "$SUB" == "install" ]; then
+            if [ -f "$LOG_FILE" ]; then
+                echo -e "${GREEN}[*] Streaming installation log (${LOG_FILE})...${NC}"
+                tail -n 100 -f "$LOG_FILE"
+            else
+                echo -e "${YELLOW}No install log found at ${LOG_FILE}.${NC}"
+            fi
         else
-            docker compose logs -f --tail=100
+            cd "${BASE_DIR}/deploy"
+            if [ -n "$SUB" ]; then
+                docker compose logs -f "$SUB"
+            else
+                docker compose logs -f --tail=100
+            fi
         fi
         ;;
     backup)
-        echo -e "${BLUE}Creating Immediate Backup...${NC}"
+        echo -e "${BLUE}Creating Immediate Database Backup...${NC}"
         mkdir -p "${BASE_DIR}/backups"
         BKP_NAME="manual_backup_$(date +%Y%m%d_%H%M%S).sql.gz"
         docker exec -t $(docker compose -f "${BASE_DIR}/deploy/docker-compose.yml" ps -q postgres) \
@@ -84,23 +99,25 @@ case "$COMMAND" in
         fi
         echo "Architecture: $(uname -m)"
         echo "Root Path:    ${BASE_DIR}"
+        echo "Install Log:  ${LOG_FILE}"
         ;;
     help|*)
         echo -e "${CYAN}==================================================================${NC}"
-        echo -e "${BLUE}           AffinMail Master Unified Management CLI                ${NC}"
+        echo -e "${BLUE}${BOLD}           AffinMail Master Unified Management CLI                ${NC}"
         echo -e "${CYAN}==================================================================${NC}"
         echo -e "Usage: ${GREEN}affinmail <command> [options]${NC}\n"
         echo "Commands:"
-        echo -e "  ${YELLOW}install${NC}       Run interactive production installation"
-        echo -e "  ${YELLOW}uninstall${NC}     Cleanly stop and remove services (--purge-all for complete wipe)"
-        echo -e "  ${YELLOW}update${NC}        Perform zero-downtime rolling update & DB migrations"
-        echo -e "  ${YELLOW}status${NC}        Check live Docker containers and port status"
-        echo -e "  ${YELLOW}restart${NC}       Restart all AffinMail services"
-        echo -e "  ${YELLOW}start${NC}         Start stopped services"
-        echo -e "  ${YELLOW}stop${NC}          Stop running services"
-        echo -e "  ${YELLOW}logs${NC} [svc]    Stream live container logs (e.g. affinmail logs stalwart)"
-        echo -e "  ${YELLOW}backup${NC}        Generate instant gzipped PostgreSQL database dump"
-        echo -e "  ${YELLOW}info${NC}          Display current domain, egress IP, and storage engine"
+        echo -e "  ${YELLOW}install${NC}         Run production installation"
+        echo -e "  ${YELLOW}update${NC}          Perform zero-downtime rolling update & DB migrations"
+        echo -e "  ${YELLOW}fix${NC}             Emergency auto-recovery, diagnose SSH, RAM swap, Docker & logs"
+        echo -e "  ${YELLOW}status${NC}          Check live Docker container & port status"
+        echo -e "  ${YELLOW}restart${NC}         Restart all AffinMail services"
+        echo -e "  ${YELLOW}start | stop${NC}    Start or stop running services"
+        echo -e "  ${YELLOW}logs${NC} [svc]      Stream container logs (e.g. affinmail logs stalwart)"
+        echo -e "  ${YELLOW}logs install${NC}    View real-time installation output log file"
+        echo -e "  ${YELLOW}backup${NC}          Generate instant gzipped PostgreSQL database dump"
+        echo -e "  ${YELLOW}info${NC}            Display current hostname, outbound IP, and storage engine"
+        echo -e "  ${YELLOW}uninstall${NC}       Cleanly remove services (--purge-all for complete wipe)"
         echo -e "${CYAN}==================================================================${NC}"
         ;;
 esac

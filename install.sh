@@ -8,7 +8,13 @@
 #   - Ubuntu 22.04 / 24.04 LTS, Debian 12 (x86_64 & ARM64)
 # ==============================================================================
 
-set -euo pipefail
+set -uo pipefail
+
+LOG_FILE="/var/log/affinmail-install.log"
+INSTALL_DIR="/opt/affinmail"
+REPO_URL="https://github.com/hostaffin/affinmail.git"
+REPO_BRANCH="${AFFINMAIL_BRANCH:-master}"
+VERSION="1.4.0"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,19 +24,41 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-VERSION="1.3.0"
-INSTALL_DIR="/opt/affinmail"
-REPO_URL="https://github.com/hostaffin/affinmail.git"
-REPO_BRANCH="${AFFINMAIL_BRANCH:-master}"
+# Initialize Logging
+mkdir -p /var/log
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
 
+# Log everything in real-time while displaying to user
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo -e "\n${CYAN}==================================================================${NC}"
+echo -e "${BLUE}${BOLD}   AffinMail Enterprise Email Server - Installer (v${VERSION})   ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
-echo -e "${BLUE}${BOLD}   AffinMail Enterprise Email Server - Universal Installer (v${VERSION})   ${NC}"
-echo -e "${CYAN}==================================================================${NC}"
+echo -e "${GREEN}[*] Real-time installation log is being written to:${NC} ${BOLD}${LOG_FILE}${NC}"
+echo -e "${GREEN}[*] Timestamp:${NC} $(date -u)"
+
+# Error Exit Trap
+on_error() {
+    local exit_code=$?
+    local line_number=$1
+    if [ $exit_code -ne 0 ]; then
+        echo -e "\n${RED}==================================================================${NC}"
+        echo -e "${RED}[FATAL ERROR] Installation failed at line ${line_number} (Exit Code: ${exit_code})${NC}"
+        echo -e "${RED}==================================================================${NC}"
+        echo -e "To inspect the exact error, review the log file:"
+        echo -e "  ${YELLOW}tail -n 50 ${LOG_FILE}${NC}"
+        echo -e "Or run the AffinMail emergency recovery tool:"
+        echo -e "  ${CYAN}bash /opt/affinmail/scripts/fix.sh${NC}"
+        echo -e "${RED}==================================================================${NC}\n"
+    fi
+}
+trap 'on_error $LINENO' EXIT
 
 # 1. Root Privileges Check
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}[ERROR] This installer requires root privileges.${NC}"
-    echo -e "Please run as root: ${YELLOW}sudo -i${NC} and then run the installer command."
+    echo -e "Please switch to root with: ${YELLOW}sudo -i${NC} and rerun the command."
     exit 1
 fi
 
@@ -42,7 +70,12 @@ if [ ! -t 0 ]; then
     fi
 fi
 
-# 3. Detect OS Distribution (Ubuntu/Debian vs AlmaLinux/Rocky/RHEL)
+# 3. Detect Active SSH Port (Protects against SSH lockouts)
+ACTIVE_SSH_PORT=$(ss -tlnp 2>/dev/null | grep sshd | awk '{print $4}' | awk -F: '{print $NF}' | head -n1 || echo 22)
+ACTIVE_SSH_PORT="${ACTIVE_SSH_PORT:-22}"
+echo -e "${GREEN}[*] Active SSH Port Detected:${NC} ${BOLD}${ACTIVE_SSH_PORT}/tcp${NC} (Will be protected in firewall)"
+
+# 4. Detect OS Distribution
 OS_FAMILY="debian"
 OS_NAME="Linux"
 if [ -f /etc/os-release ]; then
@@ -56,47 +89,70 @@ if [ -f /etc/os-release ]; then
 fi
 echo -e "${GREEN}[*] Detected Operating System:${NC} ${BOLD}${OS_NAME} (${OS_FAMILY} family)${NC}"
 
-# 4. Detect & Validate CPU Architecture (ARM64 & x86_64)
+# 5. Detect & Validate CPU Architecture (ARM64 & x86_64)
 ARCH=$(uname -m)
-echo -e "${GREEN}[*] Detecting CPU Architecture:${NC} ${BOLD}$ARCH${NC}"
+echo -e "${GREEN}[*] Detected CPU Architecture:${NC} ${BOLD}$ARCH${NC}"
 if [[ "$ARCH" != "x86_64" && "$ARCH" != "aarch64" ]]; then
     echo -e "${RED}[ERROR] Unsupported CPU architecture: $ARCH.${NC}"
     echo -e "AffinMail natively supports x86_64 (Intel/AMD) and aarch64 (ARM64)."
     exit 1
 fi
 
-# 5. Bootstrap Essential Packages Based on OS Family
+# 6. Low-Memory Protection (Auto Swap Creation to Prevent OOM Crashes)
+TOTAL_RAM_MB=$(free -m | awk '/^Mem:/{print $2}')
+TOTAL_SWAP_MB=$(free -m | awk '/^Swap:/{print $2}')
+echo -e "${GREEN}[*] Memory Check:${NC} RAM: ${TOTAL_RAM_MB}MB | Swap: ${TOTAL_SWAP_MB}MB"
+
+if [ "$TOTAL_SWAP_MB" -lt 512 ] && [ "$TOTAL_RAM_MB" -lt 3500 ]; then
+    echo -e "${YELLOW}[*] Low RAM detected (< 3.5GB) without swap. Creating 2GB /swapfile to prevent OOM crash...${NC}"
+    if [ ! -f /swapfile ]; then
+        dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress 2>/dev/null || fallocate -l 2G /swapfile 2>/dev/null
+        chmod 600 /swapfile
+        mkswap /swapfile >/dev/null
+        swapon /swapfile >/dev/null 2>&1 || true
+        if ! grep -q "/swapfile" /etc/fstab; then
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        fi
+        echo -e "${GREEN}[*] 2GB Swap enabled successfully.${NC}"
+    fi
+fi
+
+# 7. Bootstrap Essential Packages Based on OS Family
 echo -e "\n${BLUE}[1/6] Bootstrapping Essential System Packages...${NC}"
 if [ "$OS_FAMILY" == "rhel" ]; then
     # AlmaLinux / Rocky / RHEL
     echo -e "${GREEN}[*] Installing packages via DNF (AlmaLinux/RHEL)...${NC}"
     dnf install -y epel-release || true
-    dnf install -y curl wget git firewalld bind-utils postgresql rsync tar jq openssl
+    dnf install -y --skip-broken curl wget git firewalld bind-utils postgresql rsync tar jq openssl iptables
 else
     # Ubuntu / Debian
     echo -e "${GREEN}[*] Installing packages via APT (Ubuntu/Debian)...${NC}"
+    export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     apt-get install -y -qq curl wget git ufw fail2ban dnsutils postgresql-client rsync tar jq openssl
 fi
 
-# 6. Bootstrap Docker Engine if Not Present
+# 8. Bootstrap Docker Engine
+echo -e "\n${BLUE}[2/6] Verifying / Installing Docker Engine...${NC}"
 if ! command -v docker &> /dev/null; then
-    echo -e "${GREEN}[*] Fresh server detected: Installing Docker Engine...${NC}"
+    echo -e "${GREEN}[*] Installing Docker Engine...${NC}"
     if [ "$OS_FAMILY" == "rhel" ]; then
         dnf install -y dnf-plugins-core
         dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || true
-        dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin || curl -fsSL https://get.docker.com | sh
-        systemctl enable --now docker
+        # Use --allowerasing to resolve conflicting runc/podman packages on AlmaLinux
+        dnf install -y --allowerasing docker-ce docker-ce-cli containerd.io docker-compose-plugin || curl -fsSL https://get.docker.com | sh
     else
         curl -fsSL https://get.docker.com | sh
-        systemctl enable --now docker
     fi
+    systemctl daemon-reload || true
+    systemctl enable --now docker
 else
+    echo -e "${GREEN}[*] Docker Engine already present: $(docker --version)${NC}"
     systemctl enable --now docker
 fi
 
-# 7. Fetch / Clone Codebase to /opt/affinmail
-echo -e "\n${BLUE}[2/6] Preparing AffinMail Core in ${INSTALL_DIR}...${NC}"
+# 9. Fetch / Clone Codebase to /opt/affinmail
+echo -e "\n${BLUE}[3/6] Preparing AffinMail Core in ${INSTALL_DIR}...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -f "${SCRIPT_DIR}/deploy/docker-compose.yml" ]; then
@@ -121,7 +177,7 @@ mkdir -p "${INSTALL_DIR}/data/blobs"
 mkdir -p "${INSTALL_DIR}/backups"
 cd "${INSTALL_DIR}"
 
-# SELinux Context on AlmaLinux/RHEL
+# SELinux Permissions Handling on AlmaLinux/RHEL
 if [ "$OS_FAMILY" == "rhel" ] && command -v getenforce &> /dev/null; then
     if [ "$(getenforce)" != "Disabled" ]; then
         echo -e "${GREEN}[*] Setting SELinux permissions for Docker volume mounts...${NC}"
@@ -133,7 +189,7 @@ fi
 # Auto-detect Public IP
 AUTO_IP=$(curl -s -4 ifconfig.me 2>/dev/null || wget -qO- -4 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
 
-# 8. Setup Mode Selection (Interactive Now vs Express / Setup Later from Panel)
+# 10. Setup Mode Selection (Interactive Now vs Express / Setup Later from Panel)
 echo -e "\n${CYAN}==================================================================${NC}"
 echo -e "${BOLD}Choose Installation Mode:${NC}"
 echo -e "  ${YELLOW}1)${NC} ${BOLD}Complete Interactive Setup Now${NC} (Configure Hostname, IP, Storage, Admin now)"
@@ -210,9 +266,10 @@ else
     HOSTNAME_INPUT="mail.${AUTO_IP//./-}.nip.io"
 fi
 
-# 9. Firewall Configuration (UFW on Ubuntu/Debian, Firewalld on AlmaLinux/RHEL)
-echo -e "\n${BLUE}[3/6] Hardening Firewall Ports (25, 80, 443, 465, 587, 993, 2083, 2087, 4190)...${NC}"
+# 11. Fail-Safe Firewall Configuration (Guarantees SSH Port Never Blocked)
+echo -e "\n${BLUE}[4/6] Hardening Firewall Ports (SSH: ${ACTIVE_SSH_PORT}, 25, 80, 443, 465, 587, 993, 2083, 2087, 4190)...${NC}"
 PORTS=(
+    "${ACTIVE_SSH_PORT}/tcp"
     "22/tcp"
     "80/tcp"
     "443/tcp"
@@ -228,16 +285,22 @@ PORTS=(
 
 if [ "$OS_FAMILY" == "rhel" ]; then
     # AlmaLinux Firewalld
+    # Pre-add SSH port offline before starting to prevent disconnect!
+    if command -v firewall-offline-cmd &>/dev/null; then
+        firewall-offline-cmd --add-port="${ACTIVE_SSH_PORT}/tcp" --add-service=ssh >/dev/null 2>&1 || true
+    fi
     systemctl enable --now firewalld >/dev/null 2>&1 || true
     if systemctl is-active --quiet firewalld; then
+        firewall-cmd --permanent --add-service=ssh >/dev/null 2>&1 || true
         for P in "${PORTS[@]}"; do
             firewall-cmd --permanent --add-port="$P" >/dev/null 2>&1 || true
         done
         firewall-cmd --reload >/dev/null 2>&1 || true
-        echo -e "${GREEN}[*] Firewalld rules configured successfully.${NC}"
+        echo -e "${GREEN}[*] Firewalld rules configured without disrupting SSH.${NC}"
     fi
 else
     # Ubuntu / Debian UFW
+    ufw allow "${ACTIVE_SSH_PORT}/tcp" comment 'Active SSH' >/dev/null 2>&1 || true
     ufw default deny incoming >/dev/null 2>&1 || true
     ufw default allow outgoing >/dev/null 2>&1 || true
     for P in "${PORTS[@]}"; do
@@ -247,8 +310,8 @@ else
     echo -e "${GREEN}[*] UFW rules configured successfully.${NC}"
 fi
 
-# 10. Cryptographic Credentials & Environment File
-echo -e "\n${BLUE}[4/6] Generating Strong Encryption Keys & .env Config...${NC}"
+# 12. Cryptographic Credentials & Environment File
+echo -e "\n${BLUE}[5/6] Generating Strong Encryption Keys & .env Config...${NC}"
 if [ ! -f "deploy/.env" ]; then
     DB_PASS=$(openssl rand -hex 16)
     REDIS_PASS=$(openssl rand -hex 16)
@@ -284,14 +347,13 @@ else
     echo -e "${YELLOW}[*] Existing deploy/.env found, preserving established credentials.${NC}"
 fi
 
-# 11. Start Docker Stack
-echo -e "\n${BLUE}[5/6] Pulling Multi-Arch Container Images & Starting Services...${NC}"
+# 13. Start Docker Stack
+echo -e "\n${BLUE}[6/6] Pulling Multi-Arch Container Images & Starting Services...${NC}"
 cd "${INSTALL_DIR}/deploy"
 docker compose pull
 docker compose up -d
 
-# 12. Register Crons and CLI
-echo -e "\n${BLUE}[6/6] Registering System Crons and Management CLI...${NC}"
+# 14. Register Crons and CLI
 chmod +x "${INSTALL_DIR}/scripts/"*.sh
 
 CRON_FILE="/etc/cron.d/affinmail"
@@ -307,6 +369,9 @@ chmod +x /usr/local/bin/affinmail
 
 ADMIN_KEY=$(grep "STALWART_ADMIN_SECRET" "${INSTALL_DIR}/deploy/.env" | cut -d= -f2)
 
+# Clear EXIT trap on success
+trap - EXIT
+
 echo -e "\n${CYAN}==================================================================${NC}"
 echo -e "${GREEN}${BOLD}      AffinMail Server Successfully Installed & Running!          ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
@@ -316,7 +381,8 @@ echo -e "Client Webmail Portal:   ${YELLOW}https://${HOSTNAME_INPUT}:2083${NC} (
 echo -e "Admin API Secret:        ${YELLOW}${ADMIN_KEY}${NC}"
 echo -e "Outbound Egress IPv4:    ${YELLOW}${SHARED_IP_INPUT}${NC}"
 echo -e "Storage Engine:          ${YELLOW}${STORAGE_TYPE_INPUT}${NC}"
-echo -e "Management CLI:          ${CYAN}affinmail [status|restart|update|logs|backup]${NC}"
+echo -e "Installation Log:        ${CYAN}${LOG_FILE}${NC}"
+echo -e "Management CLI:          ${CYAN}affinmail [status|restart|update|logs|fix|backup]${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 if [ "$SETUP_MODE" == "2" ]; then
     echo -e "${GREEN}Mode Note: Express setup completed. You can now connect this node to Hostaffin WHMCS${NC}"
