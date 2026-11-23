@@ -1,0 +1,8 @@
+[Unit]
+Description=AffinMail Daily Backup (PostgreSQL + Configs)
+Documentation=https://github.com/hostaffin/affinmail
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/var/www/affinmail/scripts/backup.sh

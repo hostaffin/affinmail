@@ -21,7 +21,7 @@ AffinMail is engineered for **Zero Docker Dependency** with 100% native executio
 | :--- | :--- | :--- |
 | **Stalwart Mail Engine (Rust Binary)** | ~35 MB | ~280 MB |
 | **PostgreSQL 16 (Native)** | ~45 MB | ~350 MB |
-| **Redis 7 (Native In-Memory)** | ~15 MB | ~80 MB |
+| **Redis 6.2 (Native In-Memory)** | ~15 MB | ~80 MB |
 | **Caddy 2 Reverse Proxy (Native Binary)** | ~20 MB | ~60 MB |
 | **React Webmail SPA** | 0 MB (Served statically by Caddy) | 0 MB |
 | **OS & Kernel Page Cache** | ~160 MB | Remaining RAM for disk cache |
@@ -35,67 +35,42 @@ AffinMail runs as isolated, native Linux services managed directly by `systemd`.
 
 ### 2.1 Systemd Services Blueprint
 
-#### 1. Stalwart Mail Engine Service: `/etc/systemd/system/stalwart-mail.service`
+#### 1. Stalwart Mail Engine Service: `/etc/systemd/system/stalwart.service`
 ```ini
 [Unit]
-Description=AffinMail Stalwart Mail Engine (Rust Native Core)
-Documentation=https://github.com/hostaffin/affinmail
-After=network.target network-online.target postgresql.service redis.service redis-server.service
-Wants=network-online.target postgresql.service
-PartOf=affinmail.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/affinmail/deploy
-EnvironmentFile=-/opt/affinmail/deploy/.env
-ExecStart=/usr/local/bin/stalwart-mail --config /opt/affinmail/deploy/stalwart.toml
-Restart=always
-RestartSec=3s
-LimitNOFILE=65535
-LimitNPROC=65535
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target affinmail.target
-```
-
-#### 2. Caddy Web Server & Reverse Proxy: `/etc/systemd/system/affinmail-caddy.service`
-```ini
-[Unit]
-Description=AffinMail Caddy Web Server & Reverse Proxy
-Documentation=https://github.com/hostaffin/affinmail
-After=network.target network-online.target stalwart-mail.service
-Wants=network-online.target
-PartOf=affinmail.target
+Description=Stalwart
+Conflicts=postfix.service sendmail.service exim4.service
+After=network-online.target
 
 [Service]
 Type=notify
-User=root
-WorkingDirectory=/opt/affinmail/deploy
-EnvironmentFile=-/opt/affinmail/deploy/.env
-ExecStart=/usr/local/bin/caddy run --environ --config /opt/affinmail/deploy/Caddyfile
-ExecReload=/usr/local/bin/caddy reload --config /opt/affinmail/deploy/Caddyfile
-TimeoutStopSec=5s
-LimitNOFILE=1048576
-LimitNPROC=512
-Restart=always
-RestartSec=3s
-StandardOutput=journal
-StandardError=journal
+LimitNOFILE=65536
+KillMode=process
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=-/etc/stalwart/stalwart.env
+ExecStart=/usr/local/bin/stalwart --config=/etc/stalwart/config.json
+SyslogIdentifier=stalwart
+User=stalwart
+Group=stalwart
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
-WantedBy=multi-user.target affinmail.target
+WantedBy=multi-user.target
 ```
+
+> **Note:** The canonical Stalwart binary is `/usr/local/bin/stalwart` running against `/etc/stalwart/config.json`. The older `/usr/local/bin/stalwart-mail` binary and its `/opt/affinmail/deploy/stalwart.toml` config are stale duplicates and must not be used. The live `stalwart.service` unit is the authoritative reference; the repo copy in `deploy/systemd/stalwart.service` is kept byte-identical to it.
+
+#### 2. Web Server & Reverse Proxy: FrankenPHP/Caddy (NO affinmail-caddy.service)
+> **There is deliberately no `affinmail-caddy.service`.** The AffinMail vhosts (port 443, 2083, 2087) are served by the existing FrankenPHP/Caddy service (`/etc/frankenphp/Caddyfile`). A standalone Caddy service would fight it for the same ports. See `deploy/README.md`.
 
 #### 3. Complete Stack Target: `/etc/systemd/system/affinmail.target`
 ```ini
 [Unit]
-Description=AffinMail Complete Email Stack Target
-Documentation=https://github.com/hostaffin/affinmail
-Wants=postgresql.service stalwart-mail.service affinmail-caddy.service
-After=postgresql.service stalwart-mail.service affinmail-caddy.service
+Description=AffinMail stack
+Wants=stalwart.service affinmail-api.service postgresql.service redis.service
+After=stalwart.service affinmail-api.service postgresql.service redis.service
 
 [Install]
 WantedBy=multi-user.target
@@ -135,20 +110,22 @@ AffinMail uses Caddy 2 as a native edge reverse proxy with dual-port segregation
 #!/usr/bin/env bash
 set -euo pipefail
 
-BACKUP_DIR="/opt/affinmail/backups"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/var/www/affinmail/backups"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 mkdir -p "$BACKUP_DIR"
 
 # 1. Native PostgreSQL Dump
 echo "[Backup] Dumping PostgreSQL database..."
-sudo -u postgres pg_dump affinmail | gzip > "${BACKUP_DIR}/affinmail_db_${TIMESTAMP}.sql.gz"
+sudo -u postgres pg_dump affinmail | gzip > "${BACKUP_DIR}/affinmail-${TIMESTAMP}.sql.gz"
 
 # 2. Configuration Snapshot
 echo "[Backup] Archiving configurations..."
-tar -czf "${BACKUP_DIR}/affinmail_config_${TIMESTAMP}.tar.gz" -C /opt/affinmail deploy/.env deploy/stalwart.toml deploy/Caddyfile
+tar -czf "${BACKUP_DIR}/affinmail-config-${TIMESTAMP}.tar.gz" \
+  -C /etc/stalwart config.json \
+  -C /var/www/affinmail deploy
 
 # 3. Retention Cleanup (Keep last 14 days)
-find "$BACKUP_DIR" -type f -name "affinmail_*.gz" -mtime +14 -delete
+find "$BACKUP_DIR" -type f -name 'affinmail-*' -mtime +14 -delete
 echo "[Backup] Snapshot complete: ${TIMESTAMP}"
 ```
 
@@ -158,7 +135,7 @@ echo "[Backup] Snapshot complete: ${TIMESTAMP}"
 affinmail stop
 
 # 2. Restore PostgreSQL dump
-gunzip < /opt/affinmail/backups/affinmail_db_20261123_000000.sql.gz | sudo -u postgres psql -d affinmail
+gunzip < /var/www/affinmail/backups/affinmail-20261123-000000.sql.gz | sudo -u postgres psql -d affinmail
 
 # 3. Restart all services
 affinmail start

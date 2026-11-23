@@ -55,3 +55,6 @@ coverage/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Backups (dumps never committed)
+backups/

@@ -1,8 +1,7 @@
 [Unit]
-Description=AffinMail Complete Email Stack Target
-Documentation=https://github.com/hostaffin/affinmail
-Wants=postgresql.service stalwart-mail.service affinmail-caddy.service
-After=postgresql.service stalwart-mail.service affinmail-caddy.service
+Description=AffinMail stack
+Wants=stalwart.service affinmail-api.service postgresql.service redis.service
+After=stalwart.service affinmail-api.service postgresql.service redis.service
 
 [Install]
 WantedBy=multi-user.target

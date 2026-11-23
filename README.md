@@ -12,7 +12,7 @@ A modern, high-performance, privacy-first business email hosting platform with *
    - **Port 2083 / 443 (User Panel):** Client webmail portal (JMAP, WebSockets, keyboard shortcuts) — **fully automatable via MCP (Model Context Protocol)**.
 5. **Universal Linux Support:** First-class support for **AlmaLinux 8 / 9**, **Rocky Linux 8 / 9**, **RHEL**, **Ubuntu 22.04 / 24.04 LTS**, and **Debian 12**.
 6. **Pluggable Dynamic Storage Engine:** Hot-swappable blob and attachment storage supporting **Local NVMe SSD**, **S3-Compatible Object Storage** (AWS, Cloudflare R2, MinIO, Wasabi), and **SFTP / Remote Storage Box** (Hetzner Storage Box).
-7. **PostgreSQL 16 & Redis 7:** ACID persistence, GIN full-text search, and Leaky-Bucket rate limiting running natively on localhost.
+7. **PostgreSQL 16 & Redis 6.2:** ACID persistence, GIN full-text search, and Leaky-Bucket rate limiting running natively on localhost.
 8. **Gmail-Class Webmail SPA:** Built with React 19, DaisyUI 5, and Tailwind CSS v4 featuring strict Light & Dark enterprise themes, TipTap docked compose, and global keyboard shortcuts.
 9. **Dual-Path SmartHost Deliverability:** Clean Port 25 outbound delivery for corporate communications and dynamic relay routing (Amazon SES, SendGrid, Mailgun) for bulk mail.
 10. **Multi-IP & Dedicated IP Pool Architecture:** Granular outbound IP routing per domain (rotational shared pools for entry plans, dedicated outbound IPv4 for VIP clients) with automated progressive IP warm-up schedules and 24/7 RBL monitoring.
@@ -107,7 +107,7 @@ flowchart TD
 
     subgraph L4["Layer 4: Enterprise Persistence & Storage Tier"]
         PG["Native PostgreSQL 16 (Accounts, Sieve, GIN Full-Text Index)"]
-        Redis["Native Redis 7 (Rate Limits, Transient Sessions, Connection Pools)"]
+        Redis["Native Redis 6.2 (Rate Limits, Transient Sessions, Connection Pools)"]
         BlobStore["NVMe SSD / S3 / Hetzner Storage Box (Raw .eml & Attachments)"]
     end
 
@@ -157,7 +157,7 @@ flowchart TD
 | **x86_64 VPS** | 2-4 vCPUs (AMD EPYC / Intel), 2-4 GB RAM | **~290 MB RAM total idle** | ~€5 - €7 / mo |
 
 - **PostgreSQL 16 native:** ~45 MB RAM
-- **Redis 7 native:** ~15 MB RAM
+- **Redis 6.2 native:** ~15 MB RAM
 - **Stalwart Mail Engine native binary:** ~35 MB RAM
 - **Caddy 2 native binary:** ~20 MB RAM
 - **Total stack:** Runs comfortably on even a 1GB/2GB VPS with zero OOM issues!
