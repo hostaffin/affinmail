@@ -19,6 +19,8 @@ import {
   ChevronUp,
   Bookmark,
   Calendar,
+  CalendarDays,
+  Users,
 } from 'lucide-react';
 import { MailboxFolderId, PlanQuota } from '../types';
 
@@ -34,6 +36,8 @@ interface NavigationSidebarProps {
   isCollapsed?: boolean;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
+  onOpenCalendar?: () => void;
+  onOpenContacts?: () => void;
 }
 
 export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
@@ -48,6 +52,8 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   isCollapsed = false,
   isOpenMobile = false,
   onCloseMobile,
+  onOpenCalendar,
+  onOpenContacts,
 }) => {
   const [isMoreExpanded, setIsMoreExpanded] = useState(false);
 
@@ -207,6 +213,44 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
             </>
           )}
         </nav>
+
+        {/* 2b. Workspace Apps (Calendar / Contacts) */}
+        <div className={`mt-2 pt-2 border-t border-gmail-border dark:border-gmail-dark-border ${isMini ? 'pr-0' : 'pr-3'}`}>
+          {[
+            { name: 'Calendar', icon: CalendarDays, action: onOpenCalendar },
+            { name: 'Contacts', icon: Users, action: onOpenContacts },
+          ].map((app) => {
+            const Icon = app.icon;
+            if (isMini) {
+              return (
+                <button
+                  key={app.name}
+                  onClick={() => {
+                    app.action?.();
+                    if (isOpenMobile) onCloseMobile?.();
+                  }}
+                  className="w-12 h-10 rounded-full mx-auto flex items-center justify-center text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10"
+                  title={app.name}
+                >
+                  <Icon className="w-5 h-5 stroke-[2]" />
+                </button>
+              );
+            }
+            return (
+              <button
+                key={app.name}
+                onClick={() => {
+                  app.action?.();
+                  if (isOpenMobile) onCloseMobile?.();
+                }}
+                className="w-full flex items-center gap-4 pl-6 pr-4 h-8 rounded-r-full text-sm text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5 font-normal transition-colors"
+              >
+                <Icon className="w-5 h-5 stroke-[2]" />
+                <span className="truncate">{app.name}</span>
+              </button>
+            );
+          })}
+        </div>
 
         {/* 3. Labels Section (Full view only) */}
         {!isMini && (

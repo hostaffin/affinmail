@@ -24,6 +24,7 @@ export interface JmapSession {
   apiUrl: string;
   uploadUrl: string;
   downloadUrl: string;
+  eventSourceUrl?: string;
   accounts: Record<string, { name: string; accountCapabilities: Record<string, unknown> }>;
   primaryAccounts: Record<string, string>;
   capabilities: Record<string, unknown>;
@@ -103,6 +104,16 @@ function authHeader(): string {
   return `Basic ${auth.basic}`;
 }
 
+/** Basic auth header value for consumers that must call fetch directly (e.g. SSE). */
+export function authHeaderValue(): string {
+  return authHeader();
+}
+
+/** Resolve a session URL to something reachable through the app origin. */
+export function resolveEndpoint(url: string | undefined, fallback: string): string {
+  return endpoint(url, fallback);
+}
+
 export function logout(): void {
   sessionStorage.removeItem(AUTH_KEY);
   cachedSession = null;
@@ -119,7 +130,6 @@ function endpoint(url: string | undefined, fallback: string): string {
     return fallback;
   }
 }
-
 function parseResponses(payload: any): any[] {
   const responses = payload?.methodResponses ?? [];
   return responses.map((r: any[]) => {
@@ -159,12 +169,12 @@ export function accountId(session: JmapSession): string {
   return session.primaryAccounts?.['urn:ietf:params:jmap:mail'] ?? Object.keys(session.accounts)[0];
 }
 
-export async function request(methodCalls: unknown[][]): Promise<any[]> {
+export async function request(methodCalls: unknown[][], using: string[] = USING): Promise<any[]> {
   const session = await getSession();
   const res = await fetch(endpoint(session.apiUrl, '/jmap/'), {
     method: 'POST',
     headers: { Authorization: authHeader(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ using: USING, methodCalls }),
+    body: JSON.stringify({ using, methodCalls }),
   });
   if (!res.ok) {
     throw new JmapError(res.status === 401 ? 'Session expired' : `JMAP request failed (${res.status})`, res.status);
@@ -347,31 +357,51 @@ export interface UploadedBlob {
   size: number;
 }
 
-export async function uploadBlob(file: File): Promise<UploadedBlob> {
+async function upload(name: string, type: string, body: Blob | string): Promise<UploadedBlob> {
   const session = await getSession();
   const id = accountId(session);
   const substitution = (session.uploadUrl || `/jmap/upload/{accountId}/`).replace('{accountId}', id);
   const base = endpoint(substitution, `/jmap/upload/${id}/`);
-  const res = await fetch(`${base.replace(/\/?$/, '/')}${encodeURIComponent(file.name)}`, {
+  const res = await fetch(`${base.replace(/\/?$/, '/')}${encodeURIComponent(name)}`, {
     method: 'POST',
-    headers: { Authorization: authHeader(), 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
+    headers: { Authorization: authHeader(), 'Content-Type': type || 'application/octet-stream' },
+    body,
   });
   if (!res.ok) throw new JmapError(`Upload failed (${res.status})`, res.status);
   return (await res.json()) as UploadedBlob;
 }
 
+export async function uploadBlob(file: File): Promise<UploadedBlob> {
+  return upload(file.name, file.type || 'application/octet-stream', file);
+}
+
+/** Upload plain text (Sieve scripts are stored as blobs). */
+export async function uploadTextBlob(name: string, content: string): Promise<UploadedBlob> {
+  return upload(name, 'text/plain', content);
+}
+
+function downloadUrlFor(blobId: string, name: string, type = 'application/octet-stream'): Promise<string> {
+  return getSession().then((session) => {
+    const id = accountId(session);
+    const raw = (session.downloadUrl || '/jmap/download/{accountId}/{blobId}/{name}?accept={type}')
+      .replace('{accountId}', id)
+      .replace('{blobId}', encodeURIComponent(blobId))
+      .replace('{name}', encodeURIComponent(name))
+      .replace('{type}', type);
+    return endpoint(raw, `/jmap/download/${id}/${encodeURIComponent(blobId)}/${encodeURIComponent(name)}`);
+  });
+}
+
+/** Fetch a blob's text content (Sieve scripts, etc.). */
+export async function fetchBlobText(blobId: string, name = 'blob'): Promise<string> {
+  const res = await fetch(await downloadUrlFor(blobId, name), { headers: { Authorization: authHeader() } });
+  if (!res.ok) throw new JmapError(`Download failed (${res.status})`, res.status);
+  return res.text();
+}
+
 /** Download an attachment blob; link hrefs can't carry Basic auth, so fetch then save. */
 export async function downloadBlob(blobId: string, name: string): Promise<void> {
-  const session = await getSession();
-  const id = accountId(session);
-  const raw = (session.downloadUrl || '/jmap/download/{accountId}/{blobId}/{name}?accept={type}')
-    .replace('{accountId}', id)
-    .replace('{blobId}', encodeURIComponent(blobId))
-    .replace('{name}', encodeURIComponent(name))
-    .replace('{type}', 'application/octet-stream');
-  const url = endpoint(raw, `/jmap/download/${id}/${encodeURIComponent(blobId)}/${encodeURIComponent(name)}`);
-  const res = await fetch(url, { headers: { Authorization: authHeader() } });
+  const res = await fetch(await downloadUrlFor(blobId, name), { headers: { Authorization: authHeader() } });
   if (!res.ok) throw new JmapError(`Download failed (${res.status})`, res.status);
   const objectUrl = URL.createObjectURL(await res.blob());
   const anchor = document.createElement('a');
@@ -397,6 +427,7 @@ export interface ComposePayload {
   bcc?: string[];
   subject: string;
   body: string;
+  htmlBody?: string;
   attachments?: File[];
 }
 
@@ -418,14 +449,21 @@ async function buildEmailBody(payload: ComposePayload) {
     });
   }
   const fromEmail = (await getSession()).username;
+  const html = payload.htmlBody?.trim();
+  const hasHtml = Boolean(html && html !== payload.body);
   return {
     from: [{ name: fromEmail.split('@')[0], email: fromEmail }],
     to: addressList(payload.to),
     cc: addressList(payload.cc),
     bcc: addressList(payload.bcc),
     subject: payload.subject,
-    bodyValues: { body: { value: payload.body } },
-    textBody: [{ partId: 'body', type: 'text/plain' }],
+    bodyValues: hasHtml
+      ? { text: { value: payload.body }, html: { value: html as string } }
+      : { body: { value: payload.body } },
+    textBody: hasHtml
+      ? [{ partId: 'text', type: 'text/plain' }]
+      : [{ partId: 'body', type: 'text/plain' }],
+    ...(hasHtml ? { htmlBody: [{ partId: 'html', type: 'text/html' }] } : {}),
     attachments,
   };
 }

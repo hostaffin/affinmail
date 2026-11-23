@@ -18,6 +18,8 @@ import {
   Database,
   CheckCircle,
   Mail,
+  CalendarDays,
+  BookUser,
 } from 'lucide-react';
 import { PlanQuota, UserProfile } from '../types';
 import { AffinMailLogo } from './AffinMailLogo';
@@ -33,6 +35,9 @@ interface HeaderBarProps {
   onSwitchToAdmin?: () => void;
   onToggleSidebar?: () => void;
   onLogout?: () => void;
+  onOpenSettings?: () => void;
+  onOpenCalendar?: () => void;
+  onOpenContacts?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -46,6 +51,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onSwitchToAdmin,
   onToggleSidebar,
   onLogout,
+  onOpenSettings,
+  onOpenCalendar,
+  onOpenContacts,
 }) => {
   const [showAppsMenu, setShowAppsMenu] = useState(false);
   const [mobileSearch, setMobileSearch] = useState(false);
@@ -191,6 +199,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
         {/* Settings Icon */}
         <button
+          onClick={onOpenSettings}
           className="btn btn-ghost btn-circle btn-sm text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10"
           title="Settings"
         >
@@ -228,6 +237,32 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                     <Mail className="w-5 h-5" />
                   </div>
                   <span className="text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">Mail</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowAppsMenu(false);
+                    onOpenCalendar?.();
+                  }}
+                  className="flex flex-col items-center p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/40 text-red-500 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
+                    <CalendarDays className="w-5 h-5" />
+                  </div>
+                  <span className="text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">Calendar</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowAppsMenu(false);
+                    onOpenContacts?.();
+                  }}
+                  className="flex flex-col items-center p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
+                    <BookUser className="w-5 h-5" />
+                  </div>
+                  <span className="text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">Contacts</span>
                 </button>
 
                 {onSwitchToAdmin && (

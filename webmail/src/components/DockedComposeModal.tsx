@@ -19,17 +19,18 @@ import {
   HardDrive,
   Image,
   Lock,
-  PenTool,
-  Clock,
-  Check,
 } from 'lucide-react';
+import { EditorContent, useEditor } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
 import { validateAttachment, formatFileSize } from '../utils/attachmentValidator';
+import { Contact, searchContacts } from '../lib/collab';
 
 export interface ComposePayload {
   to: string;
   cc: string;
   subject: string;
   body: string;
+  htmlBody?: string;
   attachments: File[];
 }
 
@@ -47,6 +48,135 @@ interface DockedComposeModalProps {
   initialBody?: string;
   initialDraftId?: string;
 }
+
+type RecipientField = 'to' | 'cc' | 'bcc';
+
+function plainTextToHtml(text: string): string {
+  if (!text.trim()) return '';
+  const escape = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string);
+  return text
+    .split(/\n{2,}/)
+    .map((para) => `<p>${escape(para).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+interface RecipientRowProps {
+  label: string;
+  field: RecipientField;
+  chips: string[];
+  onRemoveChip: (index: number) => void;
+  input: string;
+  onInputChange: (value: string) => void;
+  onCommit: (value: string) => void;
+  placeholder?: string;
+  onBackspaceEmpty?: () => void;
+  children?: React.ReactNode;
+}
+
+const RecipientRow: React.FC<RecipientRowProps> = ({
+  label,
+  field,
+  chips,
+  onRemoveChip,
+  input,
+  onInputChange,
+  onCommit,
+  placeholder,
+  onBackspaceEmpty,
+  children,
+}) => {
+  const [suggestions, setSuggestions] = useState<Contact[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  useEffect(() => {
+    const term = input.trim();
+    if (term.length < 2 || term.includes('@') && term.includes('.')) {
+      setSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchContacts(term)
+        .then((found) => {
+          if (!cancelled) {
+            setSuggestions(found.filter((c) => c.emails.length > 0));
+            setShowSuggestions(true);
+          }
+        })
+        .catch(() => undefined);
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [input]);
+
+  const pick = (contact: Contact) => {
+    onCommit(contact.emails[0]);
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center px-4 py-2 gap-1.5 min-h-[40px]">
+      <span className="text-[#5E5E5E] dark:text-[#8E918F] w-8 font-medium">{label}</span>
+      <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-[120px] relative">
+        {chips.map((chip, idx) => (
+          <span
+            key={`${chip}-${idx}`}
+            className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F0FE] dark:bg-[#004A77]/40 text-gmail-blue text-xs font-medium border border-[#D2E3FC] dark:border-[#004A77]"
+          >
+            <span>{chip}</span>
+            <button onClick={() => onRemoveChip(idx)} className="text-gmail-blue hover:text-red-600 ml-0.5">
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              onCommit(input);
+            } else if (e.key === 'Backspace' && !input) {
+              onBackspaceEmpty?.();
+            } else if (e.key === 'Escape') {
+              setShowSuggestions(false);
+            }
+          }}
+          onBlur={() => {
+            if (input.trim()) onCommit(input);
+            setShowSuggestions(false);
+          }}
+          placeholder={placeholder}
+          className="flex-1 bg-transparent border-none outline-none text-[#1F1F1F] dark:text-[#E3E3E3] text-xs min-w-[100px] placeholder:text-[#5E5E5E]"
+          data-field={field}
+        />
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute left-0 top-full mt-1 z-50 w-72 max-h-56 overflow-y-auto bg-white dark:bg-[#1E1F20] rounded-xl border border-[#E0E2E7] dark:border-[#333538] shadow-gmail-modal py-1">
+            {suggestions.map((contact) => (
+              <button
+                key={contact.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(contact);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] flex flex-col"
+              >
+                <span className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{contact.fullName}</span>
+                <span className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F] truncate">{contact.emails[0]}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+};
 
 export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
   isOpen,
@@ -83,17 +213,32 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scheduleMenuRef = useRef<HTMLDivElement>(null);
-
   const wasOpen = useRef(false);
 
+  const editor = useEditor({
+    extensions: [StarterKit],
+    content: '',
+    immediatelyRender: false,
+    editorProps: {
+      attributes: {
+        class:
+          'tiptap outline-none w-full h-full min-h-[140px] text-xs leading-relaxed text-[#1F1F1F] dark:text-[#E3E3E3]',
+      },
+    },
+    onUpdate: ({ editor: instance }) => {
+      setBody(instance.getText());
+    },
+  });
+
   useEffect(() => {
-    // Fresh compose: nothing to prefill and no draft to resume → clear whatever was left behind.
     if (isOpen && !wasOpen.current && !initialTo && !initialSubject && !initialBody && !initialDraftId) {
       setToChips([]);
+      setToInput('');
       setSubject('');
       setBody('');
       setAttachments([]);
       setDraftId(undefined);
+      editor?.commands.setContent('');
     }
     wasOpen.current = isOpen;
     if (!isOpen) return;
@@ -101,9 +246,12 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
       setToChips((prev) => (prev.includes(initialTo) ? prev : [...prev, initialTo]));
     }
     if (initialSubject !== undefined) setSubject(initialSubject);
-    if (initialBody !== undefined) setBody(initialBody);
+    if (initialBody !== undefined) {
+      setBody(initialBody);
+      editor?.commands.setContent(plainTextToHtml(initialBody));
+    }
     if (initialDraftId !== undefined) setDraftId(initialDraftId);
-  }, [initialTo, initialSubject, initialBody, initialDraftId, isOpen]);
+  }, [initialTo, initialSubject, initialBody, initialDraftId, isOpen, editor]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -140,17 +288,16 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const addRecipientChip = (type: 'to' | 'cc' | 'bcc', val: string) => {
+  const addRecipientChip = (type: RecipientField, val: string) => {
     const clean = val.trim().replace(/,$/, '');
     if (!clean) return;
-
     if (type === 'to') {
       if (!toChips.includes(clean)) setToChips((prev) => [...prev, clean]);
       setToInput('');
     } else if (type === 'cc') {
       if (!ccChips.includes(clean)) setCcChips((prev) => [...prev, clean]);
       setCcInput('');
-    } else if (type === 'bcc') {
+    } else {
       if (!bccChips.includes(clean)) setBccChips((prev) => [...prev, clean]);
       setBccInput('');
     }
@@ -163,11 +310,14 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
     if (ccInput.trim()) allCc.push(ccInput.trim());
     const allBcc = [...bccChips];
     if (bccInput.trim()) allBcc.push(bccInput.trim());
+    const plain = editor ? editor.getText() : body;
+    const html = editor && !editor.isEmpty ? editor.getHTML() : '';
     return {
       to: allTo.join(', '),
       cc: [...allCc, ...allBcc].join(', '),
       subject: subject || '(no subject)',
-      body,
+      body: plain,
+      htmlBody: html || undefined,
       attachments,
     };
   };
@@ -183,6 +333,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
     setBody('');
     setAttachments([]);
     setDraftId(undefined);
+    editor?.commands.setContent('');
   };
 
   const hasContent = () =>
@@ -275,132 +426,53 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
         <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-[#1E1F20]">
           {/* 2. Recipients & Subject Inputs */}
           <div className="divide-y divide-[#F2F4F7] dark:divide-[#2D2F31] text-xs">
-            {/* To Line */}
-            <div className="flex flex-wrap items-center px-4 py-2 gap-1.5 min-h-[40px]">
-              <span className="text-[#5E5E5E] dark:text-[#8E918F] w-8 font-medium">To</span>
-              <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-[120px]">
-                {toChips.map((chip, idx) => (
-                  <span
-                    key={idx}
-                    className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F0FE] dark:bg-[#004A77]/40 text-gmail-blue text-xs font-medium border border-[#D2E3FC] dark:border-[#004A77]"
-                  >
-                    <span>{chip}</span>
-                    <button
-                      onClick={() => setToChips((prev) => prev.filter((_, i) => i !== idx))}
-                      className="text-gmail-blue hover:text-red-600 ml-0.5"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-                <input
-                  type="email"
-                  value={toInput}
-                  onChange={(e) => setToInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                      e.preventDefault();
-                      addRecipientChip('to', toInput);
-                    } else if (e.key === 'Backspace' && !toInput && toChips.length > 0) {
-                      setToChips((prev) => prev.slice(0, -1));
-                    }
-                  }}
-                  onBlur={() => addRecipientChip('to', toInput)}
-                  placeholder={toChips.length === 0 ? 'Recipients' : ''}
-                  className="flex-1 bg-transparent border-none outline-none text-[#1F1F1F] dark:text-[#E3E3E3] text-xs min-w-[100px] placeholder:text-[#5E5E5E]"
-                />
-              </div>
-
+            <RecipientRow
+              label="To"
+              field="to"
+              chips={toChips}
+              onRemoveChip={(idx) => setToChips((prev) => prev.filter((_, i) => i !== idx))}
+              input={toInput}
+              onInputChange={setToInput}
+              onCommit={(val) => addRecipientChip('to', val)}
+              onBackspaceEmpty={() => setToChips((prev) => prev.slice(0, -1))}
+              placeholder={toChips.length === 0 ? 'Recipients' : ''}
+            >
               <div className="flex items-center gap-2 text-[#5E5E5E] dark:text-[#8E918F] shrink-0 font-medium">
                 {!showCc && (
-                  <button
-                    onClick={() => setShowCc(true)}
-                    className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] text-xs"
-                  >
+                  <button onClick={() => setShowCc(true)} className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] text-xs">
                     Cc
                   </button>
                 )}
                 {!showBcc && (
-                  <button
-                    onClick={() => setShowBcc(true)}
-                    className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] text-xs"
-                  >
+                  <button onClick={() => setShowBcc(true)} className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] text-xs">
                     Bcc
                   </button>
                 )}
               </div>
-            </div>
+            </RecipientRow>
 
-            {/* Cc Line */}
             {showCc && (
-              <div className="flex flex-wrap items-center px-4 py-2 gap-1.5 min-h-[40px]">
-                <span className="text-[#5E5E5E] dark:text-[#8E918F] w-8 font-medium">Cc</span>
-                <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-[120px]">
-                  {ccChips.map((chip, idx) => (
-                    <span
-                      key={idx}
-                      className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F0FE] dark:bg-[#004A77]/40 text-gmail-blue text-xs font-medium border border-[#D2E3FC] dark:border-[#004A77]"
-                    >
-                      <span>{chip}</span>
-                      <button
-                        onClick={() => setCcChips((prev) => prev.filter((_, i) => i !== idx))}
-                        className="text-gmail-blue hover:text-red-600 ml-0.5"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  <input
-                    type="email"
-                    value={ccInput}
-                    onChange={(e) => setCcInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ',') {
-                        e.preventDefault();
-                        addRecipientChip('cc', ccInput);
-                      }
-                    }}
-                    onBlur={() => addRecipientChip('cc', ccInput)}
-                    className="flex-1 bg-transparent border-none outline-none text-[#1F1F1F] dark:text-[#E3E3E3] text-xs min-w-[100px]"
-                  />
-                </div>
-              </div>
+              <RecipientRow
+                label="Cc"
+                field="cc"
+                chips={ccChips}
+                onRemoveChip={(idx) => setCcChips((prev) => prev.filter((_, i) => i !== idx))}
+                input={ccInput}
+                onInputChange={setCcInput}
+                onCommit={(val) => addRecipientChip('cc', val)}
+              />
             )}
 
-            {/* Bcc Line */}
             {showBcc && (
-              <div className="flex flex-wrap items-center px-4 py-2 gap-1.5 min-h-[40px]">
-                <span className="text-[#5E5E5E] dark:text-[#8E918F] w-8 font-medium">Bcc</span>
-                <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-[120px]">
-                  {bccChips.map((chip, idx) => (
-                    <span
-                      key={idx}
-                      className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F0FE] dark:bg-[#004A77]/40 text-gmail-blue text-xs font-medium border border-[#D2E3FC] dark:border-[#004A77]"
-                    >
-                      <span>{chip}</span>
-                      <button
-                        onClick={() => setBccChips((prev) => prev.filter((_, i) => i !== idx))}
-                        className="text-gmail-blue hover:text-red-600 ml-0.5"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  <input
-                    type="email"
-                    value={bccInput}
-                    onChange={(e) => setBccInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ',') {
-                        e.preventDefault();
-                        addRecipientChip('bcc', bccInput);
-                      }
-                    }}
-                    onBlur={() => addRecipientChip('bcc', bccInput)}
-                    className="flex-1 bg-transparent border-none outline-none text-[#1F1F1F] dark:text-[#E3E3E3] text-xs min-w-[100px]"
-                  />
-                </div>
-              </div>
+              <RecipientRow
+                label="Bcc"
+                field="bcc"
+                chips={bccChips}
+                onRemoveChip={(idx) => setBccChips((prev) => prev.filter((_, i) => i !== idx))}
+                input={bccInput}
+                onInputChange={setBccInput}
+                onCommit={(val) => addRecipientChip('bcc', val)}
+              />
             )}
 
             {/* Subject Line */}
@@ -416,38 +488,69 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
           </div>
 
           {/* 3. Formatting Toolbar (Toggleable) */}
-          {showFormatting && (
+          {showFormatting && editor && (
             <div className="h-9 border-y border-[#E0E2E7] dark:border-[#333538] bg-[#F2F6FC] dark:bg-[#282A2C] px-3 flex items-center gap-1 select-none shrink-0 overflow-x-auto text-[#444746] dark:text-[#C4C7C5]">
-              <button className="p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded" title="Bold">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bold') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                title="Bold"
+              >
                 <Bold className="w-3.5 h-3.5 stroke-[2]" />
               </button>
-              <button className="p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded" title="Italic">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().toggleItalic().run()}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('italic') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                title="Italic"
+              >
                 <Italic className="w-3.5 h-3.5 stroke-[2]" />
               </button>
-              <button className="p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded" title="Underline">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().toggleUnderline().run()}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('underline') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                title="Underline"
+              >
                 <Underline className="w-3.5 h-3.5 stroke-[2]" />
               </button>
               <div className="h-4 w-px bg-gray-300 dark:bg-gray-600 mx-1 shrink-0"></div>
-              <button className="p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded" title="Bulleted list">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bulletList') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                title="Bulleted list"
+              >
                 <List className="w-3.5 h-3.5 stroke-[2]" />
               </button>
-              <button className="p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded" title="Numbered list">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('orderedList') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                title="Numbered list"
+              >
                 <ListOrdered className="w-3.5 h-3.5 stroke-[2]" />
               </button>
-              <button className="p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded" title="Code">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().toggleCode().run()}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('code') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                title="Code"
+              >
                 <Code className="w-3.5 h-3.5 stroke-[2]" />
               </button>
             </div>
           )}
 
           {/* 4. Email Body Area */}
-          <div className="flex-1 p-4 flex flex-col min-h-0">
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your email here..."
-              className="w-full flex-1 bg-transparent border-none outline-none resize-none text-xs leading-relaxed text-[#1F1F1F] dark:text-[#E3E3E3] placeholder:text-[#5E5E5E]"
-            ></textarea>
+          <div className="flex-1 p-4 flex flex-col min-h-0 overflow-y-auto">
+            <EditorContent editor={editor} className="flex-1 min-h-[140px]" />
 
             {/* Attached Files Chips */}
             {attachments.length > 0 && (
@@ -475,13 +578,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
           </div>
 
           {/* Hidden File Input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileChange}
-          />
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
 
           {/* 5. Authentic Gmail Bottom Action Bar */}
           <div className="px-4 py-3 border-t border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] flex items-center justify-between gap-3 shrink-0">
@@ -494,6 +591,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                   disabled={isSending}
                   className="bg-gmail-blue hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold px-4 h-9 rounded-l-full flex items-center gap-1.5 transition-colors shadow-sm"
                 >
+                  <Send className="w-3.5 h-3.5" />
                   <span>{isSending ? 'Sending…' : 'Send'}</span>
                 </button>
                 <button

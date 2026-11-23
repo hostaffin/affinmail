@@ -4,18 +4,18 @@ import {
   MessageSquare,
   Video,
   Calendar,
-  ExternalLink,
-  ShieldCheck,
-  CheckCircle2,
   Copy,
   Check,
+  Building2,
+  Phone,
+  BadgeCheck,
 } from 'lucide-react';
+import { Contact, findContactByEmail } from '../lib/collab';
 
 interface ContactHovercardProps {
   senderName: string;
   senderEmail: string;
   domain?: string;
-  isVerified?: boolean;
   onComposeTo?: (email: string) => void;
   children: React.ReactNode;
   position?: 'bottom' | 'top';
@@ -25,19 +25,22 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
   senderName,
   senderEmail,
   domain,
-  isVerified = true,
   onComposeTo,
   children,
   position = 'bottom',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [contact, setContact] = useState<Contact | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       setIsOpen(true);
+      findContactByEmail(senderEmail)
+        .then(setContact)
+        .catch(() => setContact(null));
     }, 280); // Gmail-like slight delay so moving mouse quickly across rows doesn't flash cards
   };
 
@@ -115,25 +118,37 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
               </div>
 
               {/* Organization / Domain Badge */}
-              <div className="mt-1 flex items-center gap-1.5">
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#F2F6FC] dark:bg-[#282A2C] text-[#444746] dark:text-[#C4C7C5] border border-[#E0E2E7] dark:border-[#333538] font-mono">
-                  {derivedDomain}
+                  {contact?.organization || derivedDomain}
                 </span>
+                {contact && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                    <BadgeCheck className="w-3 h-3" />
+                    Saved contact
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Middle Section: Security & Delivery Status */}
-          <div className="py-2.5 px-1 border-b border-[#F2F4F7] dark:border-[#2D2F31] flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium text-[11px]">
-              <ShieldCheck className="w-3.5 h-3.5 stroke-[2]" />
-              <span>Verified Sender</span>
+          {/* Saved contact details: only what the address book actually holds */}
+          {contact && (contact.title || contact.phones.length > 0) && (
+            <div className="py-2.5 px-1 border-b border-[#F2F4F7] dark:border-[#2D2F31] space-y-1 text-[11px] text-[#444746] dark:text-[#C4C7C5]">
+              {contact.title && (
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span className="truncate">{contact.title}</span>
+                </div>
+              )}
+              {contact.phones.map((phone) => (
+                <div key={phone} className="flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5" />
+                  <span className="truncate">{phone}</span>
+                </div>
+              ))}
             </div>
-            <div className="flex items-center gap-1 text-[11px] font-mono text-[#5E5E5E] dark:text-[#8E918F]">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-              <span>SPF · DKIM valid</span>
-            </div>
-          </div>
+          )}
 
           {/* Bottom Section: Gmail Quick Action Buttons */}
           <div className="pt-3 flex items-center justify-between gap-2">

@@ -9,8 +9,12 @@ import { ToastAlert, ToastMessage } from './components/ToastAlert';
 import { AdminPanel } from './components/AdminPanel';
 import { SplashScreen } from './components/SplashScreen';
 import { Login } from './components/Login';
+import { CalendarView } from './components/CalendarView';
+import { ContactsView } from './components/ContactsView';
+import { SettingsView } from './components/SettingsView';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { EmailMessage, EmailThread, MailboxFolderId, PlanQuota, UserProfile } from './types';
+import { subscribeStateChanges } from './lib/collab';
 import {
   createAndSubmit,
   discardDraft,
@@ -33,6 +37,8 @@ import {
 
 /** Stalwart has no inbox category tabbing; everything lives in Primary. */
 const CATEGORY: EmailThread['category'] = 'primary';
+
+type AppView = 'mail' | 'calendar' | 'contacts' | 'settings';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -158,6 +164,7 @@ export const App: React.FC = () => {
 
   // Navigation & Filtering
   const [currentFolder, setCurrentFolder] = useState<MailboxFolderId>('inbox');
+  const [view, setView] = useState<AppView>('mail');
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [activeCategoryTab, setActiveCategoryTab] = useState<'primary' | 'promotions' | 'social'>('primary');
   const [searchQuery, setSearchQuery] = useState('');
@@ -300,6 +307,28 @@ export const App: React.FC = () => {
     setCursorIndex(0);
     refreshThreads();
   }, [authEmail, currentFolder, debouncedSearch, refreshThreads]);
+
+  // Live updates: JMAP SSE replaces polling. Mail changes refresh the list; calendar and
+  // contact changes are pulled by their own views.
+  const refreshRef = useRef(refreshThreads);
+  refreshRef.current = refreshThreads;
+  useEffect(() => {
+    if (!authEmail) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = subscribeStateChanges((types) => {
+      if (!types.some((t) => t === 'Email' || t === 'Mailbox' || t === 'Thread')) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void refreshRef.current(), 400);
+    });
+    // Safety net if the stream is blocked: refresh when the tab regains focus.
+    const onFocus = () => void refreshRef.current();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [authEmail]);
 
   const filteredThreads = useMemo(() => {
     // Stalwart has no Gmail labels or category tabs; the label list is a client-side text filter
@@ -540,7 +569,14 @@ export const App: React.FC = () => {
   const handleSendCompose = async (msg: ComposePayload) => {
     const to = msg.to.split(',').map((s) => s.trim()).filter(Boolean);
     const cc = msg.cc ? msg.cc.split(',').map((s) => s.trim()).filter(Boolean) : [];
-    await createAndSubmit({ to, cc, subject: msg.subject, body: msg.body, attachments: msg.attachments });
+    await createAndSubmit({
+      to,
+      cc,
+      subject: msg.subject,
+      body: msg.body,
+      htmlBody: msg.htmlBody,
+      attachments: msg.attachments,
+    });
     addToast('Message sent', 'success');
     if (composeDraftId) {
       discardDraft(composeDraftId).catch(() => undefined);
@@ -553,7 +589,10 @@ export const App: React.FC = () => {
     try {
       const to = msg.to.split(',').map((s) => s.trim()).filter(Boolean);
       const cc = msg.cc ? msg.cc.split(',').map((s) => s.trim()).filter(Boolean) : [];
-      const id = await saveDraft({ to, cc, subject: msg.subject, body: msg.body, attachments: msg.attachments }, draftId);
+      const id = await saveDraft(
+        { to, cc, subject: msg.subject, body: msg.body, htmlBody: msg.htmlBody, attachments: msg.attachments },
+        draftId
+      );
       setComposeDraftId(id);
       addToast('Draft saved', 'info');
       if (currentFolder === 'drafts') await refreshThreads();
@@ -684,6 +723,9 @@ export const App: React.FC = () => {
         quota={quota}
         onSwitchToAdmin={() => setIsAdminMode(true)}
         onLogout={handleLogout}
+        onOpenSettings={() => setView('settings')}
+        onOpenCalendar={() => setView('calendar')}
+        onOpenContacts={() => setView('contacts')}
         onToggleSidebar={() => {
           if (window.innerWidth < 768) {
             setIsMobileNavOpen((prev) => !prev);
@@ -701,11 +743,13 @@ export const App: React.FC = () => {
           onSelectFolder={(folder) => {
             setCurrentFolder(folder);
             setActiveThread(null);
+            setView('mail');
           }}
           selectedLabel={selectedLabel}
           onSelectLabel={(lbl) => {
             setSelectedLabel(lbl);
             setActiveThread(null);
+            setView('mail');
           }}
           onOpenCompose={() => setIsComposeOpen(true)}
           unreadCount={unreadCount}
@@ -714,10 +758,20 @@ export const App: React.FC = () => {
           isCollapsed={isSidebarCollapsed}
           isOpenMobile={isMobileNavOpen}
           onCloseMobile={() => setIsMobileNavOpen(false)}
+          onOpenCalendar={() => setView('calendar')}
+          onOpenContacts={() => setView('contacts')}
         />
 
         {/* Central Content Area (Gmail Rounded Card) */}
         <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#1E1F20] rounded-2xl overflow-hidden shadow-sm mr-2 sm:mr-4 mb-2 sm:mb-4 border border-[#E0E2E7] dark:border-[#333538]">
+          {view === 'calendar' ? (
+            <CalendarView onNotify={addToast} />
+          ) : view === 'contacts' ? (
+            <ContactsView onNotify={addToast} />
+          ) : view === 'settings' ? (
+            <SettingsView onNotify={addToast} userEmail={currentUser.email} />
+          ) : (
+            <>
           {/* Action Toolbar */}
           <ActionToolbar
             selectedCount={selectedThreadIds.size}
@@ -776,6 +830,8 @@ export const App: React.FC = () => {
               onSnoozeThread={handleSnoozeSingle}
               onComposeTo={handleComposeTo}
             />
+          )}
+            </>
           )}
         </main>
       </div>
