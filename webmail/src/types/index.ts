@@ -42,6 +42,7 @@ export interface EmailThread {
   isUnread: boolean;
   latestReceivedAt: string;
   labels: string[];
+  category?: 'primary' | 'promotions' | 'social';
   messages?: EmailMessage[];
 }
 

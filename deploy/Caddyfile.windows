@@ -4,7 +4,7 @@
 	auto_https off
 }
 
-# 1. WHM-Equivalent Cluster Admin Panel (Port 2087)
+# 1. Cluster Admin Panel (Port 2087 - API Automatable)
 :2087 {
 	root * webmail/dist
 	file_server
@@ -16,7 +16,7 @@
 	}
 }
 
-# 2. Client Webmail Portal (Port 2083)
+# 2. Client User Panel / Webmail (Port 2083 - MCP Automatable)
 :2083 {
 	root * webmail/dist
 	file_server

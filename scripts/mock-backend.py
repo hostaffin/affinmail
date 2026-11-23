@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AffinMail Windows Local Mock API & JMAP Engine
-Provides local responses for testing WHM Admin Panel and Webmail without requiring Linux daemons.
+Provides local responses for testing Admin Panel (REST API) and User Panel / Webmail (MCP/JMAP) without requiring Linux daemons.
 Runs on 127.0.0.1:8080
 """
 

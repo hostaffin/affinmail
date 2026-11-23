@@ -1,6 +1,6 @@
 # AffinMail Native Production Caddyfile (Zero-Docker Native Bare-Metal)
-# Port 2087: WHM-Equivalent Admin Control Panel (Standalone Management)
-# Port 2083 & 443: Client Gmail-Grade Webmail Client
+# Port 2087: Admin Control Panel (API-Automatable Standalone Management)
+# Port 2083 & 443: User Panel / Webmail Client (MCP-Automatable)
 # Protocol Support: HTTP/3 (QUIC), Automated TLS 1.3, JMAP, WebSocket
 
 # Global Settings
@@ -10,7 +10,7 @@
 }
 
 # ==============================================================================
-# 1. AffinMail Admin Control Panel (WHM Equivalent) - Port 2087
+# 1. AffinMail Admin Control Panel (API-Automatable) - Port 2087
 # Accessible via Server Hostname, nip.io domain, and Direct IP
 # ==============================================================================
 :2087, {$SERVER_HOSTNAME:127.0.0.1}:2087, {$NIP_DOMAIN:127.0.0.1.nip.io}:2087 {

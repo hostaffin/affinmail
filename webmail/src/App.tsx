@@ -7,6 +7,7 @@ import { ConversationView } from './components/ConversationView';
 import { DockedComposeModal } from './components/DockedComposeModal';
 import { ToastAlert, ToastMessage } from './components/ToastAlert';
 import { AdminPanel } from './components/AdminPanel';
+import { SplashScreen } from './components/SplashScreen';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { EmailThread, MailboxFolderId, PlanQuota, UserProfile } from './types';
 
@@ -24,6 +25,7 @@ const INITIAL_THREADS: EmailThread[] = [
     isUnread: true,
     latestReceivedAt: '11:20 AM',
     labels: ['inbox', 'billing'],
+    category: 'primary',
   },
   {
     id: 'th-github-sec-2918',
@@ -37,6 +39,7 @@ const INITIAL_THREADS: EmailThread[] = [
     isUnread: true,
     latestReceivedAt: '10:05 AM',
     labels: ['inbox', 'security'],
+    category: 'primary',
   },
   {
     id: 'th-sarah-design-final',
@@ -50,6 +53,35 @@ const INITIAL_THREADS: EmailThread[] = [
     isUnread: false,
     latestReceivedAt: 'Yesterday',
     labels: ['inbox', 'operations'],
+    category: 'primary',
+  },
+  {
+    id: 'th-canva-enterprise',
+    subject: 'Canva Pro: Your Enterprise Team Brand Kit is ready',
+    snippet: 'Explore newly published typography guidelines, high-res assets, and vector logo lockups.',
+    senderName: 'Canva Design',
+    senderEmail: 'updates@canva.com',
+    messageCount: 1,
+    hasAttachments: false,
+    isStarred: false,
+    isUnread: true,
+    latestReceivedAt: 'Nov 22',
+    labels: ['inbox', 'promotions'],
+    category: 'promotions',
+  },
+  {
+    id: 'th-youtube-dev',
+    subject: 'Google Developers: New DevTools & Web Platform features',
+    snippet: 'Watch the recap of Chrome DevTools 2026 performance profiling improvements and Gemini debugging.',
+    senderName: 'YouTube Developers',
+    senderEmail: 'noreply@youtube.com',
+    messageCount: 2,
+    hasAttachments: false,
+    isStarred: false,
+    isUnread: false,
+    latestReceivedAt: 'Nov 20',
+    labels: ['inbox', 'social'],
+    category: 'social',
   },
   {
     id: 'th-hetzner-nov26',
@@ -63,6 +95,7 @@ const INITIAL_THREADS: EmailThread[] = [
     isUnread: false,
     latestReceivedAt: 'Nov 21',
     labels: ['inbox', 'billing'],
+    category: 'primary',
   },
 ];
 
@@ -120,8 +153,24 @@ export const App: React.FC = () => {
   // Navigation & Filtering
   const [currentFolder, setCurrentFolder] = useState<MailboxFolderId>('inbox');
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [activeCategoryTab, setActiveCategoryTab] = useState<'primary' | 'promotions' | 'social'>('primary');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Sidebar Collapse state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  // Gmail-Style Splash Loading State
+  const [isAppLoading, setIsAppLoading] = useState(true);
+
+  useEffect(() => {
+    // Initial workspace load / mail daemon sync
+    const timer = setTimeout(() => {
+      setIsAppLoading(false);
+    }, 850);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Threads State
   const [threads, setThreads] = useState<EmailThread[]>(INITIAL_THREADS);
@@ -129,11 +178,14 @@ export const App: React.FC = () => {
   const [activeThread, setActiveThread] = useState<EmailThread | null>(null);
   const [cursorIndex, setCursorIndex] = useState(0);
 
-  // Mobile Drawer State
-  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-
   // Compose Modal State
   const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [composeInitialTo, setComposeInitialTo] = useState<string | undefined>(undefined);
+
+  const handleComposeTo = (email: string) => {
+    setComposeInitialTo(email);
+    setIsComposeOpen(true);
+  };
 
   // Toast Alerts State
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -171,7 +223,11 @@ export const App: React.FC = () => {
 
       // Folder filter
       if (currentFolder === 'starred') return th.isStarred;
-      if (currentFolder === 'inbox') return th.labels.includes('inbox');
+      if (currentFolder === 'inbox') {
+        const itemCat = th.category || 'primary';
+        if (itemCat !== activeCategoryTab) return false;
+        return th.labels.includes('inbox');
+      }
       if (currentFolder === 'archive') return !th.labels.includes('inbox') && !th.labels.includes('trash');
       if (currentFolder === 'trash') return th.labels.includes('trash');
       if (currentFolder === 'spam') return th.labels.includes('spam');
@@ -180,7 +236,7 @@ export const App: React.FC = () => {
 
       return true;
     });
-  }, [threads, currentFolder, selectedLabel, searchQuery]);
+  }, [threads, currentFolder, selectedLabel, searchQuery, activeCategoryTab]);
 
   const unreadCount = useMemo(() => {
     return threads.filter((t) => t.isUnread && t.labels.includes('inbox')).length;
@@ -210,6 +266,22 @@ export const App: React.FC = () => {
       setSelectedThreadIds(new Set());
     } else {
       setSelectedThreadIds(new Set(filteredThreads.map((t) => t.id)));
+    }
+  };
+
+  const handleSelectSpecific = (type: 'all' | 'none' | 'read' | 'unread' | 'starred' | 'unstarred') => {
+    if (type === 'all') {
+      setSelectedThreadIds(new Set(filteredThreads.map((t) => t.id)));
+    } else if (type === 'none') {
+      setSelectedThreadIds(new Set());
+    } else if (type === 'read') {
+      setSelectedThreadIds(new Set(filteredThreads.filter((t) => !t.isUnread).map((t) => t.id)));
+    } else if (type === 'unread') {
+      setSelectedThreadIds(new Set(filteredThreads.filter((t) => t.isUnread).map((t) => t.id)));
+    } else if (type === 'starred') {
+      setSelectedThreadIds(new Set(filteredThreads.filter((t) => t.isStarred).map((t) => t.id)));
+    } else if (type === 'unstarred') {
+      setSelectedThreadIds(new Set(filteredThreads.filter((t) => !t.isStarred).map((t) => t.id)));
     }
   };
 
@@ -252,7 +324,7 @@ export const App: React.FC = () => {
     );
     setSelectedThreadIds(new Set());
     setActiveThread(null);
-    addToast(`${targetIds.length} conversation(s) moved to Trash`, 'info');
+    addToast(`${targetIds.length} conversation(s) moved to trash`, 'info');
   };
 
   const handleMarkRead = () => {
@@ -260,13 +332,68 @@ export const App: React.FC = () => {
       ? [activeThread.id]
       : Array.from(selectedThreadIds);
 
+    if (targetIds.length === 0 && filteredThreads[cursorIndex]) {
+      targetIds.push(filteredThreads[cursorIndex].id);
+    }
+
     if (targetIds.length === 0) return;
 
     setThreads((prev) =>
       prev.map((t) => (targetIds.includes(t.id) ? { ...t, isUnread: false } : t))
     );
     setSelectedThreadIds(new Set());
-    addToast('Marked as read', 'success');
+    addToast('Marked as read', 'info');
+  };
+
+  const handleMarkUnread = () => {
+    const targetIds = activeThread
+      ? [activeThread.id]
+      : Array.from(selectedThreadIds);
+
+    if (targetIds.length === 0 && filteredThreads[cursorIndex]) {
+      targetIds.push(filteredThreads[cursorIndex].id);
+    }
+
+    if (targetIds.length === 0) return;
+
+    setThreads((prev) =>
+      prev.map((t) => (targetIds.includes(t.id) ? { ...t, isUnread: true } : t))
+    );
+    setSelectedThreadIds(new Set());
+    if (activeThread) setActiveThread(null);
+    addToast('Marked as unread', 'info');
+  };
+
+  // Hover quick actions for individual thread row
+  const handleArchiveSingle = (threadId: string) => {
+    setThreads((prev) =>
+      prev.map((t) =>
+        t.id === threadId ? { ...t, labels: t.labels.filter((l) => l !== 'inbox') } : t
+      )
+    );
+    addToast('Conversation archived', 'info');
+  };
+
+  const handleDeleteSingle = (threadId: string) => {
+    setThreads((prev) =>
+      prev.map((t) => (t.id === threadId ? { ...t, labels: ['trash'] } : t))
+    );
+    addToast('Conversation moved to trash', 'info');
+  };
+
+  const handleToggleReadSingle = (threadId: string) => {
+    setThreads((prev) =>
+      prev.map((t) => (t.id === threadId ? { ...t, isUnread: !t.isUnread } : t))
+    );
+  };
+
+  const handleSnoozeSingle = (threadId: string) => {
+    setThreads((prev) =>
+      prev.map((t) =>
+        t.id === threadId ? { ...t, labels: [...t.labels, 'snoozed'] } : t
+      )
+    );
+    addToast('Conversation snoozed until tomorrow 8:00 AM', 'info');
   };
 
   const handleSelectThread = (thread: EmailThread) => {
@@ -295,7 +422,7 @@ export const App: React.FC = () => {
     };
 
     setThreads((prev) => [newThread, ...prev]);
-    addToast('Message dispatched via clean Port 25 outbound route', 'success');
+    addToast('Message sent', 'success');
   };
 
   const handleQuickReply = (text: string) => {
@@ -307,10 +434,10 @@ export const App: React.FC = () => {
           : t
       )
     );
-    addToast('Quick reply sent successfully', 'success');
+    addToast('Reply sent', 'success');
   };
 
-  // Keyboard Shortcuts Binding
+  // Keyboard Shortcuts Binding (Authentic Gmail Shortcuts)
   useKeyboardShortcuts(
     {
       onCompose: () => setIsComposeOpen(true),
@@ -338,6 +465,15 @@ export const App: React.FC = () => {
           handleToggleStar(filteredThreads[cursorIndex].id);
         }
       },
+      onToggleSelect: () => {
+        if (!activeThread && filteredThreads[cursorIndex]) {
+          handleToggleSelectCheckbox(filteredThreads[cursorIndex].id);
+        }
+      },
+      onMarkSpam: () => addToast('Reported as spam', 'info'),
+      onBackToList: () => {
+        if (activeThread) setActiveThread(null);
+      },
       onSearchFocus: () => searchInputRef.current?.focus(),
       onEscape: () => {
         if (activeThread) setActiveThread(null);
@@ -362,7 +498,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 select-none">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-gmail-canvas dark:bg-gmail-dark-canvas select-none">
       {/* 1. Header Bar */}
       <HeaderBar
         theme={theme}
@@ -373,7 +509,13 @@ export const App: React.FC = () => {
         user={user}
         quota={quota}
         onSwitchToAdmin={() => setIsAdminMode(true)}
-        onToggleMobileNav={() => setIsMobileNavOpen((prev) => !prev)}
+        onToggleSidebar={() => {
+          if (window.innerWidth < 768) {
+            setIsMobileNavOpen((prev) => !prev);
+          } else {
+            setIsSidebarCollapsed((prev) => !prev);
+          }
+        }}
       />
 
       {/* 2. Main Workspace Layout */}
@@ -393,12 +535,13 @@ export const App: React.FC = () => {
           onOpenCompose={() => setIsComposeOpen(true)}
           unreadCount={unreadCount}
           quota={quota}
+          isCollapsed={isSidebarCollapsed}
           isOpenMobile={isMobileNavOpen}
           onCloseMobile={() => setIsMobileNavOpen(false)}
         />
 
-        {/* Central Content Area */}
-        <main className="flex-1 flex flex-col min-w-0 bg-base-100 overflow-hidden">
+        {/* Central Content Area (Gmail Rounded Card) */}
+        <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#1E1F20] rounded-2xl overflow-hidden shadow-sm mr-2 sm:mr-4 mb-2 sm:mb-4 border border-[#E0E2E7] dark:border-[#333538]">
           {/* Action Toolbar */}
           <ActionToolbar
             selectedCount={selectedThreadIds.size}
@@ -407,11 +550,20 @@ export const App: React.FC = () => {
               filteredThreads.length > 0 && selectedThreadIds.size === filteredThreads.length
             }
             onToggleSelectAll={handleToggleSelectAll}
+            onSelectSpecific={handleSelectSpecific}
             onArchive={handleArchive}
-            onReportSpam={() => addToast('Reported as Spam. Sieve rule created.', 'error')}
+            onReportSpam={() => addToast('Reported as spam', 'info')}
             onDelete={handleDelete}
             onMarkRead={handleMarkRead}
-            onRefresh={() => addToast('Synchronized with Stalwart JMAP daemon', 'info')}
+            onMarkUnread={handleMarkUnread}
+            onSnooze={() => addToast('Conversation snoozed', 'info')}
+            onRefresh={() => {
+              setIsAppLoading(true);
+              setTimeout(() => {
+                setIsAppLoading(false);
+                addToast('Synchronized with mail server', 'info');
+              }, 700);
+            }}
             isDetailView={!!activeThread}
             onBackToList={() => setActiveThread(null)}
           />
@@ -423,15 +575,24 @@ export const App: React.FC = () => {
               onToggleStar={handleToggleStar}
               onSendQuickReply={handleQuickReply}
               maxAttachmentMb={quota.maxAttachmentSizeMb}
+              onComposeTo={handleComposeTo}
             />
           ) : (
             <EmailThreadList
               threads={filteredThreads}
               selectedThreadIds={selectedThreadIds}
               cursorIndex={cursorIndex}
+              currentFolder={currentFolder}
+              activeTab={activeCategoryTab}
+              onTabChange={setActiveCategoryTab}
               onSelectThread={handleSelectThread}
               onToggleSelectCheckbox={handleToggleSelectCheckbox}
               onToggleStar={handleToggleStar}
+              onArchiveThread={handleArchiveSingle}
+              onDeleteThread={handleDeleteSingle}
+              onToggleReadThread={handleToggleReadSingle}
+              onSnoozeThread={handleSnoozeSingle}
+              onComposeTo={handleComposeTo}
             />
           )}
         </main>
@@ -440,14 +601,21 @@ export const App: React.FC = () => {
       {/* 3. Docked Compose Window */}
       <DockedComposeModal
         isOpen={isComposeOpen}
-        onClose={() => setIsComposeOpen(false)}
+        onClose={() => {
+          setIsComposeOpen(false);
+          setComposeInitialTo(undefined);
+        }}
         onSend={handleSendCompose}
         planLimitMb={quota.maxAttachmentSizeMb}
         onErrorToast={(msg) => addToast(msg, 'error')}
+        initialTo={composeInitialTo}
       />
 
       {/* 4. Alert Toasts */}
       <ToastAlert toasts={toasts} onDismiss={removeToast} />
+
+      {/* 5. Gmail-Style Startup Splash Screen */}
+      <SplashScreen isLoading={isAppLoading} />
     </div>
   );
 };

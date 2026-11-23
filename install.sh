@@ -36,7 +36,12 @@ chmod 600 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo -e "\n${CYAN}==================================================================${NC}"
-echo -e "${BLUE}${BOLD}   AffinMail Enterprise Email Server - Native Installer (v${VERSION})   ${NC}"
+echo -e "${CYAN}    ___    ____ ____ _       __  ___      _ __"
+echo -e "   /   |  / __// __/(_)___  /  |/  /___ _(_) /"
+echo -e "  / /| | / /_ / /_ / / __ \/ /|_/ / __ \`/ / / "
+echo -e " / ___ |/ __// __// / / / / /  / / /_/ / / /  "
+echo -e "/_/  |_/_/  /_/  /_/_/ /_/_/  /_/\\__,_/_/_/   ${NC}"
+echo -e "${BLUE}${BOLD}   AffinMail — Optimized Workspace of Efficient Business (v${VERSION})${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 echo -e "${GREEN}[*] Real-time installation log is being written to:${NC} ${BOLD}${LOG_FILE}${NC}"
 echo -e "${GREEN}[*] Timestamp:${NC} $(date -u)"
@@ -463,15 +468,16 @@ ADMIN_KEY=$(grep "STALWART_ADMIN_SECRET" "${INSTALL_DIR}/deploy/.env" | cut -d= 
 trap - EXIT
 
 echo -e "\n${CYAN}==================================================================${NC}"
-echo -e "${GREEN}${BOLD}   AffinMail Native Bare-Metal Server Successfully Installed!    ${NC}"
+echo -e "${GREEN}${BOLD}   AffinMail — Optimized Workspace of Efficient Business         ${NC}"
+echo -e "${BLUE}   Native Bare-Metal Cluster Server Successfully Installed!       ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 echo -e "Operating System:        ${GREEN}${OS_NAME} (${ARCH}) [Zero Docker]${NC}"
 echo -e "Server Hostname / IP:    ${GREEN}${SERVER_HOST}${NC}"
-echo -e "WHM Admin Control Panel: ${YELLOW}https://${SERVER_HOST}:2087${NC}"
+echo -e "Admin Panel (REST API):  ${YELLOW}https://${SERVER_HOST}:2087${NC}"
 if [ -n "${NIP_DOMAIN:-}" ] && [ "${SERVER_HOST}" != "${NIP_DOMAIN}" ]; then
     echo -e "           (via nip.io): ${YELLOW}https://${NIP_DOMAIN}:2087${NC}"
 fi
-echo -e "Client Webmail Portal:   ${YELLOW}https://${SERVER_HOST}:2083${NC}"
+echo -e "User Panel (MCP Ready):  ${YELLOW}https://${SERVER_HOST}:2083${NC}"
 if [ -n "${NIP_DOMAIN:-}" ] && [ "${SERVER_HOST}" != "${NIP_DOMAIN}" ]; then
     echo -e "           (via nip.io): ${YELLOW}https://${NIP_DOMAIN}:2083${NC}"
 fi

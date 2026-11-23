@@ -1,227 +1,317 @@
-import React from 'react';
-import { Star, Paperclip } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Star,
+  Paperclip,
+  Inbox,
+  Tag,
+  Users,
+  Archive,
+  Trash2,
+  Mail,
+  MailCheck,
+  Clock,
+  ChevronRight,
+  Bookmark,
+} from 'lucide-react';
 import { EmailThread } from '../types';
+import { GmailCheckbox } from './GmailCheckbox';
+import { ContactHovercard } from './ContactHovercard';
 
 interface EmailThreadListProps {
   threads: EmailThread[];
   selectedThreadIds: Set<string>;
   cursorIndex: number;
+  currentFolder?: string;
+  activeTab?: 'primary' | 'promotions' | 'social';
+  onTabChange?: (tab: 'primary' | 'promotions' | 'social') => void;
   onSelectThread: (thread: EmailThread) => void;
   onToggleSelectCheckbox: (threadId: string) => void;
   onToggleStar: (threadId: string) => void;
+  onArchiveThread?: (threadId: string) => void;
+  onDeleteThread?: (threadId: string) => void;
+  onToggleReadThread?: (threadId: string) => void;
+  onSnoozeThread?: (threadId: string) => void;
+  onComposeTo?: (email: string) => void;
 }
 
 export const EmailThreadList: React.FC<EmailThreadListProps> = ({
   threads,
   selectedThreadIds,
   cursorIndex,
+  currentFolder = 'inbox',
+  activeTab = 'primary',
+  onTabChange,
   onSelectThread,
   onToggleSelectCheckbox,
   onToggleStar,
+  onArchiveThread,
+  onDeleteThread,
+  onToggleReadThread,
+  onSnoozeThread,
+  onComposeTo,
 }) => {
-  const getBadgeClass = (label: string) => {
-    switch (label.toLowerCase()) {
-      case 'billing':
-        return 'badge-info';
-      case 'security':
-        return 'badge-error';
-      case 'operations':
-      case 'design':
-        return 'badge-accent';
-      case 'vip':
-        return 'badge-warning';
-      default:
-        return 'badge-ghost';
-    }
-  };
+  // Category tabs state (Primary, Promotions, Social)
+  const isInbox = currentFolder === 'inbox';
 
   if (threads.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-base-content/50">
-        <div className="w-16 h-16 rounded-full bg-base-200 flex items-center justify-center mb-3">
-          <Star className="w-8 h-8 text-base-content/30" />
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-[#444746] dark:text-[#C4C7C5] bg-white dark:bg-[#1E1F20]">
+        <div className="w-16 h-16 rounded-full bg-[#F2F6FC] dark:bg-[#282A2C] flex items-center justify-center mb-4 text-gmail-blue">
+          <Inbox className="w-8 h-8 stroke-[1.5]" />
         </div>
-        <h3 className="font-semibold text-base text-base-content">Your inbox is clear</h3>
-        <p className="text-xs text-base-content/60 mt-1 max-w-sm">
-          No messages match the current folder or label filter.
+        <h3 className="font-medium text-base text-[#1F1F1F] dark:text-[#E3E3E3]">Your inbox is clean</h3>
+        <p className="text-xs text-[#5E5E5E] dark:text-[#8E918F] mt-1.5 max-w-sm">
+          No conversations found in this category. Messages that arrive will appear here automatically.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto divide-y divide-base-200 bg-base-100">
-      {threads.map((thread, index) => {
-        const isSelected = selectedThreadIds.has(thread.id);
-        const isCursor = index === cursorIndex;
-        const isUnread = thread.isUnread;
-
-        return (
-          <div
-            key={thread.id}
-            onClick={() => onSelectThread(thread)}
-            className={`group cursor-pointer text-xs transition-colors select-none ${
-              isCursor ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''
-            } ${
-              isSelected ? 'bg-primary/10' : isUnread ? 'bg-base-200/40' : 'hover:bg-base-200/70'
+    <div className="flex-1 overflow-y-auto bg-white dark:bg-[#1E1F20] flex flex-col select-none">
+      {/* Gmail Inbox Category Tabs (Primary, Promotions, Social) */}
+      {isInbox && (
+        <div className="flex items-center border-b border-[#E0E2E7] dark:border-[#333538] px-2 select-none shrink-0 bg-white dark:bg-[#1E1F20]">
+          {/* Primary Tab */}
+          <button
+            onClick={() => onTabChange?.('primary')}
+            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[160px] ${
+              activeTab === 'primary'
+                ? 'border-b-gmail-blue text-gmail-blue font-bold'
+                : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]'
             }`}
           >
-            {/* Desktop Row Layout (sm and up) */}
-            <div className="hidden sm:flex items-center gap-3 px-4 py-2.5">
+            <Inbox className={`w-4 h-4 stroke-[2] ${activeTab === 'primary' ? 'text-gmail-blue' : ''}`} />
+            <span>Primary</span>
+          </button>
+
+          {/* Promotions Tab */}
+          <button
+            onClick={() => onTabChange?.('promotions')}
+            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[160px] ${
+              activeTab === 'promotions'
+                ? 'border-b-gmail-blue text-gmail-blue font-bold'
+                : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]'
+            }`}
+          >
+            <Tag className={`w-4 h-4 stroke-[2] ${activeTab === 'promotions' ? 'text-gmail-blue' : ''}`} />
+            <div className="flex items-center gap-1.5">
+              <span>Promotions</span>
+              <span className="px-1.5 py-0.2 bg-emerald-600 text-white rounded text-[10px] font-medium">New</span>
+            </div>
+          </button>
+
+          {/* Social Tab */}
+          <button
+            onClick={() => onTabChange?.('social')}
+            className={`flex items-center gap-3 px-5 py-3 text-xs font-semibold border-b-[3px] -mb-[1px] transition-all min-w-[160px] ${
+              activeTab === 'social'
+                ? 'border-b-gmail-blue text-gmail-blue font-bold'
+                : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]'
+            }`}
+          >
+            <Users className={`w-4 h-4 stroke-[2] ${activeTab === 'social' ? 'text-gmail-blue' : ''}`} />
+            <span>Social</span>
+          </button>
+        </div>
+      )}
+
+      {/* Thread Rows */}
+      <div className="divide-y divide-[#F2F4F7] dark:divide-[#2D2F31]">
+        {threads.map((thread, index) => {
+          const isSelected = selectedThreadIds.has(thread.id);
+          const isCursor = index === cursorIndex;
+          const isUnread = thread.isUnread;
+
+          return (
+            <div
+              key={thread.id}
+              onClick={() => onSelectThread(thread)}
+              className={`gmail-row group cursor-pointer text-xs transition-colors flex items-center px-4 py-2 relative border-b border-[#F2F4F7] dark:border-[#282A2C] ${
+                isSelected
+                  ? 'bg-[#C2E7FF]/60 dark:bg-[#004A77]/40 border-l-4 border-l-gmail-blue'
+                  : isCursor
+                  ? 'bg-[#F2F6FC] dark:bg-[#282A2C]'
+                  : isUnread
+                  ? 'bg-white dark:bg-[#1E1F20] font-semibold hover:shadow-sm'
+                  : 'bg-[#F8FAFD] dark:bg-[#18191A] hover:bg-white dark:hover:bg-[#1E1F20]'
+              }`}
+            >
               {/* Checkbox */}
               <div
-                className="flex items-center"
+                className="flex items-center mr-2 shrink-0 p-1"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleSelectCheckbox(thread.id);
                 }}
               >
-                <input
-                  type="checkbox"
+                <GmailCheckbox
                   checked={isSelected}
-                  onChange={() => {}}
-                  className="checkbox checkbox-xs checkbox-primary rounded"
-                  aria-label={`Select thread ${thread.subject}`}
+                  onChange={() => onToggleSelectCheckbox(thread.id)}
+                  ariaLabel={`Select thread ${thread.subject}`}
                 />
               </div>
 
-              {/* Star Button */}
+              {/* Star Icon */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleStar(thread.id);
                 }}
-                className="btn btn-ghost btn-circle btn-xs -ml-1 text-base-content/40 hover:text-amber-500"
-                title="Star email (s)"
+                className="p-1 mr-1 text-gray-400 hover:text-amber-500 rounded-full shrink-0 transition-colors"
+                title="Star conversation"
               >
                 <Star
-                  className={`w-3.5 h-3.5 ${
+                  className={`w-4 h-4 stroke-[1.5] ${
                     thread.isStarred
                       ? 'fill-amber-400 text-amber-500'
-                      : 'text-base-content/40 group-hover:text-base-content/70'
+                      : 'text-gray-400 dark:text-gray-600 hover:text-amber-500'
                   }`}
                 />
               </button>
 
-              {/* Sender Name */}
-              <div className="w-40 md:w-44 shrink-0 truncate flex items-center gap-1.5">
-                <span className={`truncate ${isUnread ? 'font-bold text-base-content' : 'text-base-content/80'}`}>
-                  {thread.senderName}
-                </span>
+              {/* Important Marker Chevron (Gmail Bookmark Tag) */}
+              <button
+                onClick={(e) => e.stopPropagation()}
+                className="p-1 mr-2 text-gray-300 dark:text-gray-600 hover:text-amber-500 rounded shrink-0 hidden sm:inline-flex"
+                title="Mark as important"
+              >
+                <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+
+              {/* Sender Name with Gmail Contact Hovercard */}
+              <div className="w-36 md:w-48 shrink-0 flex items-center gap-1.5 mr-3">
+                <ContactHovercard
+                  senderName={thread.senderName}
+                  senderEmail={thread.senderEmail}
+                  onComposeTo={onComposeTo}
+                >
+                  <span
+                    className={`truncate text-xs hover:underline block max-w-[130px] md:max-w-[170px] ${
+                      isUnread
+                        ? 'font-bold text-[#1F1F1F] dark:text-[#E3E3E3]'
+                        : 'font-normal text-[#444746] dark:text-[#C4C7C5]'
+                    }`}
+                  >
+                    {thread.senderName}
+                  </span>
+                </ContactHovercard>
                 {thread.messageCount > 1 && (
-                  <span className="text-[10px] text-base-content/50 font-semibold font-mono">
+                  <span className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F] font-mono tabular-nums shrink-0">
                     ({thread.messageCount})
                   </span>
                 )}
               </div>
 
-              {/* Labels Badges */}
-              <div className="flex items-center gap-1 shrink-0">
-                {thread.labels.filter(l => l !== 'inbox').map((lbl) => (
-                  <span key={lbl} className={`badge badge-xs capitalize font-medium ${getBadgeClass(lbl)}`}>
-                    {lbl}
-                  </span>
-                ))}
-              </div>
+              {/* Subject & Snippet & Labels */}
+              <div className="flex-1 min-w-0 flex items-center gap-2 mr-3">
+                {/* Labels Chips */}
+                {thread.labels
+                  .filter((l) => l !== 'inbox' && l !== 'sent' && l !== 'drafts')
+                  .slice(0, 2)
+                  .map((lbl) => (
+                    <span
+                      key={lbl}
+                      className="px-2 py-0.5 rounded text-[10px] font-medium uppercase bg-[#E8F0FE] dark:bg-[#004A77]/50 text-gmail-blue shrink-0 border border-[#D2E3FC] dark:border-[#004A77]"
+                    >
+                      {lbl}
+                    </span>
+                  ))}
 
-              {/* Subject & Snippet */}
-              <div className="flex-1 min-w-0 flex items-center gap-2">
-                <span className={`truncate ${isUnread ? 'font-semibold text-base-content' : 'text-base-content/70'}`}>
+                <span
+                  className={`truncate text-xs ${
+                    isUnread
+                      ? 'font-bold text-[#1F1F1F] dark:text-[#E3E3E3]'
+                      : 'font-normal text-[#1F1F1F] dark:text-[#E3E3E3]'
+                  }`}
+                >
                   {thread.subject}
                 </span>
-                <span className="text-base-content/40 truncate text-[11px] hidden md:inline">
-                  - {thread.snippet}
+
+                <span className="text-[#5E5E5E] dark:text-[#8E918F] truncate text-xs font-normal hidden md:inline">
+                  — {thread.snippet}
                 </span>
               </div>
 
-              {/* Attachment Indicator */}
+              {/* Attachment Pill or Paperclip */}
               {thread.hasAttachments && (
-                <div className="shrink-0 text-base-content/40" title="Has attachments">
-                  <Paperclip className="w-3.5 h-3.5" />
+                <div
+                  className="shrink-0 text-[#5E5E5E] dark:text-[#8E918F] mr-3 hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#F2F6FC] dark:bg-[#282A2C] border border-[#E0E2E7] dark:border-[#333538]"
+                  title="Attachment included"
+                >
+                  <Paperclip className="w-3 h-3 stroke-[2] text-gmail-blue" />
+                  <span className="text-[10px] font-medium text-gmail-blue hidden lg:inline">Attachment</span>
                 </div>
               )}
 
-              {/* Time / Date */}
-              <div className="w-20 text-right shrink-0 font-mono text-[11px] text-base-content/60">
-                {thread.latestReceivedAt}
-              </div>
-            </div>
+              {/* Right Side: Timestamp by default, or Gmail Quick Action Buttons on Hover! */}
+              <div className="relative shrink-0 flex items-center justify-end min-w-[120px]">
+                {/* Default Timestamp (Hidden on hover) */}
+                <span
+                  className={`gmail-date group-hover:hidden font-sans text-xs tabular-nums text-right ${
+                    isUnread
+                      ? 'font-bold text-[#1F1F1F] dark:text-[#E3E3E3]'
+                      : 'text-[#5E5E5E] dark:text-[#8E918F]'
+                  }`}
+                >
+                  {thread.latestReceivedAt}
+                </span>
 
-            {/* Mobile Card Layout (below sm) */}
-            <div className="flex sm:hidden flex-col gap-1 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div
-                    className="flex items-center"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleSelectCheckbox(thread.id);
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {}}
-                      className="checkbox checkbox-xs checkbox-primary rounded"
-                      aria-label={`Select thread ${thread.subject}`}
-                    />
-                  </div>
+                {/* Signature Gmail Hover Action Buttons Bar (Shown on hover) */}
+                <div className="gmail-hover-actions hidden group-hover:flex items-center gap-1 bg-white/95 dark:bg-[#1E1F20]/95 px-1 rounded-full shadow-sm">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onToggleStar(thread.id);
+                      onArchiveThread?.(thread.id);
                     }}
-                    className="btn btn-ghost btn-circle btn-xs -ml-1 text-base-content/40 hover:text-amber-500"
-                    title="Star email"
+                    title="Archive"
+                    className="p-1.5 text-[#444746] dark:text-[#C4C7C5] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
                   >
-                    <Star
-                      className={`w-3.5 h-3.5 ${
-                        thread.isStarred ? 'fill-amber-400 text-amber-500' : 'text-base-content/40'
-                      }`}
-                    />
+                    <Archive className="w-4 h-4 stroke-[2]" />
                   </button>
-                  <span className={`truncate text-xs ${isUnread ? 'font-bold text-base-content' : 'text-base-content/80'}`}>
-                    {thread.senderName}
-                  </span>
-                  {thread.messageCount > 1 && (
-                    <span className="text-[10px] text-base-content/50 font-semibold font-mono">
-                      ({thread.messageCount})
-                    </span>
-                  )}
-                </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {thread.hasAttachments && <Paperclip className="w-3 h-3 text-base-content/40" />}
-                  <span className="font-mono text-[10px] text-base-content/60">
-                    {thread.latestReceivedAt}
-                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteThread?.(thread.id);
+                    }}
+                    title="Delete"
+                    className="p-1.5 text-[#444746] dark:text-[#C4C7C5] hover:text-red-600 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4 stroke-[2]" />
+                  </button>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleReadThread?.(thread.id);
+                    }}
+                    title={isUnread ? 'Mark as read' : 'Mark as unread'}
+                    className="p-1.5 text-[#444746] dark:text-[#C4C7C5] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+                  >
+                    {isUnread ? (
+                      <MailCheck className="w-4 h-4 stroke-[2]" />
+                    ) : (
+                      <Mail className="w-4 h-4 stroke-[2]" />
+                    )}
+                  </button>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSnoozeThread?.(thread.id);
+                    }}
+                    title="Snooze"
+                    className="p-1.5 text-[#444746] dark:text-[#C4C7C5] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+                  >
+                    <Clock className="w-4 h-4 stroke-[2]" />
+                  </button>
                 </div>
               </div>
-
-              <div className="pl-6">
-                <div className={`truncate text-xs ${isUnread ? 'font-semibold text-base-content' : 'text-base-content/80'}`}>
-                  {thread.subject}
-                </div>
-                <p className="text-[11px] text-base-content/50 truncate mt-0.5">
-                  {thread.snippet}
-                </p>
-              </div>
-
-              {thread.labels.filter((l) => l !== 'inbox').length > 0 && (
-                <div className="pl-6 flex flex-wrap gap-1 mt-0.5">
-                  {thread.labels
-                    .filter((l) => l !== 'inbox')
-                    .map((lbl) => (
-                      <span key={lbl} className={`badge badge-xs capitalize font-medium ${getBadgeClass(lbl)}`}>
-                        {lbl}
-                      </span>
-                    ))}
-                </div>
-              )}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 };

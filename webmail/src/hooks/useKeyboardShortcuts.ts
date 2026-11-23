@@ -12,6 +12,9 @@ export interface ShortcutHandlers {
   onReplyAll?: () => void;
   onSearchFocus?: () => void;
   onEscape?: () => void;
+  onToggleSelect?: () => void;
+  onMarkSpam?: () => void;
+  onBackToList?: () => void;
 }
 
 export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled: boolean = true) {
@@ -19,9 +22,12 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled: boolea
     if (!enabled) return;
 
     function handleKeyDown(e: KeyboardEvent) {
-      // Don't intercept shortcuts when typing in inputs or textareas
+      // Don't intercept shortcuts when typing in inputs, textareas, or contenteditables
       const target = e.target as HTMLElement;
-      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      const isInput =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable;
 
       if (e.key === 'Escape') {
         if (handlers.onEscape) {
@@ -78,6 +84,20 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled: boolea
         case 'A':
           e.preventDefault();
           handlers.onReplyAll?.();
+          break;
+        case 'x':
+        case 'X':
+          e.preventDefault();
+          handlers.onToggleSelect?.();
+          break;
+        case '!':
+          e.preventDefault();
+          handlers.onMarkSpam?.();
+          break;
+        case 'u':
+        case 'U':
+          e.preventDefault();
+          handlers.onBackToList?.();
           break;
         case '/':
           e.preventDefault();

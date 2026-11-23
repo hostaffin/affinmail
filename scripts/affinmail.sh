@@ -133,7 +133,12 @@ case "$COMMAND" in
         ;;
     help|*)
         echo -e "${CYAN}==================================================================${NC}"
-        echo -e "${BLUE}${BOLD}     AffinMail Master Unified Management CLI (Zero Docker)        ${NC}"
+        echo -e "${CYAN}    ___    ____ ____ _       __  ___      _ __"
+        echo -e "   /   |  / __// __/(_)___  /  |/  /___ _(_) /"
+        echo -e "  / /| | / /_ / /_ / / __ \/ /|_/ / __ \`/ / / "
+        echo -e " / ___ |/ __// __// / / / / /  / / /_/ / / /  "
+        echo -e "/_/  |_/_/  /_/  /_/_/ /_/_/  /_/\\__,_/_/_/   ${NC}"
+        echo -e "${BLUE}${BOLD}   AffinMail — Optimized Workspace of Efficient Business         ${NC}"
         echo -e "${CYAN}==================================================================${NC}"
         echo -e "Usage: ${GREEN}affinmail <command> [options]${NC}\n"
         echo "Commands:"

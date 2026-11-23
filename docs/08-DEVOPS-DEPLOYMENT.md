@@ -106,15 +106,15 @@ WantedBy=multi-user.target
 ## 3. Dual-Port Network & Reverse Proxy Architecture
 
 AffinMail uses Caddy 2 as a native edge reverse proxy with dual-port segregation:
-- **Port 2087:** WHM-Equivalent Cluster Admin Panel and Admin REST API.
-- **Port 2083 / 443:** Client Webmail SPA, RFC 8620 JMAP daemon, and real-time WebSockets.
+- **Port 2087:** Admin Control Panel (API-automatable cluster admin and management REST API).
+- **Port 2083 / 443:** User Panel / Webmail SPA (MCP-automatable, RFC 8620 JMAP daemon, and real-time WebSockets).
 
 ### 3.1 Network Port Allocation Matrix
 
 | Port | Protocol | Purpose | Access Control |
 | :--- | :--- | :--- | :--- |
-| **2087/tcp** | HTTPS / HTTP/3 | WHM Cluster Admin Panel & REST API | Public (Password / 2FA / Hostaffin SSO) |
-| **2083/tcp** | HTTPS / HTTP/3 | Client Webmail & JMAP / WebSockets | Public (Client Authentication) |
+| **2087/tcp** | HTTPS / HTTP/3 | Cluster Admin Panel & REST API (API Automatable) | Public (Password / 2FA / Hostaffin SSO) |
+| **2083/tcp** | HTTPS / HTTP/3 | User Panel Webmail & JMAP / WebSockets (MCP Automatable) | Public (Client Authentication) |
 | **443/tcp** | HTTPS / HTTP/3 | Client Webmail & JMAP fallback | Public (Client Authentication) |
 | **80/tcp** | HTTP | ACME HTTP-01 Challenges & HTTPS redirect | Public |
 | **25/tcp** | SMTP (Plain / STARTTLS) | Inbound Mail Receiving & Direct Egress | Public MX |

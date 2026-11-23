@@ -3,7 +3,7 @@
     AffinMail Windows Local Native Test Environment Launcher
 .DESCRIPTION
     Runs AffinMail natively on Windows without Docker using:
-    - Native Caddy 2 for dual-port routing (Port 2087 WHM Admin & Port 2083 Webmail)
+    - Native Caddy 2 for dual-port routing (Port 2087 Admin Panel & Port 2083 User Panel)
     - Lightweight Python Mock Backend for JMAP and Admin REST API (Port 8080)
     - Pre-built React 19 / DaisyUI 5 Webmail SPA
 #>
@@ -54,8 +54,8 @@ Start-Sleep -Seconds 1
 Write-Host "`n==================================================================" -ForegroundColor Cyan
 Write-Host "  AffinMail Local Services are Active on Windows!                " -ForegroundColor Green
 Write-Host "==================================================================" -ForegroundColor Cyan
-Write-Host "  WHM Admin Console:       http://localhost:2087" -ForegroundColor Yellow
-Write-Host "  Client Webmail Portal:   http://localhost:2083" -ForegroundColor Yellow
+Write-Host "  Admin Panel (REST API):  http://localhost:2087" -ForegroundColor Yellow
+Write-Host "  User Panel (MCP Ready):  http://localhost:2083" -ForegroundColor Yellow
 Write-Host "  Mock JMAP / REST API:    http://127.0.0.1:8080" -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C at any time to stop the server.`n" -ForegroundColor DarkGray

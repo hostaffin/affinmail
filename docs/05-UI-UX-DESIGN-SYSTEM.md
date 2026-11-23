@@ -165,3 +165,32 @@ Global keyboard listener hook (`useKeyboardShortcuts`):
 * `a`: Reply all.
 * `/`: Focuses global search input.
 * `Escape`: Closes compose modal or search focus.
+
+---
+
+## 7. Brand Identity & Vector Logo Specification
+
+### 7.1 Brand Symbolism & Geometry
+AffinMail features an independent vector brand identity combining:
+* **The "A" Apex & Wings:** Dual-faceted upward ascent representing HostAffin speed and reliable uptime.
+* **Origami Mail Fold:** Overlapping letter flap and crossbar representing email privacy, cryptographic integrity, and JMAP responsiveness.
+* **Palette Tokens:**
+  - **Primary Core:** `#2563EB` (Royal Blue) & `#1E40AF` (Deep Cobalt)
+  - **Accent Flap:** `#06B6D4` (Electric Cyan) & `#3B82F6` (Sky Blue)
+  - **Dynamic Highlight:** `#2DD4BF` (Teal Glow)
+  - **Shield Container:** Rounded squircle (`rx="16"`) adapting to light and dark themes.
+
+### 7.2 Component Interface (`AffinMailLogo.tsx`)
+```typescript
+interface AffinMailLogoProps {
+  variant?: 'full' | 'icon' | 'admin';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  className?: string;
+  tagline?: string;
+  withGlow?: boolean;
+}
+```
+* **Full:** Master Webmail brand mark (`Affin` regular + `Mail` bold + `ENTERPRISE` badge).
+* **Icon:** Standalone 64x64 vector mark for favicons, mobile drawers, and avatars.
+* **Admin:** Dedicated Admin Panel header branding with `:2087` and server status subtitle.
+

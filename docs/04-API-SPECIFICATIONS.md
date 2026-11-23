@@ -218,3 +218,65 @@ All administrative requests require the `X-Server-API-Key` secret header.
       }
     }
     ```
+
+---
+
+## 5. Model Context Protocol (MCP) Interface for User Panel Automation
+
+The AffinMail User Panel can be completely automated by AI agents, LLMs, and assistive workflows using the **Model Context Protocol (MCP)**. The AffinMail MCP Server maps high-level user actions into authenticated RFC 8620/8621 JMAP calls.
+
+### 5.1 MCP Client Configuration
+Add the AffinMail User Panel MCP server to your AI environment (Antigravity, Claude Desktop, Cursor, etc.):
+
+```json
+{
+  "mcpServers": {
+    "affinmail-user": {
+      "command": "node",
+      "args": ["/opt/affinmail/mcp/index.js"],
+      "env": {
+        "AFFINMAIL_JMAP_URL": "https://mail.yourdomain.com:2083/jmap/api",
+        "AFFINMAIL_API_TOKEN": "aff_user_tok_..."
+      }
+    }
+  }
+}
+```
+
+### 5.2 Registered MCP Tool Definitions
+
+| Tool Name | Parameters | Purpose |
+| :--- | :--- | :--- |
+| `affinmail_search_emails` | `query: string, folder?: string, limit?: number, unreadOnly?: boolean` | Searches threads by keywords, sender, or subject via JMAP `Email/query`. |
+| `affinmail_get_thread` | `threadId: string` | Fetches complete conversation message history, headers, body, and attachment metadata. |
+| `affinmail_send_email` | `to: string[], subject: string, body: string, cc?: string[], bcc?: string[]` | Creates an RFC 5322 payload and dispatches via JMAP `EmailSubmission/set`. |
+| `affinmail_draft_email` | `to: string[], subject: string, body: string, draftId?: string` | Creates or updates an editable draft inside the user's Drafts folder. |
+| `affinmail_update_labels` | `threadId: string, addLabels?: string[], removeLabels?: string[]` | Archives, stars, marks as spam, or applies custom tags to a thread. |
+| `affinmail_get_quota` | *none* | Returns current mailbox byte usage, maximum plan limit, and assigned IP. |
+
+### 5.3 Sample MCP Tool Invocation (`affinmail_search_emails`)
+```json
+{
+  "name": "affinmail_search_emails",
+  "arguments": {
+    "query": "invoice overdue",
+    "folder": "inbox",
+    "limit": 5
+  }
+}
+```
+**Returns:**
+```json
+{
+  "threads": [
+    {
+      "id": "th_1092b",
+      "from": "accounting@vendor.com",
+      "subject": "Urgent: Invoice #992 Overdue",
+      "snippet": "Please find attached notice regarding past due payment...",
+      "receivedAt": "2026-11-23T14:20:00Z",
+      "isUnread": true
+    }
+  ]
+}
+```

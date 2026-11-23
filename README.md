@@ -1,14 +1,15 @@
 # AffinMail
 
-> *"Enterprise Email Without Bloat: Ultra-fast, Privacy-Centric, Gmail-Class Simplicity."*
+> *"Optimized Workspace of Efficient Business."*
+> High-Performance, Privacy-Centric Sovereign Business Email Platform Powered by Rust Stalwart.
 
 A modern, high-performance, privacy-first business email hosting platform with **Zero Docker Dependency** running directly on bare-metal Linux:
 1. **Rust Core Engine (Stalwart):** Native compiled binary, sub-100MB idle memory, memory-safe, ultra-fast JMAP/IMAP/SMTP/CalDAV/CardDAV server.
 2. **Zero Docker Dependency (100% Native Systemd):** Direct native execution without container overhead, cgroup conflicts, or podman friction. Managed via native `systemd` units.
 3. **Dual-CPU Native Architecture:** 100% native execution on both **ARM64** (Ampere Altra, AWS Graviton, Apple Silicon, Oracle ARM) and **x86_64** (Intel Xeon / AMD EPYC).
-4. **Dual-Port Routing Architecture:**
-   - **Port 2087:** Dedicated WHM-equivalent cluster admin console (domains, quotas, multi-IP routing, storage management).
-   - **Port 2083 / 443:** Client Gmail-class webmail portal (JMAP, WebSockets, keyboard shortcuts).
+4. **Dual-Panel & Dual-Port Architecture:**
+   - **Port 2087 (Admin Panel):** Dedicated cluster admin console (domains, quotas, multi-IP routing, storage management) — **100% automatable via REST API**.
+   - **Port 2083 / 443 (User Panel):** Client webmail portal (JMAP, WebSockets, keyboard shortcuts) — **fully automatable via MCP (Model Context Protocol)**.
 5. **Universal Linux Support:** First-class support for **AlmaLinux 8 / 9**, **Rocky Linux 8 / 9**, **RHEL**, **Ubuntu 22.04 / 24.04 LTS**, and **Debian 12**.
 6. **Pluggable Dynamic Storage Engine:** Hot-swappable blob and attachment storage supporting **Local NVMe SSD**, **S3-Compatible Object Storage** (AWS, Cloudflare R2, MinIO, Wasabi), and **SFTP / Remote Storage Box** (Hetzner Storage Box).
 7. **PostgreSQL 16 & Redis 7:** ACID persistence, GIN full-text search, and Leaky-Bucket rate limiting running natively on localhost.
@@ -33,7 +34,7 @@ The installer will:
 - Auto-create a 2GB swap space if RAM is low to prevent OOM
 - Install native PostgreSQL, Redis, Caddy 2, and Stalwart Mail binaries
 - Initialize database schemas and configure native systemd services
-- Output your WHM Admin (`:2087`) and Webmail (`:2083`) URLs
+- Output your Admin Panel (`:2087`) and User Panel (`:2083`) URLs
 
 ---
 
@@ -67,11 +68,13 @@ All architectural blueprints, protocol specifications, database schemas, and int
 | **[03-DATABASE-STORAGE-SCHEMA.md](file:///d:/AffinMail/docs/03-DATABASE-STORAGE-SCHEMA.md)** | Complete PostgreSQL 16 DDL schema, GIN indexes, Redis key structures, and Blob Storage specifications. |
 | **[04-API-SPECIFICATIONS.md](file:///d:/AffinMail/docs/04-API-SPECIFICATIONS.md)** | RFC 8620/8621 JMAP specifications, Hostaffin Admin REST API endpoints, and WebSocket push notifications. |
 | **[05-UI-UX-DESIGN-SYSTEM.md](file:///d:/AffinMail/docs/05-UI-UX-DESIGN-SYSTEM.md)** | Strict Light & Dark token specifications, Tailwind v4 + DaisyUI 5 setup, TipTap editor, and keyboard engine. |
+| **[BRANDING-GUIDELINES.md](file:///d:/AffinMail/docs/BRANDING-GUIDELINES.md)** | Official brand identity, Sovereign Wing logomark anatomy, color tokens, typography, and asset specifications. |
 | **[06-SECURITY-DELIVERABILITY.md](file:///d:/AffinMail/docs/06-SECURITY-DELIVERABILITY.md)** | 10/10 Deliverability guide (SPF, DKIM, DMARC, ARC), SmartHost matrix, Spamhaus DNSBL, and Redis Leaky-Bucket limiter. |
 | **[07-HOSTAFFIN-INTEGRATION.md](file:///d:/AffinMail/docs/07-HOSTAFFIN-INTEGRATION.md)** | Complete specification of the 20 WHMCS lifecycle methods, 1-click SSO flow, and Client Area DNS widget. |
 | **[08-DEVOPS-DEPLOYMENT.md](file:///d:/AffinMail/docs/08-DEVOPS-DEPLOYMENT.md)** | Bare-metal native systemd deployment, single-VPS sizing guide, Caddy 2 reverse proxy, and backup & recovery automation. |
 | **[09-TESTING-QA-STRATEGY.md](file:///d:/AffinMail/docs/09-TESTING-QA-STRATEGY.md)** | Comprehensive QA strategy covering Vitest, Playwright E2E, PHPUnit driver tests, and deliverability audits. |
 | **[10-IMPLEMENTATION-ROADMAP.md](file:///d:/AffinMail/docs/10-IMPLEMENTATION-ROADMAP.md)** | Directory tree structure and phased step-by-step checklist for building the platform end-to-end. |
+| **[11-AI-AGENT-API-AUTOMATION-PLAN.md](file:///d:/AffinMail/docs/11-AI-AGENT-API-AUTOMATION-PLAN.md)** | Autonomous AI Agent Admin REST API automation plan, function schemas, and self-healing workflows. |
 
 ---
 
@@ -131,7 +134,7 @@ flowchart TD
     DNS --> Firewall --> Caddy
     Firewall --> SMTP_In & SMTP_Sub & IMAP_Daemon
     Caddy -->|/jmap, /api, /ws| L5
-    Caddy -->|Webmail:2083 & WHM:2087| L6
+    Caddy -->|User Panel:2083 & Admin Panel:2087| L6
 
     SMTP_In --> SpamDefense --> SecEngine --> SieveEngine --> L4
     SMTP_Sub --> RateLimiter --> Router

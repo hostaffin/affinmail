@@ -11,8 +11,8 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp" # HTTP/3 QUIC
-      - "2087:2087"   # AffinMail Admin Panel (WHM-Style)
-      - "2083:2083"   # AffinMail Client Webmail
+      - "2087:2087"   # AffinMail Admin Panel (API Automatable)
+      - "2083:2083"   # AffinMail User Panel / Webmail (MCP Automatable)
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../webmail/dist:/var/www/affinmail-web/dist:ro
