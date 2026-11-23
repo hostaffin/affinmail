@@ -50,3 +50,8 @@ Thumbs.db
 # Coverage & Testing
 coverage/
 .nyc_output/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class

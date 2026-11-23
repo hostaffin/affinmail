@@ -1,0 +1,33 @@
+# AffinMail Windows Local Test Caddyfile
+{
+	admin off
+	auto_https off
+}
+
+# 1. WHM-Equivalent Cluster Admin Panel (Port 2087)
+:2087 {
+	root * webmail/dist
+	file_server
+	try_files {path} /index.html
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
+
+# 2. Client Webmail Portal (Port 2083)
+:2083 {
+	root * webmail/dist
+	file_server
+	try_files {path} /index.html
+	encode gzip
+
+	handle /jmap* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
