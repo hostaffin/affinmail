@@ -23,18 +23,28 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# TTY Detection for piped execution
+TTY_INPUT="/dev/stdin"
+if [ ! -t 0 ]; then
+    if [ -e /dev/tty ]; then
+        TTY_INPUT="/dev/tty"
+    fi
+fi
+
 PURGE_DATA=false
 if [[ "${1:-}" == "--purge" || "${1:-}" == "--purge-all" ]]; then
     PURGE_DATA=true
 else
     echo -e "${YELLOW}[WARNING] This will stop and remove AffinMail services.${NC}"
-    read -rp "Are you sure you want to proceed? [y/N]: " CONFIRM
+    echo -n "Are you sure you want to proceed? [y/N]: "
+    read -r CONFIRM < "$TTY_INPUT"
     if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
         echo "Uninstallation cancelled."
         exit 0
     fi
 
-    read -rp "Do you want to permanently DELETE all email data, databases, and blobs? [y/N]: " PURGE_CONFIRM
+    echo -n "Do you want to permanently DELETE all email data, databases, and blobs? [y/N]: "
+    read -r PURGE_CONFIRM < "$TTY_INPUT"
     if [[ "$PURGE_CONFIRM" == "y" || "$PURGE_CONFIRM" == "Y" ]]; then
         PURGE_DATA=true
     fi
