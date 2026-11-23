@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AffinMail Standalone Production One-Line Installer
-# Supports: curl -fsSL https://raw.githubusercontent.com/.../main/install.sh | bash
+# AffinMail Standalone Production Universal Installer
+# Compatible with both curl and wget:
+# bash <(curl -fsSL https://raw.githubusercontent.com/.../install.sh 2>/dev/null || wget -qO- https://raw.githubusercontent.com/.../install.sh)
 # Supported OS: Ubuntu 22.04 / 24.04 LTS, Debian 12 (x86_64 & ARM64)
 # ==============================================================================
 
@@ -12,24 +13,26 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
+VERSION="1.2.0"
 INSTALL_DIR="/opt/affinmail"
 REPO_URL="https://github.com/hostaffin/affinmail.git"
 REPO_BRANCH="${AFFINMAIL_BRANCH:-master}"
 
 echo -e "${CYAN}==================================================================${NC}"
-echo -e "${BLUE}        AffinMail Enterprise Email Server - Automated Installer   ${NC}"
+echo -e "${BLUE}${BOLD}   AffinMail Enterprise Email Server - Universal Installer (v${VERSION})   ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
 
-# 1. Root Check
+# 1. Root Privileges Check
 if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}[ERROR] This installer must be run as root.${NC}"
-    echo -e "Please run: ${YELLOW}sudo bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/hostaffin/affinmail/master/install.sh)\"${NC}"
+    echo -e "${RED}[ERROR] This installer requires root privileges.${NC}"
+    echo -e "Please run as root: ${YELLOW}sudo -i${NC} and then run the installer command."
     exit 1
 fi
 
-# 2. TTY Detection for piped execution (curl ... | bash)
+# 2. TTY Detection (Works with curl | bash, wget | bash, or bash <(...))
 TTY_INPUT="/dev/stdin"
 if [ ! -t 0 ]; then
     if [ -e /dev/tty ]; then
@@ -37,43 +40,44 @@ if [ ! -t 0 ]; then
     fi
 fi
 
-# 3. Detect CPU Architecture (ARM64 & x86_64)
+# 3. Detect & Validate CPU Architecture (ARM64 & x86_64)
 ARCH=$(uname -m)
-echo -e "${GREEN}[*] Detected CPU Architecture:${NC} $ARCH"
+echo -e "${GREEN}[*] Detecting CPU Architecture:${NC} ${BOLD}$ARCH${NC}"
 if [[ "$ARCH" != "x86_64" && "$ARCH" != "aarch64" ]]; then
-    echo -e "${RED}[ERROR] Unsupported CPU architecture: $ARCH. AffinMail supports x86_64 and aarch64 (ARM64).${NC}"
+    echo -e "${RED}[ERROR] Unsupported CPU architecture: $ARCH.${NC}"
+    echo -e "AffinMail natively supports x86_64 (Intel/AMD) and aarch64 (ARM64)."
     exit 1
 fi
 
-# 4. Bootstrap Essential Tools on Fresh Server
-echo -e "\n${BLUE}[1/6] Installing Essential Dependencies (curl, git, ufw, jq)...${NC}"
+# 4. Bootstrap Essential Packages (curl, wget, git, ufw, jq, etc.)
+echo -e "\n${BLUE}[1/6] Bootstrapping Essential System Packages...${NC}"
 apt-get update -qq
 apt-get install -y -qq curl wget git ufw fail2ban dnsutils postgresql-client rsync tar jq
 
-# 5. Bootstrap Docker Engine if missing
+# 5. Bootstrap Docker Engine if Not Present
 if ! command -v docker &> /dev/null; then
     echo -e "${GREEN}[*] Fresh server detected: Installing Docker Engine...${NC}"
     curl -fsSL https://get.docker.com | sh
     systemctl enable --now docker
 fi
 
-# 6. Fetch/Prepare AffinMail Codebase in /opt/affinmail
-echo -e "\n${BLUE}[2/6] Setting Up AffinMail Repository in ${INSTALL_DIR}...${NC}"
+# 6. Fetch / Clone Codebase to /opt/affinmail
+echo -e "\n${BLUE}[2/6] Preparing AffinMail Core in ${INSTALL_DIR}...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -f "${SCRIPT_DIR}/deploy/docker-compose.yml" ]; then
-    # Running from local cloned directory
+    # Running from local cloned repo
     mkdir -p "${INSTALL_DIR}"
     rsync -a --exclude='.git' --exclude='webmail/node_modules' "${SCRIPT_DIR}/" "${INSTALL_DIR}/"
 elif [ -d "${INSTALL_DIR}/.git" ]; then
-    echo -e "${GREEN}[*] Updating existing installation in ${INSTALL_DIR}...${NC}"
+    echo -e "${GREEN}[*] Updating existing installation to latest version...${NC}"
     cd "${INSTALL_DIR}"
     git pull origin "${REPO_BRANCH}" || true
 else
-    echo -e "${GREEN}[*] Downloading AffinMail production files into ${INSTALL_DIR}...${NC}"
+    echo -e "${GREEN}[*] Fetching latest production release from GitHub...${NC}"
     rm -rf "${INSTALL_DIR}"
-    git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" || {
-        # Fallback if git fails: archive download
+    git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" 2>/dev/null || {
+        # Fallback if git fails: tarball stream
         mkdir -p "${INSTALL_DIR}"
         curl -fsSL "https://github.com/hostaffin/affinmail/archive/refs/heads/${REPO_BRANCH}.tar.gz" | tar -xz --strip-components=1 -C "${INSTALL_DIR}"
     }
@@ -83,48 +87,92 @@ mkdir -p "${INSTALL_DIR}/data/blobs"
 mkdir -p "${INSTALL_DIR}/backups"
 cd "${INSTALL_DIR}"
 
-# 7. Interactive Configuration (Supports piped execution)
-echo -e "\n${CYAN}--- Configuration Setup ---${NC}"
-HOSTNAME_INPUT="${AFFINMAIL_HOST:-}"
-if [ -z "$HOSTNAME_INPUT" ]; then
+# Auto-detect Public IP
+AUTO_IP=$(curl -s -4 ifconfig.me 2>/dev/null || wget -qO- -4 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
+
+# 7. Setup Mode Selection (Interactive Now vs Express / Setup Later from Panel)
+echo -e "\n${CYAN}==================================================================${NC}"
+echo -e "${BOLD}Choose Installation Mode:${NC}"
+echo -e "  ${YELLOW}1)${NC} ${BOLD}Complete Interactive Setup Now${NC} (Configure Hostname, IP, Storage, Admin now)"
+echo -e "  ${YELLOW}2)${NC} ${BOLD}Express Setup (Setup Later from Panel)${NC} (Instant zero-touch start; configure domains, storage & mailboxes later from Hostaffin Panel / Web UI)"
+echo -e "${CYAN}==================================================================${NC}"
+echo -n "Select mode [1 or 2, default: 1]: "
+read -r SETUP_MODE < "$TTY_INPUT"
+SETUP_MODE="${SETUP_MODE:-1}"
+
+# Defaults
+HOSTNAME_INPUT="mail.${AUTO_IP}.nip.io"
+SHARED_IP_INPUT="${AUTO_IP}"
+STORAGE_TYPE_INPUT="fs"
+S3_BUCKET_VAL="affinmail-blobs"
+S3_ENDPOINT_VAL=""
+S3_REGION_VAL="auto"
+S3_KEY_VAL=""
+S3_SEC_VAL=""
+SFTP_HOST_VAL=""
+SFTP_USER_VAL=""
+SFTP_PORT_VAL="22"
+
+if [ "$SETUP_MODE" == "1" ]; then
+    # Full Interactive Walkthrough
+    echo -e "\n${CYAN}--- Interactive Configuration ---${NC}"
     echo -n "Enter Primary Mail Hostname (e.g. mail.yourdomain.com): "
     read -r HOSTNAME_INPUT < "$TTY_INPUT"
-fi
+    while [ -z "$HOSTNAME_INPUT" ]; do
+        echo -n "Hostname cannot be empty. Please enter mail hostname: "
+        read -r HOSTNAME_INPUT < "$TTY_INPUT"
+    done
 
-if [ -z "$HOSTNAME_INPUT" ]; then
-    echo -e "${RED}[ERROR] Mail Hostname is required.${NC}"
-    exit 1
-fi
-
-AUTO_IP=$(curl -s -4 ifconfig.me || hostname -I | awk '{print $1}')
-SHARED_IP_INPUT="${AFFINMAIL_IP:-}"
-if [ -z "$SHARED_IP_INPUT" ]; then
     echo -n "Enter Primary Outbound IPv4 [$AUTO_IP]: "
-    read -r SHARED_IP_INPUT < "$TTY_INPUT"
-    SHARED_IP_INPUT="${SHARED_IP_INPUT:-$AUTO_IP}"
-fi
+    read -r MANUAL_IP < "$TTY_INPUT"
+    SHARED_IP_INPUT="${MANUAL_IP:-$AUTO_IP}"
 
-STORAGE_TYPE_INPUT="${AFFINMAIL_STORAGE:-fs}"
-if [ -z "${AFFINMAIL_STORAGE:-}" ]; then
-    echo -e "\nSelect Dynamic Storage Backend for Blobs & Attachments:"
-    echo "  1) Local NVMe SSD (Default, Highest Speed, 0 Cloud Cost)"
-    echo "  2) S3-Compatible Storage (Cloudflare R2, AWS S3, MinIO, Wasabi)"
+    echo -e "\nSelect Storage Backend for Emails & Attachments:"
+    echo "  1) Local NVMe / SSD (Default, Ultra-low latency, 0 cloud cost)"
+    echo "  2) S3-Compatible Object Storage (Cloudflare R2, AWS S3, MinIO, Wasabi)"
     echo "  3) SFTP / Remote Storage Box (Hetzner Storage Box via SFTP)"
     echo -n "Choose [1-3, default 1]: "
-    read -r STORAGE_OPT < "$TTY_INPUT"
-    case "$STORAGE_OPT" in
-        2) STORAGE_TYPE_INPUT="s3" ;;
-        3) STORAGE_TYPE_INPUT="sftp" ;;
-        *) STORAGE_TYPE_INPUT="fs" ;;
+    read -r ST_CHOICE < "$TTY_INPUT"
+    case "$ST_CHOICE" in
+        2)
+            STORAGE_TYPE_INPUT="s3"
+            echo -n "Enter S3 Bucket Name [affinmail-blobs]: "
+            read -r S3_B < "$TTY_INPUT"
+            S3_BUCKET_VAL="${S3_B:-affinmail-blobs}"
+            echo -n "Enter S3 Endpoint (e.g. https://<id>.r2.cloudflarestorage.com or s3.us-east-1.amazonaws.com): "
+            read -r S3_ENDPOINT_VAL < "$TTY_INPUT"
+            echo -n "Enter S3 Access Key ID: "
+            read -r S3_KEY_VAL < "$TTY_INPUT"
+            echo -n "Enter S3 Secret Access Key: "
+            read -r S3_SEC_VAL < "$TTY_INPUT"
+            ;;
+        3)
+            STORAGE_TYPE_INPUT="sftp"
+            echo -n "Enter SFTP Host (e.g. uXXXXXX.your-storagebox.de): "
+            read -r SFTP_HOST_VAL < "$TTY_INPUT"
+            echo -n "Enter SFTP Username: "
+            read -r SFTP_USER_VAL < "$TTY_INPUT"
+            echo -n "Enter SFTP Port [22 or 23]: "
+            read -r SFTP_P < "$TTY_INPUT"
+            SFTP_PORT_VAL="${SFTP_P:-22}"
+            ;;
+        *)
+            STORAGE_TYPE_INPUT="fs"
+            ;;
     esac
+else
+    # Express Setup Mode: Instant Ready with smart defaults
+    echo -e "\n${GREEN}[*] Express Mode: Auto-configuring defaults (Server IP: ${AUTO_IP})...${NC}"
+    echo -e "${YELLOW}[*] You will be able to edit domains, storage, and mailboxes directly from Hostaffin Panel!${NC}"
+    HOSTNAME_INPUT="mail.${AUTO_IP//./-}.nip.io"
 fi
 
-# 8. Configure Firewall (UFW)
-echo -e "\n${BLUE}[3/6] Configuring Security & Firewall Rules...${NC}"
+# 8. Firewall Configuration (UFW)
+echo -e "\n${BLUE}[3/6] Hardening Firewall (UFW) Ports...${NC}"
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp comment 'SSH'
-ufw allow 80/tcp comment 'HTTP ACME Let\'s Encrypt'
+ufw allow 80/tcp comment 'HTTP ACME'
 ufw allow 443/tcp comment 'HTTPS Webmail'
 ufw allow 443/udp comment 'HTTP/3 QUIC'
 ufw allow 25/tcp comment 'Inbound SMTP'
@@ -134,8 +182,8 @@ ufw allow 993/tcp comment 'IMAP SSL'
 ufw allow 4190/tcp comment 'ManageSieve'
 ufw --force enable
 
-# 9. Generate Secure Credentials & Environment File
-echo -e "\n${BLUE}[4/6] Generating Strong Encryption Keys & .env Configuration...${NC}"
+# 9. Cryptographic Credentials & Environment File
+echo -e "\n${BLUE}[4/6] Generating Strong Encryption Keys & .env Config...${NC}"
 if [ ! -f "deploy/.env" ]; then
     DB_PASS=$(openssl rand -hex 16)
     REDIS_PASS=$(openssl rand -hex 16)
@@ -155,29 +203,29 @@ STALWART_ADMIN_SECRET=${ADMIN_SECRET}
 STORAGE_BLOB_TYPE=${STORAGE_TYPE_INPUT}
 STORAGE_LOCAL_PATH=${INSTALL_DIR}/data/blobs
 
-S3_BUCKET=affinmail-blobs
-S3_REGION=auto
-S3_ENDPOINT=
-S3_ACCESS_KEY=
-S3_SECRET_KEY=
+S3_BUCKET=${S3_BUCKET_VAL}
+S3_REGION=${S3_REGION_VAL}
+S3_ENDPOINT=${S3_ENDPOINT_VAL}
+S3_ACCESS_KEY=${S3_KEY_VAL}
+S3_SECRET_KEY=${S3_SEC_VAL}
 
-SFTP_HOST=
-SFTP_USER=
-SFTP_PORT=23
+SFTP_HOST=${SFTP_HOST_VAL}
+SFTP_USER=${SFTP_USER_VAL}
+SFTP_PORT=${SFTP_PORT_VAL}
 SFTP_REMOTE_PATH=/home/affinmail-blobs
 EOF
     chmod 600 deploy/.env
 else
-    echo -e "${YELLOW}[*] Existing deploy/.env detected, keeping current secrets.${NC}"
+    echo -e "${YELLOW}[*] Existing deploy/.env found, preserving established credentials.${NC}"
 fi
 
 # 10. Start Docker Stack
-echo -e "\n${BLUE}[5/6] Pulling Multi-Arch Docker Images & Launching Stack...${NC}"
+echo -e "\n${BLUE}[5/6] Pulling Multi-Arch Container Images & Starting Services...${NC}"
 cd "${INSTALL_DIR}/deploy"
 docker compose pull
 docker compose up -d
 
-# 11. Crons & CLI Setup
+# 11. Register Crons and CLI
 echo -e "\n${BLUE}[6/6] Registering System Crons and Management CLI...${NC}"
 chmod +x "${INSTALL_DIR}/scripts/"*.sh
 
@@ -192,16 +240,18 @@ chmod 644 "$CRON_FILE"
 ln -sf "${INSTALL_DIR}/scripts/affinmail.sh" /usr/local/bin/affinmail
 chmod +x /usr/local/bin/affinmail
 
-# Fetch keys for final summary
 ADMIN_KEY=$(grep "STALWART_ADMIN_SECRET" "${INSTALL_DIR}/deploy/.env" | cut -d= -f2)
 
 echo -e "\n${CYAN}==================================================================${NC}"
-echo -e "${GREEN}      AffinMail Server Successfully Installed & Running!          ${NC}"
+echo -e "${GREEN}${BOLD}      AffinMail Server Successfully Installed & Running!          ${NC}"
 echo -e "${CYAN}==================================================================${NC}"
-echo -e "Webmail Interface:     ${YELLOW}https://${HOSTNAME_INPUT}${NC}"
+echo -e "Webmail URL:           ${YELLOW}https://${HOSTNAME_INPUT}${NC}"
 echo -e "Hostaffin API Secret:  ${YELLOW}${ADMIN_KEY}${NC}"
 echo -e "Outbound Egress IPv4:  ${YELLOW}${SHARED_IP_INPUT}${NC}"
 echo -e "Storage Engine:        ${YELLOW}${STORAGE_TYPE_INPUT}${NC}"
 echo -e "Management CLI:        ${CYAN}affinmail [status|restart|update|logs|backup]${NC}"
 echo -e "${CYAN}==================================================================${NC}"
-echo -e "${GREEN}You can now connect this server to Hostaffin WHMCS using the secret above.${NC}"
+if [ "$SETUP_MODE" == "2" ]; then
+    echo -e "${GREEN}Mode Note: Express setup completed. You can now connect this node to Hostaffin WHMCS${NC}"
+    echo -e "${GREEN}or configure custom domains and S3/SFTP storage directly from the panel or deploy/.env!${NC}"
+fi
