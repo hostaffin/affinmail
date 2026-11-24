@@ -4,6 +4,7 @@ import {
   Users,
   HardDrive,
   ShieldCheck,
+  Languages,
   Activity,
   Plus,
   Database,
@@ -137,7 +138,25 @@ import {
   deleteApiKey,
   rotateApiKey,
   getApiKeyUsage,
+  getSecurityDkim,
+  rotateSecurityDkim,
+  getSecurityDmarc,
+  getSecurityMtaSts,
+  getSecurityTlsRpt,
+  getSecurityArc,
+  getSecurityCertificates,
+  getSecuritySpam,
+  getSecurityBruteforce,
+  type SecurityDkim,
+  type SecurityDmarc,
+  type SecurityMtaSts,
+  type SecurityTlsRpt,
+  type SecurityLive,
+  type SecurityCerts,
+  type SecuritySpam,
+  type SecurityBruteforce,
 } from '../lib/adminApi';
+import { useI18n } from '../i18n';
 
 interface AdminPanelProps {
   theme: 'light' | 'dark';
@@ -162,7 +181,8 @@ type AdminTab =
   | 'mta'
   | 'storage'
   | 'system'
-  | 'apikeys';
+  | 'apikeys'
+  | 'security';
 
 interface DomainRow {
   id: string;
@@ -520,6 +540,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onNotify,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const { locale, setLocale, t } = useI18n();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Auth gate
@@ -1194,6 +1215,81 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (authed && activeTab === 'deliverability') void loadBlacklist();
   }, [authed, activeTab, loadBlacklist]);
 
+  // Mail security (F-035..F-046)
+  const [secDkim, setSecDkim] = useState<SecurityDkim | null>(null);
+  const [secDmarc, setSecDmarc] = useState<SecurityDmarc | null>(null);
+  const [secMtaSts, setSecMtaSts] = useState<SecurityMtaSts | null>(null);
+  const [secTlsRpt, setSecTlsRpt] = useState<SecurityTlsRpt | null>(null);
+  const [secArc, setSecArc] = useState<SecurityLive | null>(null);
+  const [secCerts, setSecCerts] = useState<SecurityCerts | null>(null);
+  const [secSpam, setSecSpam] = useState<SecuritySpam | null>(null);
+  const [secBrute, setSecBrute] = useState<SecurityBruteforce | null>(null);
+  const [secDomain, setSecDomain] = useState('');
+  const [secBusy, setSecBusy] = useState(false);
+  const [secMsg, setSecMsg] = useState('');
+
+  const loadSecurityGlobal = useCallback(async () => {
+    try {
+      const [dkim, arc, certs, spam, brute] = await Promise.all([
+        getSecurityDkim(),
+        getSecurityArc(),
+        getSecurityCertificates(),
+        getSecuritySpam(),
+        getSecurityBruteforce(),
+      ]);
+      setSecDkim(dkim);
+      setSecArc(arc);
+      setSecCerts(certs);
+      setSecSpam(spam);
+      setSecBrute(brute);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  const loadSecurityDomain = useCallback(
+    async (domain: string) => {
+      if (!domain) return;
+      try {
+        const [dmarc, mtasts, tlsrpt] = await Promise.all([
+          getSecurityDmarc(domain),
+          getSecurityMtaSts(domain),
+          getSecurityTlsRpt(domain),
+        ]);
+        setSecDmarc(dmarc);
+        setSecMtaSts(mtasts);
+        setSecTlsRpt(tlsrpt);
+      } catch (e) {
+        fail(e);
+      }
+    },
+    [fail],
+  );
+
+  useEffect(() => {
+    if (authed && activeTab === 'security') {
+      void loadSecurityGlobal();
+      void loadSecurityDomain(secDomain || domains[0]?.name || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, activeTab, secDomain]);
+
+  const handleSecRotateDkim = async () => {
+    const domain = (secDomain || domains[0]?.name || '').trim();
+    if (!domain) return;
+    setSecBusy(true);
+    setSecMsg('');
+    try {
+      const r = await rotateSecurityDkim(domain);
+      setSecMsg(String(r.message ?? r.note ?? 'Rotation requested. Refresh to see the new key.'));
+      await loadSecurityGlobal();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setSecBusy(false);
+    }
+  };
+
   // F-008 login activity
   const [loginRows, setLoginRows] = useState<LoginEventRow[]>([]);
   const [sessionRows, setSessionRows] = useState<AdminSessionRow[]>([]);
@@ -1511,7 +1607,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div>
               <p className="text-[16px] font-semibold leading-tight tracking-[-0.01em]">AffinMail</p>
               <p className="text-[11px] font-medium tracking-[0.02em] text-[#8A94A6]">
-                Admin console
+                {t('adminConsole')}
               </p>
             </div>
           </div>
@@ -1654,30 +1750,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     items: Array<{ id: AdminTab; label: string; icon: React.ReactNode; trailing?: React.ReactNode }>;
   }> = [
     {
-      label: 'Operations',
+      label: t('groupOperations'),
       items: [
-        { id: 'dashboard', label: 'Overview', icon: <Activity className="w-4 h-4" /> },
+        { id: 'dashboard', label: t('navOverview'), icon: <Activity className="w-4 h-4" /> },
         {
           id: 'domains',
-          label: 'Virtual domains',
+          label: t('navDomains'),
           icon: <Globe className="w-4 h-4" />,
           trailing: <span className={`${NAVCOUNT} tabular-nums`}>{domains.length}</span>,
         },
         {
           id: 'mailboxes',
-          label: 'Mailboxes',
+          label: t('navMailboxes'),
           icon: <Users className="w-4 h-4" />,
           trailing: <span className={`${NAVCOUNT} tabular-nums`}>{mailboxes.length}</span>,
         },
         {
           id: 'aliases',
-          label: 'Aliases',
+          label: t('navAliases'),
           icon: <Forward className="w-4 h-4" />,
           trailing: <span className={`${NAVCOUNT} tabular-nums`}>{aliases.length}</span>,
         },
         {
           id: 'queue',
-          label: 'Mail queue',
+          label: t('navQueue'),
           icon: <ListOrdered className="w-4 h-4" />,
           trailing: (
             <span className={queueItems.length > 0 ? NAVCOUNT_WARN : NAVCOUNT}>
@@ -1685,27 +1781,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </span>
           ),
         },
-        { id: 'track', label: 'Track delivery', icon: <Route className="w-4 h-4" /> },
+        { id: 'track', label: t('navTrack'), icon: <Route className="w-4 h-4" /> },
       ],
     },
     {
-      label: 'Infrastructure',
+      label: t('groupInfrastructure'),
       items: [
-        { id: 'ippools', label: 'IP pools', icon: <Layers className="w-4 h-4" /> },
-        { id: 'deliverability', label: 'IP deliverability', icon: <Network className="w-4 h-4" /> },
-        { id: 'servers', label: 'Server nodes', icon: <Server className="w-4 h-4" /> },
-        { id: 'ratelimits', label: 'Rate limits', icon: <Thermometer className="w-4 h-4" /> },
-        { id: 'mta', label: 'MTA & migration', icon: <FileCode2 className="w-4 h-4" /> },
-        { id: 'storage', label: 'Storage engine', icon: <HardDrive className="w-4 h-4" /> },
-        { id: 'system', label: 'System controls', icon: <Terminal className="w-4 h-4" /> },
+        { id: 'ippools', label: t('navIpPools'), icon: <Layers className="w-4 h-4" /> },
+        { id: 'deliverability', label: t('navDeliverability'), icon: <Network className="w-4 h-4" /> },
+        { id: 'servers', label: t('navServers'), icon: <Server className="w-4 h-4" /> },
+        { id: 'ratelimits', label: t('navRateLimits'), icon: <Thermometer className="w-4 h-4" /> },
+        { id: 'mta', label: t('navMta'), icon: <FileCode2 className="w-4 h-4" /> },
+        { id: 'storage', label: t('navStorage'), icon: <HardDrive className="w-4 h-4" /> },
+        { id: 'system', label: t('navSystem'), icon: <Terminal className="w-4 h-4" /> },
       ],
     },
     {
-      label: 'Oversight',
+      label: t('groupOversight'),
       items: [
         {
           id: 'notifications',
-          label: 'Notifications',
+          label: t('navNotifications'),
           icon: <Bell className="w-4 h-4" />,
           trailing:
             notifUnread > 0 ? (
@@ -1714,8 +1810,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <span className={NAVCOUNT}>0</span>
             ),
         },
-        { id: 'activity', label: 'Login activity', icon: <Lock className="w-4 h-4" /> },
-        { id: 'apikeys', label: 'API keys', icon: <KeyRound className="w-4 h-4" /> },
+        { id: 'activity', label: t('navActivity'), icon: <Lock className="w-4 h-4" /> },
+        { id: 'apikeys', label: t('navApiKeys'), icon: <KeyRound className="w-4 h-4" /> },
+        { id: 'security', label: t('navSecurity'), icon: <ShieldCheck className="w-4 h-4" /> },
       ],
     },
   ];
@@ -1729,7 +1826,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="min-w-0">
           <p className="truncate text-[13.5px] font-semibold leading-tight text-white">AffinMail</p>
           <p className="text-[10px] font-medium tracking-[0.02em] text-[#5B6B82]">
-            Admin console
+            {t('adminConsole')}
           </p>
         </div>
         <button
@@ -1902,9 +1999,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
 
+            <button onClick={() => setLocale(locale === 'en' ? 'bn' : 'en')} className={`${navBtn} w-auto gap-1 px-2`} title={t('language')}>
+              <Languages className="w-4 h-4" />
+              <span className="hidden sm:inline text-[12px]">{locale === 'en' ? 'বাংলা' : 'EN'}</span>
+            </button>
             <button onClick={() => logout()} className={`${navBtn} w-auto gap-1 px-2`} title="Sign out">
               <Power className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline text-[12px]">Sign out</span>
+              <span className="hidden sm:inline text-[12px]">{t('signOut')}</span>
             </button>
           </div>
         </header>
@@ -1942,13 +2043,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
                   {[
                     {
-                      label: 'Virtual domains',
+                      label: t('navDomains'),
                       value: domains.length,
                       sub: `${domains.filter((d) => d.dkimStatus === 'active').length} DKIM signed`,
                       icon: <Globe className="w-3.5 h-3.5" />,
                     },
                     {
-                      label: 'Mailboxes',
+                      label: t('navMailboxes'),
                       value: mailboxes.length,
                       sub: `${mailboxes.filter((m) => m.status === 'active').length} active`,
                       icon: <Users className="w-3.5 h-3.5" />,
@@ -3913,6 +4014,352 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </>
             )}
 
+            {/* ===================== TAB: MAIL SECURITY (F-035..F-046) ===================== */}
+            {activeTab === 'security' && (
+              <>
+                <PageHeader
+                  title="Mail security"
+                  description="DKIM, DMARC, MTA-STS, TLS-RPT, ARC, certificates, spam and brute-force protection — live from Stalwart."
+                />
+
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle>Domain</SectionTitle>
+                  <div className="flex flex-wrap items-end gap-3 p-5">
+                    <div className="min-w-[220px]">
+                      <label className={LABEL} htmlFor="sec-domain">
+                        Per-domain records apply to
+                      </label>
+                      <select
+                        id="sec-domain"
+                        className={INPUT}
+                        value={secDomain || domains[0]?.name || ''}
+                        onChange={(e) => setSecDomain(e.target.value)}
+                      >
+                        {domains.map((d) => (
+                          <option key={d.id} value={d.name}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="max-w-xl text-[12px] leading-relaxed text-[#667085]">
+                      DKIM keys, certificates, spam and brute-force settings are server-wide. DMARC,
+                      MTA-STS and TLS-RPT are shown per domain.
+                    </p>
+                  </div>
+                </div>
+
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle
+                    actions={
+                      secDkim ? (
+                        secDkim.stalwartReachable ? (
+                          <span className={BADGE_OK}>Stalwart live</span>
+                        ) : (
+                          <span className={BADGE_BAD}>Stalwart unreachable</span>
+                        )
+                      ) : undefined
+                    }
+                  >
+                    DKIM signing keys
+                  </SectionTitle>
+                  <div className="overflow-x-auto">
+                    <table className={TABLE}>
+                      <thead>
+                        <tr>
+                          <th className={TH}>Domain</th>
+                          <th className={TH}>Selector</th>
+                          <th className={TH}>Algorithm</th>
+                          <th className={TH}>Stage</th>
+                          <th className={TH}>DNS status</th>
+                          <th className={`${TH} text-right`}>DNS record</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(secDkim?.keys ?? []).map((k) => (
+                          <tr key={k.id ?? `${k.domain}-${k.selector}`} className={T.row}>
+                            <td className={`${TD} font-medium ${T.primary}`}>{k.domain}</td>
+                            <td className={`${TD} ${CODE}`}>{k.selector}</td>
+                            <td className={TD}>{k.algorithm}</td>
+                            <td className={TD}>{k.stage}</td>
+                            <td className={TD}>
+                              {k.dnsStatus === 'published' ? (
+                                <span className={BADGE_OK}>Published</span>
+                              ) : k.dnsStatus === 'mismatch' ? (
+                                <span className={BADGE_BAD}>Mismatch</span>
+                              ) : k.dnsStatus === 'missing' ? (
+                                <span className={BADGE_WARN}>Missing</span>
+                              ) : (
+                                <span className={BADGE_NEUTRAL}>Unknown</span>
+                              )}
+                            </td>
+                            <td className={`${TD} text-right`}>
+                              <button
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(
+                                    `${k.dnsHost} TXT ${k.dnsRecord}`,
+                                  );
+                                  onNotify('DKIM record copied', 'info');
+                                }}
+                                className={btnIcon('ghost')}
+                                aria-label="Copy DKIM record"
+                                title="Copy DKIM record"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {(secDkim?.keys ?? []).length === 0 && (
+                          <tr>
+                            <td colSpan={6}>
+                              <EmptyState
+                                icon={<ShieldCheck className="w-5 h-5" />}
+                                title="No DKIM keys returned"
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 border-t border-[#EAECF0] px-5 py-4">
+                    <button
+                      type="button"
+                      className={btn('primary')}
+                      disabled={secBusy}
+                      onClick={() => void handleSecRotateDkim()}
+                    >
+                      {secBusy ? 'Rotating...' : 'Rotate DKIM key'}
+                    </button>
+                    {secMsg && <span className="text-[12px] text-[#667085]">{secMsg}</span>}
+                  </div>
+                  {secDkim?.note && (
+                    <p className="border-t border-[#EAECF0] px-5 py-3 text-[12px] leading-relaxed text-[#667085]">
+                      {secDkim.note}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle
+                      actions={
+                        secDmarc ? (
+                          secDmarc.found ? (
+                            <span className={BADGE_OK}>Record found</span>
+                          ) : (
+                            <span className={BADGE_WARN}>Not published</span>
+                          )
+                        ) : undefined
+                      }
+                    >
+                      DMARC
+                    </SectionTitle>
+                    <div className="space-y-3 p-5">
+                      {secDmarc?.record ? (
+                        <div className="flex items-start gap-2">
+                          <code className={`${CODE} flex-1 break-all rounded-[8px] bg-[#F9FAFB] px-3 py-2`}>
+                            {secDmarc.dnsHost} TXT {secDmarc.record}
+                          </code>
+                          <button
+                            onClick={() => {
+                              void navigator.clipboard.writeText(
+                                `${secDmarc.dnsHost} TXT ${secDmarc.record ?? ''}`,
+                              );
+                              onNotify('DMARC record copied', 'info');
+                            }}
+                            className={btnIcon('ghost')}
+                            aria-label="Copy DMARC record"
+                            title="Copy DMARC record"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-[12.5px] text-[#667085]">
+                          No DMARC record published for this domain yet. Suggested starting points:
+                        </p>
+                      )}
+                      {secDmarc && (
+                        <div className="space-y-1.5">
+                          {Object.entries(secDmarc.wizard).map(([policy, rec]) => (
+                            <div key={policy} className="flex items-center gap-2">
+                              <span className={`${BADGE_NEUTRAL} w-[86px] justify-center`}>
+                                p={policy}
+                              </span>
+                              <code className={`${CODE} flex-1 break-all`}>{rec}</code>
+                              <button
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(rec);
+                                  onNotify('DMARC template copied', 'info');
+                                }}
+                                className={btnIcon('ghost')}
+                                aria-label="Copy DMARC template"
+                                title="Copy DMARC template"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {secDmarc?.note && (
+                        <p className="text-[12px] leading-relaxed text-[#667085]">{secDmarc.note}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle>MTA-STS &amp; TLS-RPT</SectionTitle>
+                    <div className="space-y-4 p-5">
+                      <div>
+                        <p className={`mb-1.5 text-[12px] font-semibold ${T.primary}`}>MTA-STS</p>
+                        {secMtaSts?.dnsTxt && secMtaSts.dnsTxt.length > 0 ? (
+                          <code className={`${CODE} block break-all rounded-[8px] bg-[#F9FAFB] px-3 py-2`}>
+                            {secMtaSts.dnsTxtHost} TXT {secMtaSts.dnsTxt.join(' ')}
+                          </code>
+                        ) : (
+                          <code className={`${CODE} block break-all rounded-[8px] bg-[#F9FAFB] px-3 py-2`}>
+                            Template: {secMtaSts?.recordTemplate ?? '—'}
+                          </code>
+                        )}
+                        <p className="mt-1.5 text-[12px] text-[#667085]">
+                          Policy: {secMtaSts?.dnsWellKnown ?? '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className={`mb-1.5 text-[12px] font-semibold ${T.primary}`}>TLS-RPT</p>
+                        {secTlsRpt?.dnsTxt && secTlsRpt.dnsTxt.length > 0 ? (
+                          <code className={`${CODE} block break-all rounded-[8px] bg-[#F9FAFB] px-3 py-2`}>
+                            {secTlsRpt.dnsTxtHost} TXT {secTlsRpt.dnsTxt.join(' ')}
+                          </code>
+                        ) : (
+                          <code className={`${CODE} block break-all rounded-[8px] bg-[#F9FAFB] px-3 py-2`}>
+                            Template: {secTlsRpt?.recordTemplate ?? '—'}
+                          </code>
+                        )}
+                        <p className="mt-1.5 text-[12px] text-[#667085]">
+                          Reports received: {String(secTlsRpt?.reportsReceived ?? '—')}
+                        </p>
+                      </div>
+                      {(secMtaSts?.note || secTlsRpt?.note) && (
+                        <p className="text-[12px] leading-relaxed text-[#667085]">
+                          {secMtaSts?.note ?? secTlsRpt?.note}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle
+                      actions={
+                        <span className={BADGE_NEUTRAL}>
+                          {String(secCerts?.stalwartCertificateCount ?? 0)} in store
+                        </span>
+                      }
+                    >
+                      TLS certificates
+                    </SectionTitle>
+                    <div className="space-y-3 p-5">
+                      {(secCerts?.certificates ?? []).map((c, i) => (
+                        <div
+                          key={`${c.listener}-${i}`}
+                          className="rounded-[10px] border border-[#EAECF0] px-3.5 py-3"
+                        >
+                          <p className={`${CODE} text-[12px] font-medium ${T.primary}`}>
+                            {c.listener}
+                          </p>
+                          <p className="mt-1 text-[12px] text-[#667085]">
+                            {c.subject ?? 'Unknown subject'}
+                          </p>
+                          <p className="text-[12px] text-[#667085]">{c.issuer ?? ''}</p>
+                          {(c.validity ?? []).map((v) => (
+                            <p key={v} className="text-[12px] text-[#667085]">
+                              {v}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+                      {(secCerts?.certificates ?? []).length === 0 && (
+                        <EmptyState
+                          icon={<ShieldCheck className="w-5 h-5" />}
+                          title="No certificates probed"
+                        />
+                      )}
+                      {secCerts?.note && (
+                        <p className="text-[12px] leading-relaxed text-[#667085]">{secCerts.note}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle
+                      actions={
+                        secSpam ? (
+                          secSpam.live ? (
+                            <span className={BADGE_OK}>Live</span>
+                          ) : (
+                            <span className={BADGE_BAD}>Unreachable</span>
+                          )
+                        ) : undefined
+                      }
+                    >
+                      Spam &amp; brute-force protection
+                    </SectionTitle>
+                    <div className="space-y-3 p-5">
+                      <div className="flex flex-wrap gap-2">
+                        <span className={BADGE_NEUTRAL}>
+                          DNSBL servers: {String(secSpam?.dnsblCount ?? '—')}
+                        </span>
+                        <span className={BADGE_NEUTRAL}>
+                          Spam rules: {String(secSpam?.ruleCount ?? '—')}
+                        </span>
+                        <span className={BADGE_NEUTRAL}>
+                          Blocked IPs: {String(secBrute?.blockedIps ?? '—')}
+                        </span>
+                        <span className={BADGE_NEUTRAL}>
+                          Whitelisted IPs: {String(secBrute?.whitelistedIps ?? '—')}
+                        </span>
+                        {secArc &&
+                          (secArc.live ? (
+                            <span className={BADGE_OK}>ARC live</span>
+                          ) : (
+                            <span className={BADGE_WARN}>ARC unknown</span>
+                          ))}
+                      </div>
+                      {secSpam?.quarantine && (
+                        <p className="text-[12px] leading-relaxed text-[#667085]">
+                          {secSpam.quarantine}
+                        </p>
+                      )}
+                      {secSpam?.note && (
+                        <p className="text-[12px] leading-relaxed text-[#667085]">{secSpam.note}</p>
+                      )}
+                      {secBrute?.note && (
+                        <p className="text-[12px] leading-relaxed text-[#667085]">{secBrute.note}</p>
+                      )}
+                      <details>
+                        <summary className="cursor-pointer text-[12px] font-medium text-[#175CD3]">
+                          Raw Stalwart settings (spam / security / ARC)
+                        </summary>
+                        <pre className="mt-2 max-h-[300px] overflow-auto rounded-[8px] bg-[#F9FAFB] p-3 text-[11px] leading-relaxed">
+                          {JSON.stringify(
+                            {
+                              spam: secSpam?.settings ?? null,
+                              security: secBrute?.settings ?? null,
+                              arc: secArc?.settings ?? null,
+                            },
+                            null,
+                            2,
+                          )}
+                        </pre>
+                      </details>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
             {/* ===================== TAB: LOGIN ACTIVITY (F-008/F-010) ===================== */}
             {activeTab === 'activity' && (
               <>

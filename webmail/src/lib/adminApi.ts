@@ -785,3 +785,100 @@ export const batchDnsCheck = (domains: string[]) =>
 
 export const getBatchJob = (id: string) =>
   apiFetch<BatchJobRow>(`/jobs/${encodeURIComponent(id)}`);
+
+// ---- Mail security (F-035..F-046) ----
+export interface DkimKeyRow {
+  id: string | null;
+  domain: string;
+  selector: string;
+  algorithm: string;
+  stage: string;
+  createdAt: string | null;
+  publicKey: string;
+  dnsHost: string;
+  dnsRecord: string;
+  dnsStatus: string;
+}
+export interface SecurityDkim {
+  source: string;
+  stalwartReachable: boolean;
+  keys: DkimKeyRow[];
+  note: string;
+}
+export const getSecurityDkim = () => apiFetch<SecurityDkim>('/security/dkim');
+export const rotateSecurityDkim = (domain: string) =>
+  apiFetch<Record<string, unknown>>('/security/dkim/rotate', { method: 'POST', body: { domain } });
+
+export interface SecurityDmarc {
+  domain: string;
+  record: string | null;
+  dnsHost: string;
+  policy: string | null;
+  rua: string | null;
+  found: boolean;
+  dnsReachable: boolean;
+  wizard: Record<string, string>;
+  note: string;
+}
+export const getSecurityDmarc = (domain: string) =>
+  apiFetch<SecurityDmarc>(`/security/dmarc/${encodeURIComponent(domain)}`);
+export const getSecurityDmarcReports = () =>
+  apiFetch<Record<string, unknown>>('/security/dmarc-reports');
+
+export interface SecurityMtaSts {
+  domain: string;
+  stalwartPolicy: unknown;
+  dnsTxtHost: string;
+  dnsTxt: string[] | null;
+  dnsWellKnown: string;
+  recordTemplate: string;
+  note: string;
+}
+export const getSecurityMtaSts = (domain: string) =>
+  apiFetch<SecurityMtaSts>(`/security/mta-sts/${encodeURIComponent(domain)}`);
+
+export interface SecurityTlsRpt {
+  domain: string;
+  dnsTxtHost: string;
+  dnsTxt: string[] | null;
+  recordTemplate: string;
+  reportsReceived: unknown;
+  note: string;
+}
+export const getSecurityTlsRpt = (domain: string) =>
+  apiFetch<SecurityTlsRpt>(`/security/tls-rpt/${encodeURIComponent(domain)}`);
+
+export interface SecurityLive {
+  live: boolean;
+  settings?: unknown;
+  note: string;
+}
+export const getSecurityArc = () => apiFetch<SecurityLive>('/security/arc');
+
+export interface SecurityCert {
+  listener: string;
+  subject: string | null;
+  issuer: string | null;
+  validity: string[];
+  source: string;
+}
+export interface SecurityCerts {
+  certificates: SecurityCert[];
+  stalwartCertificateCount: unknown;
+  provisioner: string;
+  note: string;
+}
+export const getSecurityCertificates = () => apiFetch<SecurityCerts>('/security/certificates');
+
+export interface SecuritySpam extends SecurityLive {
+  dnsblCount: unknown;
+  ruleCount: unknown;
+  quarantine: string;
+}
+export const getSecuritySpam = () => apiFetch<SecuritySpam>('/security/spam');
+
+export interface SecurityBruteforce extends SecurityLive {
+  blockedIps: unknown;
+  whitelistedIps: unknown;
+}
+export const getSecurityBruteforce = () => apiFetch<SecurityBruteforce>('/security/bruteforce');
