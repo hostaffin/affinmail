@@ -653,7 +653,10 @@ async fn collect_rbl(pg: &Client) {
         .await
     {
         Ok(r) => r,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("collector: ip_pools query failed: {e}");
+            return;
+        }
     };
     for row in rows {
         let pool_id: String = row.get(0);
@@ -687,26 +690,33 @@ async fn collect_rbl(pg: &Client) {
             if listed {
                 listed_in.push(list.to_string());
             }
-            let _ = pg
+            if let Err(e) = pg
                 .execute(
-                    "INSERT INTO ip_rbl_checks (ip_id, rbl_provider, is_listed, response_code) VALUES ($1::uuid, $2, $3, $4)",
+                    "INSERT INTO ip_rbl_checks (ip_id, rbl_provider, is_listed, response_code) VALUES (($1 || '')::uuid, $2, $3, $4)",
                     &[&pool_id, &list, &listed, &code],
                 )
-                .await;
+                .await
+            {
+                eprintln!("collector: rbl check insert failed: {e:?}");
+            }
         }
         let score = (99.9 - 25.0 * listed_in.len() as f64).clamp(0.0, 99.9);
         let blacklisted = !listed_in.is_empty();
-        let details: Option<String> = if blacklisted {
-            Some(serde_json::to_string(&listed_in).unwrap_or_default())
+        // blacklist_details is jsonb — pass a JSON value, not a string.
+        let details: Option<Value> = if blacklisted {
+            Some(json!(listed_in))
         } else {
             None
         };
-        let _ = pg
+        if let Err(e) = pg
             .execute(
-                "UPDATE ip_pools SET reputation_score = $1, is_blacklisted = $2, blacklist_details = $3, updated_at = now() WHERE id = $4::uuid",
+                "UPDATE ip_pools SET reputation_score = $1::float8::numeric, is_blacklisted = $2, blacklist_details = $3, updated_at = now() WHERE id = ($4 || '')::uuid",
                 &[&score, &blacklisted, &details, &pool_id],
             )
-            .await;
+            .await
+        {
+            eprintln!("collector: pool update failed: {e:?}");
+        }
     }
 }
 
