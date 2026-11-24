@@ -1237,6 +1237,91 @@ function systemLogs(): never
     ok(['service' => 'stalwart', 'count' => count($out), 'lines' => cleanLogLines($out)]);
 }
 
+/* ------------------------------------------------------------- overview */
+
+function statsOverview(): never
+{
+    $pdo = db();
+
+    $byDomain = [];
+    $rows = $pdo->query('SELECT d.domain_name AS domain, COUNT(m.id) AS mailboxes, COALESCE(SUM(m.quota_used_bytes), 0) AS used_bytes, COALESCE(SUM(m.quota_limit_mb), 0) AS quota_mb FROM domains d LEFT JOIN mailboxes m ON m.domain_id = d.id GROUP BY d.domain_name ORDER BY used_bytes DESC, d.domain_name')->fetchAll();
+    foreach ($rows as $r) {
+        $byDomain[] = ['domain' => (string)$r['domain'], 'mailboxes' => (int)$r['mailboxes'], 'usedBytes' => (int)$r['used_bytes'], 'quotaMb' => (int)$r['quota_mb']];
+    }
+
+    $topMailboxes = [];
+    $rows = $pdo->query('SELECT m.email, d.domain_name AS domain, m.quota_used_bytes AS used_bytes, m.quota_limit_mb AS quota_mb FROM mailboxes m JOIN domains d ON d.id = m.domain_id ORDER BY m.quota_used_bytes DESC, m.email LIMIT 5')->fetchAll();
+    foreach ($rows as $r) {
+        $topMailboxes[] = ['email' => (string)$r['email'], 'domain' => (string)$r['domain'], 'usedBytes' => (int)$r['used_bytes'], 'quotaMb' => (int)$r['quota_mb']];
+    }
+
+    $recentMailboxes = [];
+    $rows = $pdo->query('SELECT m.email, d.domain_name AS domain, m.created_at FROM mailboxes m JOIN domains d ON d.id = m.domain_id ORDER BY m.created_at DESC LIMIT 5')->fetchAll();
+    foreach ($rows as $r) {
+        $recentMailboxes[] = ['email' => (string)$r['email'], 'domain' => (string)$r['domain'], 'createdAt' => (string)($r['created_at'] ?? '')];
+    }
+
+    $recentDomains = [];
+    $rows = $pdo->query('SELECT domain_name, created_at FROM domains ORDER BY created_at DESC LIMIT 3')->fetchAll();
+    foreach ($rows as $r) {
+        $recentDomains[] = ['domain' => (string)$r['domain_name'], 'createdAt' => (string)($r['created_at'] ?? '')];
+    }
+
+    $newMailboxes7d = (int)$pdo->query("SELECT COUNT(*) FROM mailboxes WHERE created_at > now() - interval '7 days'")->fetchColumn();
+
+    $queue = ['count' => 0, 'items' => []];
+    try {
+        $res = jmap('x:QueuedMessage/get', ['accountId' => stalwartAdminAccountId(), 'ids' => null]);
+        $list = $res['list'] ?? [];
+        $queue = ['count' => count($list), 'items' => array_slice($list, 0, 5)];
+    } catch (Throwable) {
+        // Queue unavailable: the rest of the overview still renders.
+    }
+
+    $memTotalKb = 0;
+    $memAvailKb = 0;
+    foreach (file('/proc/meminfo') ?: [] as $line) {
+        if (preg_match('/^MemTotal:\s+(\d+)/', $line, $mm)) {
+            $memTotalKb = (int)$mm[1];
+        }
+        if (preg_match('/^MemAvailable:\s+(\d+)/', $line, $mm)) {
+            $memAvailKb = (int)$mm[1];
+        }
+    }
+    $uptimeSec = 0;
+    $up = @file_get_contents('/proc/uptime');
+    if ($up !== false) {
+        $uptimeSec = (int)floatval(explode(' ', trim($up))[0]);
+    }
+    $load = sys_getloadavg() ?: [0.0, 0.0, 0.0];
+
+    $lastBackup = null;
+    $bkFiles = glob(rtrim(cfg('BACKUP_DIR', '/var/www/affinmail/backups'), '/') . '/*.sql.gz') ?: [];
+    if ($bkFiles !== []) {
+        usort($bkFiles, static fn(string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
+        $f = $bkFiles[0];
+        $lastBackup = ['file' => basename($f), 'sizeBytes' => (int)(filesize($f) ?: 0), 'at' => gmdate('Y-m-d H:i:s', filemtime($f) ?: time())];
+    }
+
+    ok([
+        'byDomain'        => $byDomain,
+        'topMailboxes'    => $topMailboxes,
+        'recentMailboxes' => $recentMailboxes,
+        'recentDomains'   => $recentDomains,
+        'newMailboxes7d'  => $newMailboxes7d,
+        'queue'           => $queue,
+        'server'          => [
+            'diskTotal'  => (int)disk_total_space('/'),
+            'diskFree'   => (int)disk_free_space('/'),
+            'memTotalKb' => $memTotalKb,
+            'memAvailKb' => $memAvailKb,
+            'load'       => [round((float)$load[0], 2), round((float)$load[1], 2), round((float)$load[2], 2)],
+            'uptimeSec'  => $uptimeSec,
+        ],
+        'lastBackup'      => $lastBackup,
+    ]);
+}
+
 /* ---------------------------------------------------------------- ip pools */
 
 function ipPoolOut(array $r): array
@@ -2747,6 +2832,10 @@ try {
             mailTrack();
         case $n === 2 && $seg[0] === 'system' && $seg[1] === 'logs' && $method === 'GET':
             systemLogs();
+
+        // overview stats
+        case $n === 1 && $seg[0] === 'stats' && $method === 'GET':
+            statsOverview();
 
         // ip pools
         case $n === 1 && ($seg[0] === 'ip-pools' || $seg[0] === 'ippools') && $method === 'GET':

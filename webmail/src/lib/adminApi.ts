@@ -333,3 +333,39 @@ export const trackMail = (q: string, hours: number) =>
 
 export const getSystemLogs = (lines = 50) =>
   apiFetch<{ service: string; count: number; lines: string[] }>(`/system/logs?lines=${lines}`);
+
+/* ------------------------------------------------------------- overview */
+
+export interface DomainStorage {
+  domain: string;
+  mailboxes: number;
+  usedBytes: number;
+  quotaMb: number;
+}
+
+export interface TopMailbox {
+  email: string;
+  domain: string;
+  usedBytes: number;
+  quotaMb: number;
+}
+
+export interface AdminStats {
+  byDomain: DomainStorage[];
+  topMailboxes: TopMailbox[];
+  recentMailboxes: { email: string; domain: string; createdAt: string }[];
+  recentDomains: { domain: string; createdAt: string }[];
+  newMailboxes7d: number;
+  queue: { count: number; items: QueuedMessage[] };
+  server: {
+    diskTotal: number;
+    diskFree: number;
+    memTotalKb: number;
+    memAvailKb: number;
+    load: number[];
+    uptimeSec: number;
+  };
+  lastBackup: { file: string; sizeBytes: number; at: string } | null;
+}
+
+export const getStats = () => apiFetch<AdminStats>('/stats');

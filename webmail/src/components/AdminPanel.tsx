@@ -50,6 +50,8 @@ import {
   createAlias,
   deleteAlias,
   type QueuedMessage,
+  type AdminStats,
+  getStats,
   getQueue,
   deleteQueuedMessage,
   retryQueuedMessage,
@@ -134,6 +136,22 @@ function fmtBytes(bytes: number): string {
   return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+function pctOf(used: number, total: number): number {
+  return total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+}
+
+function fmtUptime(sec: number): string {
+  if (!sec || sec <= 0) return '—';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
+}
+
+function fmtWhen(s: string): string {
+  return s ? s.replace('T', ' ').slice(0, 16) : '—';
+}
+
 function qStr(v: unknown): string {
   return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
 }
@@ -203,6 +221,15 @@ const NAVCOUNT =
   'inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-white/10 px-1.5 text-[11px] font-semibold text-[#C4CEDD] tabular-nums';
 const NAVCOUNT_WARN =
   'inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-[#FDB022]/20 px-1.5 text-[11px] font-semibold text-[#FDB022] tabular-nums';
+
+const Bar: React.FC<{ value: number }> = ({ value }) => (
+  <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#EEF1F5] dark:bg-[#1B2740]">
+    <div
+      className="h-full rounded-full bg-[#0B57D0] dark:bg-[#7FB0FF]"
+      style={{ width: `${Math.max(2, Math.min(100, value))}%` }}
+    />
+  </div>
+);
 
 const PageHeader: React.FC<{
   title: string;
@@ -334,6 +361,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [ipPools, setIpPools] = useState<IpPoolRow[]>([]);
   const [storage, setStorage] = useState<StorageStatus | null>(null);
   const [healthData, setHealthData] = useState<Health | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
 
   // Modals
   const [showAddDomainModal, setShowAddDomainModal] = useState(false);
@@ -429,6 +457,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       );
       setStorage(st);
       setHealthData(h);
+      void getStats()
+        .then(setStats)
+        .catch(() => {});
       setNewMailboxDomain((prev) => prev || d.domains[0]?.domain || '');
     } catch (e) {
       fail(e);
@@ -1296,6 +1327,215 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
                     </div>
                   ))}
+                </div>
+
+                {/* Mail queue snapshot */}
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle
+                    actions={
+                      <div className="flex items-center gap-2">
+                        <span className={stats && stats.queue.count > 0 ? BADGE_WARN : BADGE_NEUTRAL}>
+                          {stats ? `${stats.queue.count} waiting` : '…'}
+                        </span>
+                        <button onClick={() => setActiveTab('queue')} className={btn('outline', 'xs')}>
+                          Open queue
+                        </button>
+                      </div>
+                    }
+                  >
+                    Mail queue
+                  </SectionTitle>
+                  {!stats ? (
+                    <p className={`px-5 py-4 text-[13px] ${MUTED}`}>Loading queue…</p>
+                  ) : stats.queue.count === 0 ? (
+                    <p className={`px-5 py-4 text-[13px] ${MUTED}`}>
+                      Queue is empty — no mail is waiting to be delivered.
+                    </p>
+                  ) : (
+                    <table className={TABLE_FIT}>
+                      <thead>
+                        <tr>
+                          <th className={TH}>From</th>
+                          <th className={TH}>To</th>
+                          <th className={`${TH} text-right`}>Size</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stats.queue.items.map((item) => (
+                          <tr key={item.id} className={T.row}>
+                            <td className={`${TD} ${CODE}`}>{queueSender(item)}</td>
+                            <td className={`${TD} ${CODE}`}>{queueRecipients(item)}</td>
+                            <td className={`${TD} text-right tabular-nums`}>
+                              {fmtBytes(Number(item.size ?? 0))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                {/* Storage by domain + top mailboxes */}
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle>Storage by domain</SectionTitle>
+                    <div className="space-y-4 px-5 py-4">
+                      {(stats?.byDomain ?? []).slice(0, 5).map((d) => (
+                        <div key={d.domain}>
+                          <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
+                            <span className="font-medium text-[#101828] dark:text-[#E6EAF2]">
+                              {d.domain}
+                            </span>
+                            <span className={`${MUTED} tabular-nums`}>
+                              {fmtBytes(d.usedBytes)} of {fmtBytes(d.quotaMb * 1024 * 1024)} ·{' '}
+                              {d.mailboxes} mailboxes
+                            </span>
+                          </div>
+                          <div className="mt-1.5">
+                            <Bar value={pctOf(d.usedBytes, d.quotaMb * 1024 * 1024)} />
+                          </div>
+                        </div>
+                      ))}
+                      {stats && stats.byDomain.length === 0 && (
+                        <p className={`text-[13px] ${MUTED}`}>No domains yet.</p>
+                      )}
+                      {!stats && <p className={`text-[13px] ${MUTED}`}>Loading…</p>}
+                    </div>
+                  </div>
+
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle>Top mailboxes by usage</SectionTitle>
+                    <div className="space-y-4 px-5 py-4">
+                      {(stats?.topMailboxes ?? []).map((m) => (
+                        <div key={m.email}>
+                          <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
+                            <span className="font-medium text-[#101828] dark:text-[#E6EAF2]">
+                              {m.email}
+                            </span>
+                            <span className={`${MUTED} tabular-nums`}>
+                              {fmtBytes(m.usedBytes)} / {fmtBytes(m.quotaMb * 1024 * 1024)}
+                            </span>
+                          </div>
+                          <div className="mt-1.5">
+                            <Bar value={pctOf(m.usedBytes, m.quotaMb * 1024 * 1024)} />
+                          </div>
+                        </div>
+                      ))}
+                      {stats && stats.topMailboxes.length === 0 && (
+                        <p className={`text-[13px] ${MUTED}`}>No mailboxes yet.</p>
+                      )}
+                      {!stats && <p className={`text-[13px] ${MUTED}`}>Loading…</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Server resources + recent activity */}
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle
+                      actions={
+                        stats ? (
+                          <span className={`${BADGE_NEUTRAL} tabular-nums`}>
+                            up {fmtUptime(stats.server.uptimeSec)}
+                          </span>
+                        ) : undefined
+                      }
+                    >
+                      Server resources
+                    </SectionTitle>
+                    {stats ? (
+                      <div className="space-y-4 px-5 py-4">
+                        <div>
+                          <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
+                            <span className="font-medium text-[#101828] dark:text-[#E6EAF2]">Disk</span>
+                            <span className={`${MUTED} tabular-nums`}>
+                              {fmtBytes(stats.server.diskTotal - stats.server.diskFree)} used ·{' '}
+                              {fmtBytes(stats.server.diskFree)} free of {fmtBytes(stats.server.diskTotal)}
+                            </span>
+                          </div>
+                          <div className="mt-1.5">
+                            <Bar
+                              value={pctOf(
+                                stats.server.diskTotal - stats.server.diskFree,
+                                stats.server.diskTotal
+                              )}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
+                            <span className="font-medium text-[#101828] dark:text-[#E6EAF2]">Memory</span>
+                            <span className={`${MUTED} tabular-nums`}>
+                              {fmtBytes((stats.server.memTotalKb - stats.server.memAvailKb) * 1024)} used ·{' '}
+                              {fmtBytes(stats.server.memTotalKb * 1024)} total
+                            </span>
+                          </div>
+                          <div className="mt-1.5">
+                            <Bar
+                              value={pctOf(
+                                stats.server.memTotalKb - stats.server.memAvailKb,
+                                stats.server.memTotalKb
+                              )}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[12.5px]">
+                          <span className="font-medium text-[#101828] dark:text-[#E6EAF2]">Load average</span>
+                          <span className={`${CODE} ${MUTED} tabular-nums`}>
+                            {stats.server.load.map((v) => v.toFixed(2)).join(' · ')}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className={`px-5 py-4 text-[13px] ${MUTED}`}>Loading…</p>
+                    )}
+                  </div>
+
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle
+                      actions={
+                        stats ? (
+                          <span className={BADGE_NEUTRAL}>+{stats.newMailboxes7d} mailboxes · 7d</span>
+                        ) : undefined
+                      }
+                    >
+                      Recent activity
+                    </SectionTitle>
+                    {stats ? (
+                      <>
+                        <div className="divide-y divide-[#EEF1F5] dark:divide-[#1B2740]">
+                          {stats.recentMailboxes.map((m) => (
+                            <div key={m.email} className="flex items-center justify-between gap-2 px-5 py-2.5 text-[12.5px]">
+                              <span className="min-w-0">
+                                <span className="font-medium text-[#101828] dark:text-[#E6EAF2]">{m.email}</span>{' '}
+                                <span className={MUTED}>mailbox created</span>
+                              </span>
+                              <span className={`${MUTED} tabular-nums whitespace-nowrap`}>{fmtWhen(m.createdAt)}</span>
+                            </div>
+                          ))}
+                          {stats.recentDomains.map((d) => (
+                            <div key={d.domain} className="flex items-center justify-between gap-2 px-5 py-2.5 text-[12.5px]">
+                              <span className="min-w-0">
+                                <span className="font-medium text-[#101828] dark:text-[#E6EAF2]">{d.domain}</span>{' '}
+                                <span className={MUTED}>domain added</span>
+                              </span>
+                              <span className={`${MUTED} tabular-nums whitespace-nowrap`}>{fmtWhen(d.createdAt)}</span>
+                            </div>
+                          ))}
+                          {stats.recentMailboxes.length === 0 && stats.recentDomains.length === 0 && (
+                            <p className={`px-5 py-4 text-[13px] ${MUTED}`}>Nothing yet.</p>
+                          )}
+                        </div>
+                        <div className={`border-t border-[#EEF1F5] px-5 py-3 text-[11.5px] dark:border-[#1B2740] ${MUTED}`}>
+                          {stats.lastBackup
+                            ? `Last backup ${stats.lastBackup.file} · ${fmtBytes(stats.lastBackup.sizeBytes)} · ${stats.lastBackup.at} UTC`
+                            : 'No backup has been taken yet.'}
+                        </div>
+                      </>
+                    ) : (
+                      <p className={`px-5 py-4 text-[13px] ${MUTED}`}>Loading…</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
