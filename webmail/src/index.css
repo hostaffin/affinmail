@@ -35,17 +35,11 @@ body {
 }
 
 .adm-sidebar {
-  background: linear-gradient(180deg, #0c1327 0%, #090e1b 100%);
+  background: #0c1327;
 }
 
 .adm-login-brand {
   background-color: #0a0f1e;
-  background-image:
-    radial-gradient(560px 320px at 15% -5%, rgba(11, 87, 208, 0.38), transparent 62%),
-    radial-gradient(520px 300px at 95% 105%, rgba(76, 141, 255, 0.16), transparent 60%),
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: auto, auto, 44px 44px, 44px 44px;
 }
 
 /* Subtle hairline borders and dividers */

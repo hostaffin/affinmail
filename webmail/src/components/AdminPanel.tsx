@@ -306,7 +306,7 @@ const TABLE =
 /* For small tables inside half-width panels: fit the panel, never clip. */
 const TABLE_FIT =
   'w-full border-collapse text-left text-[13.5px] text-[#1D2939] dark:text-[#D7DEE9]';
-const TH = 'whitespace-nowrap border-b border-[#E4E7EC] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#98A2B3] dark:border-[#22304A] dark:text-[#5B6B82]';
+const TH = 'whitespace-nowrap border-b border-[#E4E7EC] px-4 py-2.5 text-[11px] font-medium tracking-[0.01em] text-[#98A2B3] dark:border-[#22304A] dark:text-[#5B6B82]';
 const TD = 'px-4 py-3 align-middle';
 const CODE = 'font-mono text-[12.5px] tabular-nums';
 
@@ -850,62 +850,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* Brand panel — custom ink panel with the product story, desktop only */}
         <aside className="adm-login-brand relative hidden w-[44%] max-w-[540px] shrink-0 flex-col justify-between overflow-hidden p-10 text-white md:flex">
           <div className="relative flex items-center gap-3">
-            <AffinMailLogo variant="icon" size="md" withTile />
+            <AffinMailLogo variant="icon" size="md" />
             <div>
               <p className="text-[16px] font-semibold leading-tight tracking-[-0.01em]">AffinMail</p>
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#8A94A6]">
+              <p className="text-[11px] font-medium tracking-[0.02em] text-[#8A94A6]">
                 Admin console
               </p>
             </div>
           </div>
 
           <div className="relative">
-            <h1 className="max-w-md text-[34px] font-semibold leading-[1.15] tracking-[-0.02em]">
-              The control room for your mail infrastructure.
-            </h1>
-            <p className="mt-3 max-w-md text-[14px] leading-relaxed text-[#A7B2C5]">
-              Domains, mailboxes, delivery and storage — every part of the
-              server, in one console.
+            <p className="text-[14px] leading-relaxed text-[#A7B2C5]">
+              Sign in to manage domains, mailboxes, and delivery.
             </p>
-            <ul className="mt-9 space-y-5">
-              <li className="flex items-start gap-3.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.07] text-[#7FB0FF] ring-1 ring-white/10">
-                  <Globe className="w-4 h-4" />
-                </span>
-                <span>
-                  <span className="block text-[13.5px] font-medium text-white">Domains &amp; deliverability</span>
-                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-[#8A94A6]">
-                    DKIM, SPF and DMARC checked live against DNS.
-                  </span>
-                </span>
-              </li>
-              <li className="flex items-start gap-3.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.07] text-[#7FB0FF] ring-1 ring-white/10">
-                  <Users className="w-4 h-4" />
-                </span>
-                <span>
-                  <span className="block text-[13.5px] font-medium text-white">Mailboxes &amp; quotas</span>
-                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-[#8A94A6]">
-                    Provision accounts, set quotas, open any mailbox in one click.
-                  </span>
-                </span>
-              </li>
-              <li className="flex items-start gap-3.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.07] text-[#7FB0FF] ring-1 ring-white/10">
-                  <Route className="w-4 h-4" />
-                </span>
-                <span>
-                  <span className="block text-[13.5px] font-medium text-white">Queue &amp; tracking</span>
-                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-[#8A94A6]">
-                    Watch the mail queue and trace any message in the log.
-                  </span>
-                </span>
-              </li>
-            </ul>
           </div>
 
           <p className="relative text-[11.5px] text-[#5B6B82]">
-            AffinMail core · Stalwart · PostgreSQL · Redis
+            AffinMail
           </p>
         </aside>
 
@@ -922,10 +883,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="w-full max-w-[380px]">
             <div className="mb-8">
               <span className="mb-6 block md:hidden">
-                <AffinMailLogo variant="icon" size="md" withTile />
+                <AffinMailLogo variant="icon" size="md" />
               </span>
-              <h1 className="text-[24px] font-semibold tracking-[-0.01em]">Welcome back</h1>
-              <p className={`mt-1 text-[13.5px] ${MUTED}`}>Sign in to the admin console to continue.</p>
+              <h1 className="text-[24px] font-semibold tracking-[-0.01em]">Admin sign in</h1>
+              <p className={`mt-1 text-[13.5px] ${MUTED}`}>Enter your administrator credentials to continue.</p>
             </div>
 
             <form
@@ -995,7 +956,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </button>
             </form>
 
-            <div className="mt-7 flex items-center gap-3 text-[10.5px] font-medium uppercase tracking-[0.1em] text-[#98A2B3]">
+            <div className="mt-7 flex items-center gap-3 text-[10.5px] font-medium tracking-[0.02em] text-[#98A2B3]">
               <span className="h-px flex-1 bg-[#EEF1F5] dark:bg-[#1B2740]" />
               or
               <span className="h-px flex-1 bg-[#EEF1F5] dark:bg-[#1B2740]" />
@@ -1085,10 +1046,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const sidebar = (
     <>
       <div className="flex h-[60px] shrink-0 items-center gap-2.5 px-4">
-        <AffinMailLogo variant="icon" size="sm" withTile />
+        <AffinMailLogo variant="icon" size="sm" />
         <div className="min-w-0">
           <p className="truncate text-[13.5px] font-semibold leading-tight text-white">AffinMail</p>
-          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[#5B6B82]">
+          <p className="text-[10px] font-medium tracking-[0.02em] text-[#5B6B82]">
             Admin console
           </p>
         </div>
@@ -1105,7 +1066,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3" aria-label="Admin sections">
         {navGroups.map((group) => (
           <div key={group.label} className="mb-2">
-            <p className="px-2.5 pb-1.5 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[#5B6B82]">
+            <p className="px-2.5 pb-1.5 pt-4 text-[12px] font-medium tracking-[0.01em] text-[#5B6B82]">
               {group.label}
             </p>
             <ul className="space-y-0.5">
@@ -1119,14 +1080,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         setActiveTab(item.id);
                         if (window.innerWidth < 1024) setIsMobileNavOpen(false);
                       }}
-                      className={`flex h-9 w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13px] transition ${
+                      className={`flex h-9 w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13px] transition-colors ${
                         active
-                          ? 'bg-white/[0.09] font-medium text-white shadow-[inset_2.5px_0_0_0_#4C8DFF]'
+                          ? 'bg-white/[0.09] font-medium text-white'
                           : 'text-[#A7B2C5] hover:bg-white/[0.05] hover:text-white'
                       }`}
                       aria-current={active ? 'page' : undefined}
                     >
-                      <span className={active ? 'text-[#7FB0FF]' : 'text-[#5B6B82]'}>{item.icon}</span>
+                      <span className={active ? 'text-white' : 'text-[#5B6B82]'}>{item.icon}</span>
                       <span className="truncate">{item.label}</span>
                       {item.trailing && <span className="ml-auto">{item.trailing}</span>}
                     </button>
@@ -1205,7 +1166,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <AffinMailLogo variant="icon" size="sm" withTile />
+            <AffinMailLogo variant="icon" size="sm" />
             <span className="text-[14px] font-semibold tracking-[-0.01em] text-[#101828] dark:text-white">
               AffinMail
             </span>
@@ -1316,7 +1277,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ].map((m) => (
                     <div key={m.label} className={`${PANEL} p-5`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${MUTED}`}>
+                        <span className={`text-[11px] font-medium ${MUTED}`}>
                           {m.label}
                         </span>
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#EEF4FF] text-[#0B57D0] dark:bg-[#0B57D0]/15 dark:text-[#7FB0FF]">
@@ -2052,7 +2013,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     ['Total', storage ? fmtBytes(storage.total_bytes) : '—'],
                   ].map(([label, value]) => (
                     <div key={label} className={`${PANEL} p-5`}>
-                      <div className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${MUTED}`}>{label}</div>
+                      <div className="text-[11px] font-medium text-muted ${MUTED}">{label}</div>
                       <div className="mt-2 text-[20px] font-semibold tabular-nums text-[#101828] dark:text-white">
                         {value}
                       </div>
@@ -2596,7 +2557,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div className="rounded-xl border border-[#E4E7EC] dark:border-[#22304A]">
-                  <div className="border-b border-[#EEF1F5] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#98A2B3] dark:border-[#1B2740] dark:text-[#5B6B82]">
+                  <div className="border-b border-[#EEF1F5] px-4 py-3 text-[11px] font-semibold tracking-[0.06em] text-[#98A2B3] dark:border-[#1B2740] dark:text-[#5B6B82]">
                     DKIM signing keys
                   </div>
                   <div className="space-y-2 p-5">
@@ -2624,7 +2585,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div className="rounded-xl border border-[#E4E7EC] dark:border-[#22304A]">
-                  <div className="border-b border-[#EEF1F5] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#98A2B3] dark:border-[#1B2740] dark:text-[#5B6B82]">
+                  <div className="border-b border-[#EEF1F5] px-4 py-3 text-[11px] font-semibold tracking-[0.06em] text-[#98A2B3] dark:border-[#1B2740] dark:text-[#5B6B82]">
                     Catch-all address
                   </div>
                   <div className="space-y-2 p-5">
