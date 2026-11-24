@@ -1,10 +1,10 @@
 use crate::types::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
-pub struct AppState {
-    pub plans: Arc<RwLock<HashMap<String, Plan>>>,
+pub struct AppState {    pub plans: Arc<RwLock<HashMap<String, Plan>>>,
     pub accounts: Arc<RwLock<HashMap<String, Account>>>,
     pub domains: Arc<RwLock<HashMap<String, Domain>>>,
     pub mailboxes: Arc<RwLock<HashMap<String, Mailbox>>>,
@@ -15,6 +15,13 @@ pub struct AppState {
     pub ip_pools: Arc<RwLock<HashMap<String, IpPool>>>,
     pub queue: Arc<RwLock<HashMap<String, QueueMessage>>>,
     pub sso_tokens: Arc<RwLock<HashMap<String, (String, String, i64)>>>, // token -> (account_id, email, expires_at)
+    pub server_nodes: Arc<RwLock<HashMap<String, ServerNode>>>,
+    pub login_log: Arc<RwLock<Vec<LoginEvent>>>,
+    pub admin_sessions: Arc<RwLock<HashMap<String, AdminSession>>>,
+    pub notifications: Arc<RwLock<HashMap<String, Notification>>>,
+    pub notif_rules: Arc<RwLock<NotificationRules>>,
+    pub migrations: Arc<RwLock<HashMap<String, MigrationJob>>>,
+    pub mta_versions: Arc<RwLock<Vec<MtaVersion>>>,
     pub admin_token: String,
     pub jwt_secret: String,
 }
@@ -186,6 +193,23 @@ impl AppState {
         let jwt_secret = std::env::var("JWT_SECRET")
             .unwrap_or_else(|_| "affinmail_jwt_super_secret_signing_key_2026".to_string());
 
+        // The local node is real: health comes from the stats.rs probes.
+        let mut server_nodes = HashMap::new();
+        server_nodes.insert(
+            "node_local".to_string(),
+            ServerNode {
+                id: "node_local".to_string(),
+                hostname: hostname(),
+                primary_ip: std::env::var("SERVER_IP").unwrap_or_else(|_| "127.0.0.1".to_string()),
+                location: "primary-dc".to_string(),
+                role: "all-in-one".to_string(),
+                status: "active".to_string(),
+                group_tag: "primary".to_string(),
+                is_local: true,
+                created_at: now.clone(),
+            },
+        );
+
         Self {
             plans: Arc::new(RwLock::new(plans)),
             accounts: Arc::new(RwLock::new(accounts)),
@@ -198,8 +222,61 @@ impl AppState {
             ip_pools: Arc::new(RwLock::new(ip_pools)),
             queue: Arc::new(RwLock::new(queue)),
             sso_tokens: Arc::new(RwLock::new(HashMap::new())),
+            server_nodes: Arc::new(RwLock::new(server_nodes)),
+            login_log: Arc::new(RwLock::new(Vec::new())),
+            admin_sessions: Arc::new(RwLock::new(HashMap::new())),
+            notifications: Arc::new(RwLock::new(HashMap::new())),
+            notif_rules: Arc::new(RwLock::new(NotificationRules::default())),
+            migrations: Arc::new(RwLock::new(HashMap::new())),
+            mta_versions: Arc::new(RwLock::new(Vec::new())),
             admin_token,
             jwt_secret,
         }
     }
+}
+
+/// Hostname of this machine (for the local node entry).
+pub fn hostname() -> String {
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "localhost".to_string())
+}
+
+/// Thresholds that turn /api/v1/stats values into in-panel notifications (F-009).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationRules {
+    /// Mail queue depth at which a warning notification fires.
+    pub queue_warn: i64,
+    /// Disk usage percent at which a warning notification fires.
+    pub disk_warn_pct: i32,
+    /// Minimum service uptime percent over 24h before a "service down" notification fires.
+    pub uptime_warn_pct: f64,
+    /// Days before the newest backup becomes "stale" enough to warn about.
+    pub backup_stale_days: i64,
+    pub email_to: String,
+    pub webhook_url: String,
+}
+
+impl Default for NotificationRules {
+    fn default() -> Self {
+        Self {
+            queue_warn: 500,
+            disk_warn_pct: 80,
+            uptime_warn_pct: 99.0,
+            backup_stale_days: 2,
+            email_to: "admin@affinmail.local".to_string(),
+            webhook_url: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notification {
+    pub id: String,
+    pub kind: String,
+    pub severity: String, // warning | critical | info
+    pub title: String,
+    pub detail: String,
+    pub created_at: String,
+    pub read_at: Option<String>,
 }

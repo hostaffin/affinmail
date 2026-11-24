@@ -216,10 +216,6 @@ pub fn create_app(state: AppState) -> Router {
             get(routes::admin::list_ip_pools).post(routes::admin::create_ip_pool),
         )
         .route(
-            "/api/v1/ippools/assign",
-            post(routes::admin::assign_ip_pool),
-        )
-        .route(
             "/api/v1/system/backup",
             post(routes::admin::trigger_backup),
         )
@@ -231,6 +227,63 @@ pub fn create_app(state: AppState) -> Router {
             "/api/v1/system/restart",
             post(routes::admin::restart_services),
         )
+        // Infrastructure & panel extensions (Module A + B)
+        .route(
+            "/api/v1/servers",
+            get(routes::infra::list_servers).post(routes::infra::create_server),
+        )
+        .route("/api/v1/servers/{id}/status", put(routes::infra::set_server_status))
+        .route(
+            "/api/v1/warmup",
+            get(routes::infra::list_warmups),
+        )
+        .route("/api/v1/warmup/start", post(routes::infra::start_warmup))
+        .route("/api/v1/warmup/{id}/pause", post(routes::infra::pause_warmup))
+        .route("/api/v1/warmup/{id}/resume", post(routes::infra::resume_warmup))
+        .route(
+            "/api/v1/rotation",
+            get(routes::infra::get_rotation).post(routes::infra::set_rotation),
+        )
+        .route("/api/v1/rotation/pick", post(routes::infra::pick_rotation))
+        .route("/api/v1/ips", get(routes::infra::list_ips))
+        .route(
+            "/api/v1/ips/{ip}/rdns",
+            get(routes::infra::get_rdns).put(routes::infra::put_rdns),
+        )
+        .route("/api/v1/blacklist", get(routes::infra::blacklist_status))
+        .route(
+            "/api/v1/ippools/assign",
+            post(routes::admin::assign_ip_pool).put(routes::infra::assign_ip),
+        )
+        .route(
+            "/api/v1/admin/logins",
+            get(routes::infra::login_log).post(routes::infra::revoke_session),
+        )
+        .route("/api/v1/admin/logins/revoke", post(routes::infra::revoke_session))
+        .route(
+            "/api/v1/notifications",
+            get(routes::infra::list_notifications),
+        )
+        .route("/api/v1/notifications/rules", put(routes::infra::set_rules))
+        .route("/api/v1/notifications/read", post(routes::infra::mark_read))
+        .route(
+            "/api/v1/notifications/dismiss",
+            post(routes::infra::dismiss_notification),
+        )
+        .route("/api/v1/ratelimits", get(routes::infra::rate_limits))
+        .route(
+            "/api/v1/mta/templates",
+            get(routes::infra::list_templates),
+        )
+        .route(
+            "/api/v1/mta/templates/apply",
+            post(routes::infra::apply_template),
+        )
+        .route(
+            "/api/v1/migrations",
+            get(routes::infra::list_migrations).post(routes::infra::create_migration),
+        )
+        .route("/api/v1/admin/roles", get(routes::infra::roles))
         .layer(cors)
         .with_state(state)
 }

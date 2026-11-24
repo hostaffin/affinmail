@@ -134,6 +134,65 @@ pub struct QueueMessage {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerNode {
+    pub id: String,
+    pub hostname: String,
+    pub primary_ip: String,
+    pub location: String,
+    pub role: String,
+    pub status: String, // active, maintenance, draining, registered
+    pub group_tag: String,
+    pub is_local: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginEvent {
+    pub ts: String,
+    pub username: String,
+    pub ip: String,
+    pub user_agent: String,
+    pub method: String,
+    pub success: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSession {
+    pub token: String,
+    pub username: String,
+    pub ip: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationStep {
+    pub name: String,
+    pub status: String, // pending, blocked, done
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationJob {
+    pub id: String,
+    pub domain: String,
+    pub source_node: String,
+    pub target_node: String,
+    pub status: String,
+    pub note: String,
+    pub steps: Vec<MigrationStep>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MtaVersion {
+    pub id: u32,
+    pub node_id: String,
+    pub template_id: String,
+    pub file: String,
+    pub size_bytes: u64,
+    pub created_at: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiError {
     pub code: u16,

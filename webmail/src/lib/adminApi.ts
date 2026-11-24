@@ -400,7 +400,19 @@ export interface AdminStats {
     repSeries: { ts: string; score: number }[];
     uptime24h: Record<string, number | null>;
     ips: IpReputation[];
+    tls?: { version: string; connections: number }[];
+    rblEvents?: { ip: string; provider: string; listedAt: string; lastSeen: string; checks: number }[];
   };
+  warmups?: {
+    id: string;
+    domain: string;
+    ip: string;
+    day: number;
+    dailyLimit: number;
+    sentToday: number;
+    completed: boolean;
+    updatedAt: string;
+  }[];
   byDomain: DomainStorage[];
   topMailboxes: TopMailbox[];
   recentMailboxes: { email: string; domain: string; createdAt: string }[];
@@ -435,3 +447,266 @@ export const getStats = async (): Promise<AdminStats> => {
     ...raw,
   };
 };
+
+/* ------------------------------------------- Module A + B extensions */
+
+export interface ServerNode {
+  id: string;
+  hostname: string;
+  primaryIp: string;
+  location: string;
+  role: string;
+  status: string;
+  group: string;
+  isLocal: boolean;
+  remoteConfigured: boolean;
+  health: {
+    services: { stalwart: boolean; redis: boolean; postgres: boolean };
+    diskTotal: number;
+    diskFree: number;
+    load: number[];
+    uptimeSec: number;
+  } | null;
+}
+
+export const listServers = () =>
+  apiFetch<{ servers: ServerNode[]; count: number }>('/servers');
+
+export const createServer = (body: {
+  hostname: string;
+  primary_ip: string;
+  location?: string;
+  role?: string;
+  group?: string;
+}) => apiFetch<{ server: ServerNode; note: string }>('/servers', { method: 'POST', body });
+
+export const setServerStatus = (id: string, status: string) =>
+  apiFetch<{ server: ServerNode }>(`/servers/${encodeURIComponent(id)}/status`, {
+    method: 'PUT',
+    body: { status },
+  });
+
+export interface Warmup {
+  id: string;
+  domain: string;
+  ip: string;
+  day: number;
+  dailyLimit: number;
+  sentToday: number;
+  completed: boolean;
+  paused?: boolean;
+  throttledNow?: boolean;
+  updatedAt?: string;
+}
+
+export const listWarmups = () => apiFetch<{ warmups: Warmup[]; count: number }>('/warmup');
+
+export const startWarmup = (body: {
+  domain: string;
+  ip_address: string;
+  plan?: 'conservative' | 'standard' | 'aggressive';
+}) => apiFetch<Record<string, unknown>>('/warmup/start', { method: 'POST', body });
+
+export const pauseWarmup = (id: string) =>
+  apiFetch<{ paused: boolean }>(`/warmup/${encodeURIComponent(id)}/pause`, { method: 'POST' });
+
+export const resumeWarmup = (id: string) =>
+  apiFetch<{ paused: boolean }>(`/warmup/${encodeURIComponent(id)}/resume`, { method: 'POST' });
+
+export interface RotationPool {
+  pool: string;
+  poolName: string;
+  ips: string[];
+  strategy: string;
+  note?: string;
+}
+
+export const getRotation = () => apiFetch<{ pools: RotationPool[] }>('/rotation');
+
+export const setRotation = (body: { pool?: string; strategy: string }) =>
+  apiFetch<RotationPool & { status: string; note: string }>('/rotation', { method: 'POST', body });
+
+export const pickRotation = (body: { sender_domain: string; pool?: string; strategy?: string }) =>
+  apiFetch<{ senderDomain: string; ip: string; strategy: string }>('/rotation/pick', {
+    method: 'POST',
+    body,
+  });
+
+export interface IpDetail {
+  ip: string;
+  type: string;
+  rdns: string;
+  blacklisted: boolean;
+  score: number;
+  allocations: number;
+  maxAllocations: number;
+  domains: number;
+  listedNow: number;
+}
+
+export const listIps = () => apiFetch<{ ips: IpDetail[]; count: number }>('/ips');
+
+export const assignIpToDomain = (domain: string, ip_address: string) =>
+  apiFetch<{ status: string; domain: string; ipAddress: string; previousDomainsOnIp: number }>(
+    '/ippools/assign',
+    { method: 'PUT', body: { domain, ip_address } }
+  );
+
+export interface RdnsInfo {
+  ip: string;
+  rdns: string;
+  forwardConfirmed: boolean;
+  resolvedA: string | null;
+  providerApi: string;
+  note?: string;
+  warning?: string | null;
+}
+
+export const getRdns = (ip: string) =>
+  apiFetch<RdnsInfo>(`/ips/${encodeURIComponent(ip)}/rdns`);
+
+export const setRdns = (ip: string, rdns: string) =>
+  apiFetch<RdnsInfo & { status: string }>(`/ips/${encodeURIComponent(ip)}/rdns`, {
+    method: 'PUT',
+    body: { rdns },
+  });
+
+export interface BlacklistIp {
+  ip: string;
+  listed: boolean;
+  lists: string[];
+  checkedWithin: string;
+}
+
+export interface BlacklistEvent {
+  ip: string;
+  provider: string;
+  listed: boolean;
+  at: string;
+}
+
+export const getBlacklist = () =>
+  apiFetch<{ ips: BlacklistIp[]; events: BlacklistEvent[]; configured: boolean }>('/blacklist');
+
+export interface LoginEventRow {
+  ts: string;
+  username: string;
+  ip: string;
+  user_agent: string;
+  method: string;
+  success: boolean;
+}
+
+export interface AdminSessionRow {
+  token: string;
+  username: string;
+  ip: string;
+  created_at: string;
+}
+
+export const getLoginLog = () =>
+  apiFetch<{ logins: LoginEventRow[]; sessions: AdminSessionRow[]; geo: string; note: string }>(
+    '/admin/logins'
+  );
+
+export const revokeSession = (token: string) =>
+  apiFetch<{ revoked: boolean }>('/admin/logins/revoke', { method: 'POST', body: { token } });
+
+export interface NotifItem {
+  id: string;
+  kind: string;
+  severity: string;
+  title: string;
+  detail: string;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface NotifRules {
+  queue_warn: number;
+  disk_warn_pct: number;
+  uptime_warn_pct: number;
+  backup_stale_days: number;
+  email_to: string;
+  webhook_url: string;
+}
+
+export const getNotifications = () =>
+  apiFetch<{
+    notifications: NotifItem[];
+    unread: number;
+    delivery: string;
+    rules: NotifRules;
+  }>('/notifications');
+
+export const setNotifRules = (body: Partial<NotifRules>) =>
+  apiFetch<{ rules: NotifRules }>('/notifications/rules', { method: 'PUT', body });
+
+export const markNotifRead = (id: string) =>
+  apiFetch<{ status: string }>('/notifications/read', { method: 'POST', body: { id } });
+
+export const dismissNotif = (id: string) =>
+  apiFetch<{ dismissed: boolean }>('/notifications/dismiss', { method: 'POST', body: { id } });
+
+export interface RateLimits {
+  server: { limitPerHour: number; sentToday: number; utilizationPct: number };
+  isps: { isp: string; limitPerHour: number; sentToday: number; utilizationPct: number }[];
+  enforcement: string;
+  note: string;
+}
+
+export const getRateLimits = () => apiFetch<RateLimits>('/ratelimits');
+
+export interface MtaTemplate {
+  id: string;
+  name: string;
+  description: string;
+  variables: string[];
+}
+
+export interface MtaVersionInfo {
+  id: number;
+  node_id: string;
+  template_id: string;
+  file: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+export const getMtaTemplates = () =>
+  apiFetch<{ templates: MtaTemplate[]; versions: MtaVersionInfo[] }>('/mta/templates');
+
+export const applyMtaTemplate = (body: {
+  template: string;
+  node?: string;
+  hostname?: string;
+}) =>
+  apiFetch<{
+    template: string;
+    rendered: string;
+    diff: string[];
+    rollbackVersion: number;
+    applied: boolean;
+    note: string;
+  }>('/mta/templates/apply', { method: 'POST', body });
+
+export interface MigrationJobRow {
+  id: string;
+  domain: string;
+  source_node: string;
+  target_node: string;
+  status: string;
+  note: string;
+  steps: { name: string; status: string }[];
+  created_at: string;
+}
+
+export const listMigrations = () =>
+  apiFetch<{ migrations: MigrationJobRow[]; count: number }>('/migrations');
+
+export const createMigration = (body: {
+  domain: string;
+  target_node: string;
+  source_node?: string;
+}) =>
+  apiFetch<{ migration: MigrationJobRow }>('/migrations', { method: 'POST', body });

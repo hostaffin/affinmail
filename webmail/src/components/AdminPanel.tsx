@@ -30,6 +30,19 @@ import {
   Power,
   Inbox,
   ScrollText,
+  Bell,
+  Server,
+  Thermometer,
+  RefreshCcwDot,
+  ShieldAlert,
+  Timer,
+  Shuffle,
+  Network,
+  ArrowLeftRight,
+  FileCode2,
+  Ban,
+  MousePointerClick,
+  Lock,
 } from 'lucide-react';
 import { AffinMailLogo } from './AffinMailLogo';
 import {
@@ -76,6 +89,47 @@ import {
   getStorage,
   triggerBackup,
   restartSystem,
+  type ServerNode,
+  listServers,
+  createServer,
+  setServerStatus,
+  listWarmups,
+  startWarmup,
+  pauseWarmup,
+  resumeWarmup,
+  type Warmup,
+  getRotation,
+  setRotation,
+  pickRotation,
+  type RotationPool,
+  listIps,
+  assignIpToDomain,
+  getRdns,
+  setRdns,
+  type RdnsInfo,
+  type IpDetail,
+  getBlacklist,
+  type BlacklistIp,
+  type BlacklistEvent,
+  getLoginLog,
+  revokeSession,
+  type LoginEventRow,
+  type AdminSessionRow,
+  getNotifications,
+  markNotifRead,
+  dismissNotif,
+  setNotifRules,
+  type NotifItem,
+  type NotifRules,
+  getRateLimits,
+  type RateLimits,
+  getMtaTemplates,
+  applyMtaTemplate,
+  type MtaTemplate,
+  type MtaVersionInfo,
+  listMigrations,
+  createMigration,
+  type MigrationJobRow,
 } from '../lib/adminApi';
 
 interface AdminPanelProps {
@@ -93,6 +147,12 @@ type AdminTab =
   | 'queue'
   | 'track'
   | 'ippools'
+  | 'servers'
+  | 'deliverability'
+  | 'activity'
+  | 'notifications'
+  | 'ratelimits'
+  | 'mta'
   | 'storage'
   | 'system';
 
@@ -491,6 +551,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newIpAddress, setNewIpAddress] = useState('');
   const [newIpRdns, setNewIpRdns] = useState('');
   const [newIpType, setNewIpType] = useState<'shared' | 'dedicated'>('shared');
+  const [assignModal, setShowAssignModal] = useState<{ domain: string; ip: string } | null>(null);
 
   const logout = useCallback((msg?: string) => {
     void adminLogout();
@@ -654,16 +715,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleAssignIp = async (name: string) => {
-    if (ipPools.length === 0) {
-      onNotify('No IP pools available', 'error');
-      return;
-    }
-    const ip = prompt(`Assign which IP to ${name}?\nAvailable: ${ipPools.map((p) => p.ip).join(', ')}`);
+  const handleAssignIp = async (name: string, ip: string) => {
     if (!ip) return;
     try {
-      await assignIpPool(name, ip.trim());
-      onNotify(`IP ${ip.trim()} assigned to ${name}`, 'success');
+      const r = await assignIpToDomain(name, ip);
+      onNotify(
+        r.previousDomainsOnIp > 0
+          ? `IP ${ip} assigned to ${name} — ${r.previousDomainsOnIp} other domain(s) already use this IP`
+          : `IP ${ip} assigned to ${name}`,
+        'success'
+      );
+      setShowAssignModal(null);
       await loadData();
     } catch (e) {
       fail(e);
@@ -811,6 +873,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (authed) void loadQueue();
   }, [authed, loadQueue]);
 
+  // Poll the notification badge while the panel is open (F-009).
+  useEffect(() => {
+    if (!authed) return;
+    let stop = false;
+    const tick = () => {
+      getNotifications()
+        .then((r) => {
+          if (!stop) {
+            setNotifUnread(r.unread);
+            setNotifs(r.notifications);
+            setNotifDelivery(r.delivery);
+          }
+        })
+        .catch(() => {});
+    };
+    tick();
+    const iv = window.setInterval(tick, 30000);
+    return () => {
+      stop = true;
+      window.clearInterval(iv);
+    };
+  }, [authed]);
+
   const handleQueueDelete = async (item: QueuedMessage) => {
     if (!confirm(`Remove queued message ${item.id} from the queue?`)) return;
     try {
@@ -827,6 +912,379 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await retryQueuedMessage(item.id);
       onNotify('Queued message rescheduled for immediate delivery', 'success');
       await loadQueue();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  /* ---------------------------------------- Module A + B: infra state */
+
+  // F-011 servers
+  const [servers, setServers] = useState<ServerNode[]>([]);
+  const [showAddNodeModal, setShowAddNodeModal] = useState(false);
+  const [nodeHostname, setNodeHostname] = useState('');
+  const [nodeIp, setNodeIp] = useState('');
+  const [nodeLocation, setNodeLocation] = useState('');
+  const [nodeRole, setNodeRole] = useState('all-in-one');
+
+  const loadServers = useCallback(async () => {
+    try {
+      const r = await listServers();
+      setServers(r.servers);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'servers') void loadServers();
+  }, [authed, activeTab, loadServers]);
+
+  const handleCreateNode = async () => {
+    if (!nodeHostname.trim() || !nodeIp.trim()) {
+      onNotify('Hostname and primary IP are required', 'error');
+      return;
+    }
+    try {
+      const r = await createServer({
+        hostname: nodeHostname.trim(),
+        primary_ip: nodeIp.trim(),
+        location: nodeLocation.trim() || undefined,
+        role: nodeRole,
+      });
+      onNotify(r.note, 'info');
+      setNodeHostname('');
+      setNodeIp('');
+      setNodeLocation('');
+      setShowAddNodeModal(false);
+      await loadServers();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleNodeStatus = async (n: ServerNode, status: string) => {
+    try {
+      await setServerStatus(n.id, status);
+      onNotify(`${n.hostname} → ${status}`, 'info');
+      await loadServers();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // F-013 warmup
+  const [warmups, setWarmups] = useState<Warmup[]>([]);
+  const [warmupDomain, setWarmupDomain] = useState('');
+  const [warmupIp, setWarmupIp] = useState('');
+  const [warmupPlan, setWarmupPlan] = useState<'conservative' | 'standard' | 'aggressive'>('standard');
+
+  const loadWarmups = useCallback(async () => {
+    try {
+      const r = await listWarmups();
+      setWarmups(r.warmups);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'deliverability') void loadWarmups();
+  }, [authed, activeTab, loadWarmups]);
+
+  const handleStartWarmup = async () => {
+    if (!warmupDomain.trim() || !warmupIp.trim()) {
+      onNotify('Domain and IP are required', 'error');
+      return;
+    }
+    try {
+      await startWarmup({
+        domain: warmupDomain.trim(),
+        ip_address: warmupIp.trim(),
+        plan: warmupPlan,
+      });
+      onNotify(`Warmup started for ${warmupDomain.trim()} on ${warmupIp.trim()}`, 'success');
+      setWarmupDomain('');
+      setWarmupIp('');
+      await loadWarmups();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleWarmupPauseResume = async (w: Warmup) => {
+    try {
+      if (w.completed) {
+        await resumeWarmup(w.id);
+        onNotify(`Warmup ${w.domain} resumed`, 'success');
+      } else {
+        await pauseWarmup(w.id);
+        onNotify(`Warmup ${w.domain} paused`, 'info');
+      }
+      await loadWarmups();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // F-015 rotation
+  const [rotationPools, setRotationPools] = useState<RotationPool[]>([]);
+  const [pickDomain, setPickDomain] = useState('');
+  const [pickResult, setPickResult] = useState<string | null>(null);
+
+  const loadRotation = useCallback(async () => {
+    try {
+      const r = await getRotation();
+      setRotationPools(r.pools);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'ippools') void loadRotation();
+  }, [authed, activeTab, loadRotation]);
+
+  const handleSetStrategy = async (pool: string, strategy: string) => {
+    try {
+      const r = await setRotation({ pool, strategy });
+      onNotify(r.note, 'info');
+      await loadRotation();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handlePickIp = async () => {
+    if (pickDomain.trim().length < 3) {
+      onNotify('Enter a sender domain', 'error');
+      return;
+    }
+    try {
+      const r = await pickRotation({ sender_domain: pickDomain.trim() });
+      setPickResult(`${r.senderDomain} → ${r.ip} (${r.strategy})`);
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // F-014 / F-017 IP details + rDNS
+  const [ipDetails, setIpDetails] = useState<IpDetail[]>([]);
+  const [rdnsEdit, setRdnsEdit] = useState<{ ip: string; info: RdnsInfo } | null>(null);
+  const [rdnsValue, setRdnsValue] = useState('');
+
+  const loadIpDetails = useCallback(async () => {
+    try {
+      const r = await listIps();
+      setIpDetails(r.ips);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'deliverability') void loadIpDetails();
+  }, [authed, activeTab, loadIpDetails]);
+
+  const openRdns = async (ip: string) => {
+    try {
+      const info = await getRdns(ip);
+      setRdnsEdit({ ip, info });
+      setRdnsValue(info.rdns);
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleSaveRdns = async () => {
+    if (!rdnsEdit) return;
+    if (!rdnsValue.trim()) {
+      onNotify('Enter an rDNS hostname', 'error');
+      return;
+    }
+    try {
+      const r = await setRdns(rdnsEdit.ip, rdnsValue.trim());
+      if (r.warning) {
+        onNotify(String(r.warning), 'error');
+      } else {
+        onNotify(`rDNS for ${rdnsEdit.ip} saved and forward-confirmed`, 'success');
+      }
+      setRdnsEdit(null);
+      await loadIpDetails();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // F-016 blacklist
+  const [blIps, setBlIps] = useState<BlacklistIp[]>([]);
+  const [blEvents, setBlEvents] = useState<BlacklistEvent[]>([]);
+
+  const loadBlacklist = useCallback(async () => {
+    try {
+      const r = await getBlacklist();
+      setBlIps(r.ips);
+      setBlEvents(r.events);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'deliverability') void loadBlacklist();
+  }, [authed, activeTab, loadBlacklist]);
+
+  // F-008 login activity
+  const [loginRows, setLoginRows] = useState<LoginEventRow[]>([]);
+  const [sessionRows, setSessionRows] = useState<AdminSessionRow[]>([]);
+  const [loginGeoNote, setLoginGeoNote] = useState('');
+
+  const loadLoginLog = useCallback(async () => {
+    try {
+      const r = await getLoginLog();
+      setLoginRows(r.logins);
+      setSessionRows(r.sessions);
+      setLoginGeoNote(r.note);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'activity') void loadLoginLog();
+  }, [authed, activeTab, loadLoginLog]);
+
+  const handleRevokeSession = async (s: AdminSessionRow) => {
+    try {
+      await revokeSession(s.token);
+      onNotify(`Session for ${s.username} revoked`, 'info');
+      await loadLoginLog();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // F-009 notifications
+  const [notifs, setNotifs] = useState<NotifItem[]>([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [notifDelivery, setNotifDelivery] = useState('');
+  const [notifRules, setNotifRulesState] = useState<NotifRules | null>(null);
+  const [ruleQueue, setRuleQueue] = useState('500');
+  const [ruleDisk, setRuleDisk] = useState('80');
+  const [ruleUptime, setRuleUptime] = useState('99');
+
+  const loadNotifs = useCallback(async () => {
+    try {
+      const r = await getNotifications();
+      setNotifs(r.notifications);
+      setNotifUnread(r.unread);
+      setNotifDelivery(r.delivery);
+      setNotifRulesState(r.rules);
+      setRuleQueue(String(r.rules.queue_warn));
+      setRuleDisk(String(r.rules.disk_warn_pct));
+      setRuleUptime(String(r.rules.uptime_warn_pct));
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'notifications') void loadNotifs();
+  }, [authed, activeTab, loadNotifs]);
+
+  const handleSaveRules = async () => {
+    try {
+      await setNotifRules({
+        queue_warn: Number(ruleQueue) || 500,
+        disk_warn_pct: Number(ruleDisk) || 80,
+        uptime_warn_pct: Number(ruleUptime) || 99,
+      });
+      onNotify('Notification thresholds saved', 'success');
+      await loadNotifs();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // F-019 rate limits
+  const [rateLimits, setRateLimits] = useState<RateLimits | null>(null);
+
+  const loadRateLimits = useCallback(async () => {
+    try {
+      const r = await getRateLimits();
+      setRateLimits(r);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'ratelimits') void loadRateLimits();
+  }, [authed, activeTab, loadRateLimits]);
+
+  // F-021 MTA templates
+  const [mtaTemplates, setMtaTemplates] = useState<MtaTemplate[]>([]);
+  const [mtaVersions, setMtaVersions] = useState<MtaVersionInfo[]>([]);
+  const [mtaResult, setMtaResult] = useState<{
+    template: string;
+    rendered: string;
+    diff: string[];
+    note: string;
+  } | null>(null);
+
+  const loadMta = useCallback(async () => {
+    try {
+      const r = await getMtaTemplates();
+      setMtaTemplates(r.templates);
+      setMtaVersions(r.versions);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'mta') void loadMta();
+  }, [authed, activeTab, loadMta]);
+
+  const handleApplyTemplate = async (tpl: string) => {
+    try {
+      const r = await applyMtaTemplate({ template: tpl });
+      setMtaResult({ template: r.template, rendered: r.rendered, diff: r.diff, note: r.note });
+      onNotify(r.note, 'info');
+      await loadMta();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // F-022 migrations
+  const [migrations, setMigrations] = useState<MigrationJobRow[]>([]);
+  const [migDomain, setMigDomain] = useState('');
+  const [migTarget, setMigTarget] = useState('');
+
+  const loadMigrations = useCallback(async () => {
+    try {
+      const r = await listMigrations();
+      setMigrations(r.migrations);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'mta') void loadMigrations();
+  }, [authed, activeTab, loadMigrations]);
+
+  const handleCreateMigration = async () => {
+    if (!migDomain.trim() || !migTarget) {
+      onNotify('Domain and target node are required', 'error');
+      return;
+    }
+    try {
+      const r = await createMigration({ domain: migDomain.trim(), target_node: migTarget });
+      onNotify(r.migration.note, 'info');
+      setMigDomain('');
+      await loadMigrations();
     } catch (e) {
       fail(e);
     }
@@ -1174,8 +1632,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       label: 'Infrastructure',
       items: [
         { id: 'ippools', label: 'IP pools', icon: <Layers className="w-4 h-4" /> },
+        { id: 'deliverability', label: 'IP deliverability', icon: <Network className="w-4 h-4" /> },
+        { id: 'servers', label: 'Server nodes', icon: <Server className="w-4 h-4" /> },
+        { id: 'ratelimits', label: 'Rate limits', icon: <Thermometer className="w-4 h-4" /> },
+        { id: 'mta', label: 'MTA & migration', icon: <FileCode2 className="w-4 h-4" /> },
         { id: 'storage', label: 'Storage engine', icon: <HardDrive className="w-4 h-4" /> },
         { id: 'system', label: 'System controls', icon: <Terminal className="w-4 h-4" /> },
+      ],
+    },
+    {
+      label: 'Oversight',
+      items: [
+        {
+          id: 'notifications',
+          label: 'Notifications',
+          icon: <Bell className="w-4 h-4" />,
+          trailing:
+            notifUnread > 0 ? (
+              <span className={NAVCOUNT_WARN}>{notifUnread}</span>
+            ) : (
+              <span className={NAVCOUNT}>0</span>
+            ),
+        },
+        { id: 'activity', label: 'Login activity', icon: <Lock className="w-4 h-4" /> },
       ],
     },
   ];
@@ -1314,6 +1793,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           <div className="flex flex-none items-center gap-1 sm:gap-1.5">
+            <button
+              onClick={() => setActiveTab('notifications')}
+              className={`${navBtn} relative`}
+              title="Notifications"
+              aria-label="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              {notifUnread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#D92D20] px-1 text-[9px] font-bold text-white tabular-nums">
+                  {notifUnread}
+                </span>
+              )}
+            </button>
             <div
               className={`hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold md:inline-flex ${
                 healthyCount === 3
@@ -1953,7 +2445,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   Deliverability
                                 </button>
                                 <button
-                                  onClick={() => void handleAssignIp(dom.name)}
+                                  onClick={() => {
+                                    void listIps()
+                                      .then(() => setShowAssignModal({ domain: dom.name, ip: '' }))
+                                      .catch(fail);
+                                  }}
                                   className={`${btn('outline', 'xs')} hidden sm:inline-flex`}
                                 >
                                   Assign IP
@@ -2512,6 +3008,818 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </table>
                   </div>
                 </div>
+
+                {/* F-015 Rotation strategies */}
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle
+                    actions={
+                      <button onClick={() => void loadRotation()} className={btn('outline', 'xs')}>
+                        <RotateCw className="w-3 h-3" />
+                        Refresh
+                      </button>
+                    }
+                  >
+                    Shared IP rotation strategy
+                  </SectionTitle>
+                  <div className="divide-y divide-[#EEF1F5] dark:divide-[#1B2740]">
+                    {rotationPools.map((p) => (
+                      <div key={p.pool} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium text-[#101828] dark:text-white">{p.poolName}</p>
+                          <p className={`${CODE} mt-0.5 text-[12px] ${MUTED}`}>{p.ips.join(', ')}</p>
+                        </div>
+                        <select
+                          value={p.strategy}
+                          onChange={(e) => void handleSetStrategy(p.pool, e.target.value)}
+                          aria-label={`Rotation strategy for ${p.poolName}`}
+                          className={`${INPUT} h-9 w-auto min-w-[180px]`}
+                        >
+                          <option value="hash-based">Hash-based (default)</option>
+                          <option value="round-robin">Round-robin</option>
+                          <option value="least-used">Least-used</option>
+                          <option value="weighted">Weighted</option>
+                        </select>
+                      </div>
+                    ))}
+                    {rotationPools.length === 0 && (
+                      <p className={`px-5 py-4 text-[13px] ${MUTED}`}>No pools configured.</p>
+                    )}
+                  </div>
+                  <div className="border-t border-[#EEF1F5] p-5 dark:border-[#1B2740]">
+                    <p className={`text-[12px] font-semibold ${MUTED}`}>Test: pick an IP for a sender domain</p>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                      <input
+                        type="text"
+                        value={pickDomain}
+                        onChange={(e) => setPickDomain(e.target.value)}
+                        placeholder="newsletter.client.com"
+                        aria-label="Sender domain"
+                        className={`${INPUT} font-mono sm:flex-1`}
+                      />
+                      <button onClick={() => void handlePickIp()} className={btn('outline')}>
+                        <Shuffle className="w-3.5 h-3.5" />
+                        Pick IP
+                      </button>
+                    </div>
+                    {pickResult && (
+                      <p className={`mt-2 ${CODE} text-[13px] text-[#101828] dark:text-[#E6EAF2]`}>{pickResult}</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ===================== TAB: IP DELIVERABILITY (F-013/14/16/17) ===================== */}
+            {activeTab === 'deliverability' && (
+              <>
+                <PageHeader
+                  title="IP deliverability"
+                  description="Warmup schedules, per-IP assignment, blacklist monitoring, and rDNS."
+                />
+
+                {/* F-013 Warmup */}
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle actions={<span className={BADGE_NEUTRAL}>warmup schedules</span>}>
+                    IP warmup
+                  </SectionTitle>
+                  <form
+                    className="grid grid-cols-1 items-end gap-3 border-b border-[#EEF1F5] p-5 dark:border-[#1B2740] sm:grid-cols-[1fr_1fr_auto_auto]"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleStartWarmup();
+                    }}
+                  >
+                    <div>
+                      <label className={LABEL} htmlFor="warmup-domain">Domain</label>
+                      <input
+                        id="warmup-domain"
+                        type="text"
+                        placeholder="client.com"
+                        value={warmupDomain}
+                        onChange={(e) => setWarmupDomain(e.target.value)}
+                        className={`${INPUT} font-mono`}
+                      />
+                    </div>
+                    <div>
+                      <label className={LABEL} htmlFor="warmup-ip">Dedicated IP</label>
+                      <select
+                        id="warmup-ip"
+                        value={warmupIp}
+                        onChange={(e) => setWarmupIp(e.target.value)}
+                        className={`${INPUT} font-mono`}
+                      >
+                        <option value="">Select IP…</option>
+                        {ipDetails.map((i) => (
+                          <option key={i.ip} value={i.ip}>
+                            {i.ip} ({i.type})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={LABEL} htmlFor="warmup-plan">Plan</label>
+                      <select
+                        id="warmup-plan"
+                        value={warmupPlan}
+                        onChange={(e) => setWarmupPlan(e.target.value as typeof warmupPlan)}
+                        className={INPUT}
+                      >
+                        <option value="conservative">Conservative (60d)</option>
+                        <option value="standard">Standard (30d)</option>
+                        <option value="aggressive">Aggressive (14d)</option>
+                      </select>
+                    </div>
+                    <button type="submit" className={btn('primary')}>
+                      <Plus className="w-3.5 h-3.5" />
+                      Start warmup
+                    </button>
+                  </form>
+                  <div className="overflow-x-auto">
+                    <table className={TABLE}>
+                      <thead>
+                        <tr>
+                          <th className={TH}>Domain</th>
+                          <th className={TH}>IP</th>
+                          <th className={TH}>Progress</th>
+                          <th className={TH}>Today</th>
+                          <th className={`${TH} text-right`}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {warmups.map((w) => (
+                          <tr key={w.id} className={T.row}>
+                            <td className={`${TD} font-medium`}>{w.domain}</td>
+                            <td className={`${TD} ${CODE} ${MUTED}`}>{w.ip}</td>
+                            <td className={TD}>
+                              <div className="flex items-center gap-2">
+                                <div className="w-24">
+                                  <Bar value={Math.min(100, (w.day / 30) * 100)} />
+                                </div>
+                                <span className={`${CODE} ${MUTED} whitespace-nowrap`}>
+                                  day {w.day} · cap {w.dailyLimit}
+                                </span>
+                              </div>
+                            </td>
+                            <td className={`${TD} ${CODE} tabular-nums`}>
+                              {w.sentToday} / {w.dailyLimit}
+                              {w.sentToday >= w.dailyLimit && (
+                                <span className={`${BADGE_WARN} ml-2`}>throttled</span>
+                              )}
+                            </td>
+                            <td className={T.actions}>
+                              <button
+                                onClick={() => void handleWarmupPauseResume(w)}
+                                className={btn(w.completed ? 'outline' : 'ghost', 'xs')}
+                              >
+                                {w.completed ? 'Resume' : 'Pause'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {warmups.length === 0 && (
+                          <tr>
+                            <td colSpan={5}>
+                              <EmptyState
+                                icon={<Timer className="w-5 h-5" />}
+                                title="No warmup schedules"
+                                description="Start one above: new dedicated IPs ramp volume over 14-60 days."
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* F-014 + F-017 IP table with rDNS */}
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle actions={<span className={`${BADGE_NEUTRAL} tabular-nums`}>{ipDetails.length} IPs</span>}>
+                    Outbound IPs — assignment & rDNS
+                  </SectionTitle>
+                  <div className="overflow-x-auto">
+                    <table className={TABLE}>
+                      <thead>
+                        <tr>
+                          <th className={TH}>IP</th>
+                          <th className={TH}>rDNS (PTR)</th>
+                          <th className={TH}>Domains</th>
+                          <th className={TH}>RBL now</th>
+                          <th className={`${TH} text-right`}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ipDetails.map((i) => (
+                          <tr key={i.ip} className={T.row}>
+                            <td className={`${TD} ${CODE} font-medium`}>{i.ip}</td>
+                            <td className={`${TD} ${CODE} ${MUTED} break-all`}>{i.rdns}</td>
+                            <td className={`${TD} tabular-nums`}>{i.domains}</td>
+                            <td className={TD}>
+                              {i.listedNow > 0 ? (
+                                <span className={BADGE_BAD}>Listed on {i.listedNow}</span>
+                              ) : (
+                                <span className={BADGE_OK}>
+                                  <CheckCircle className="w-3 h-3" />
+                                  Clean
+                                </span>
+                              )}
+                            </td>
+                            <td className={T.actions}>
+                              <button onClick={() => void openRdns(i.ip)} className={btn('outline', 'xs')}>
+                                Set rDNS
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {ipDetails.length === 0 && !loading && (
+                          <tr>
+                            <td colSpan={5}>
+                              <EmptyState icon={<Network className="w-5 h-5" />} title="No active IPs" />
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className={`border-t border-[#EEF1F5] px-5 py-3 text-[11.5px] dark:border-[#1B2740] ${MUTED}`}>
+                    PTR records are stored here and forward-confirmed (PTR → A → IP). Provider APIs
+                    (Hetzner/DO/OVH) are not connected — set the PTR at your provider, then save it here.
+                  </p>
+                </div>
+
+                {/* F-016 Blacklist monitoring */}
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle
+                      actions={
+                        <button onClick={() => void loadBlacklist()} className={btn('outline', 'xs')}>
+                          <RotateCw className="w-3 h-3" />
+                          Refresh
+                        </button>
+                      }
+                    >
+                      Blacklist status — checked every 5 min
+                    </SectionTitle>
+                    <table className={TABLE_FIT}>
+                      <thead>
+                        <tr>
+                          <th className={TH}>IP</th>
+                          <th className={TH}>Listings (last hour)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {blIps.map((b) => (
+                          <tr key={b.ip} className={T.row}>
+                            <td className={`${TD} ${CODE} font-medium`}>{b.ip}</td>
+                            <td className={TD}>
+                              {b.listed ? (
+                                <span className={BADGE_BAD}>
+                                  <Ban className="w-3 h-3" />
+                                  {b.lists.join(', ')}
+                                </span>
+                              ) : (
+                                <span className={BADGE_OK}>Clean on all lists</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {blIps.length === 0 && (
+                          <tr>
+                            <td colSpan={2} className={`px-4 py-4 text-[13px] ${MUTED}`}>
+                              No RBL data yet — the collector checks Spamhaus, SpamCop, Barracuda,
+                              SORBS, PSBL, Spameatingmonkey, UCEPROTECT and GBUdb every 5 minutes.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle>Listing history — last 7 days</SectionTitle>
+                    <div className="max-h-[300px] overflow-y-auto divide-y divide-[#EEF1F5] dark:divide-[#1B2740]">
+                      {blEvents.filter((e) => e.listed).length === 0 && (
+                        <p className={`px-5 py-4 text-[13px] ${MUTED}`}>
+                          No listings recorded in the last 7 days.
+                        </p>
+                      )}
+                      {blEvents
+                        .filter((e) => e.listed)
+                        .map((e, i) => (
+                          <div key={i} className="flex items-center justify-between gap-3 px-5 py-2.5 text-[12.5px]">
+                            <span className="min-w-0">
+                              <span className={`${CODE} font-medium text-[#101828] dark:text-[#E6EAF2]`}>{e.ip}</span>{' '}
+                              <span className={MUTED}>listed on {e.provider}</span>
+                            </span>
+                            <span className={`${MUTED} whitespace-nowrap tabular-nums`}>{fmtWhen(e.at)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ===================== TAB: SERVER NODES (F-011) ===================== */}
+            {activeTab === 'servers' && (
+              <>
+                <PageHeader
+                  title="Server nodes"
+                  description="Registered nodes, roles, and drain states."
+                  actions={
+                    <button onClick={() => setShowAddNodeModal(true)} className={btn('primary')}>
+                      <Plus className="w-3.5 h-3.5" />
+                      Register node
+                    </button>
+                  }
+                />
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  {servers.map((n) => {
+                    const svc = n.health?.services;
+                    const upCount = svc ? [svc.stalwart, svc.redis, svc.postgres].filter(Boolean).length : 0;
+                    return (
+                      <div key={n.id} className={`${PANEL} p-5`}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="truncate text-[15px] font-semibold text-[#101828] dark:text-white">
+                                {n.hostname}
+                              </p>
+                              {n.isLocal ? (
+                                <span className={BADGE_OK}>This server</span>
+                              ) : (
+                                <span className={BADGE_WARN}>Remote · not configured</span>
+                              )}
+                            </div>
+                            <p className={`mt-1 text-[12.5px] ${MUTED}`}>
+                              {n.primaryIp} · {n.role} · {n.location} · group {n.group}
+                            </p>
+                          </div>
+                          <span
+                            className={
+                              n.status === 'active'
+                                ? BADGE_OK
+                                : n.status === 'draining'
+                                  ? BADGE_WARN
+                                  : BADGE_NEUTRAL
+                            }
+                          >
+                            {n.status}
+                          </span>
+                        </div>
+
+                        {n.isLocal && n.health ? (
+                          <>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {(['stalwart', 'postgres', 'redis'] as const).map((s, idx) => {
+                                const up = svc ? [svc.stalwart, svc.postgres, svc.redis][idx] : false;
+                                return (
+                                  <span key={s} className={up ? BADGE_OK : BADGE_BAD}>
+                                    {s}: {up ? 'up' : 'down'}
+                                  </span>
+                                );
+                              })}
+                              <span className={BADGE_NEUTRAL}>{upCount}/3 up</span>
+                            </div>
+                            <div className="mt-4 space-y-3">
+                              <div>
+                                <div className="flex justify-between text-[12px]">
+                                  <span className={MUTED}>Disk</span>
+                                  <span className={`${CODE} tabular-nums`}>
+                                    {fmtBytes(n.health.diskTotal - n.health.diskFree)} / {fmtBytes(n.health.diskTotal)}
+                                  </span>
+                                </div>
+                                <div className="mt-1">
+                                  <Bar value={pctOf(n.health.diskTotal - n.health.diskFree, n.health.diskTotal)} />
+                                </div>
+                              </div>
+                              <div className="flex justify-between text-[12px]">
+                                <span className={MUTED}>Load / uptime</span>
+                                <span className={`${CODE} tabular-nums`}>
+                                  {n.health.load.map((v) => v.toFixed(2)).join(' · ')} · {fmtUptime(n.health.uptimeSec)}
+                                </span>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <p className={`mt-4 rounded-[10px] bg-[#FFFAEB] px-3.5 py-3 text-[12.5px] text-[#B54708] dark:bg-[#B54708]/10 dark:text-[#FDB022]`}>
+                            Health unknown — remote monitoring needs an SSH key or agent on this node,
+                            which is not configured in this build.
+                          </p>
+                        )}
+
+                        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
+                          {(['active', 'maintenance', 'draining'] as const).map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => void handleNodeStatus(n, s)}
+                              disabled={n.status === s}
+                              className={btn(n.status === s ? 'primary' : 'outline', 'xs')}
+                            >
+                              {s === 'active' ? (
+                                <Play className="w-3 h-3" />
+                              ) : s === 'draining' ? (
+                                <RefreshCcwDot className="w-3 h-3" />
+                              ) : (
+                                <Power className="w-3 h-3" />
+                              )}
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {servers.length === 0 && loading && (
+                  <div className={`${PANEL} p-5`}>
+                    <SkeletonRows cols={1} rows={2} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ===================== TAB: RATE LIMITS (F-019) ===================== */}
+            {activeTab === 'ratelimits' && (
+              <>
+                <PageHeader
+                  title="Rate limits"
+                  description="Server and per-ISP send caps with current utilization."
+                />
+                {rateLimits ? (
+                  <>
+                    <div className={`${PANEL} p-5`}>
+                      <div className="flex items-baseline justify-between">
+                        <p className="text-[13px] font-medium text-[#101828] dark:text-white">Server total</p>
+                        <span className={`${CODE} text-[12.5px] tabular-nums ${MUTED}`}>
+                          {rateLimits.server.sentToday} sent today · limit {rateLimits.server.limitPerHour}/h
+                        </span>
+                      </div>
+                      <div className="mt-2">
+                        <Bar value={rateLimits.server.utilizationPct} />
+                      </div>
+                    </div>
+                    <div className={`${PANEL} overflow-hidden`}>
+                      <SectionTitle>Per-ISP caps</SectionTitle>
+                      <table className={TABLE_FIT}>
+                        <thead>
+                          <tr>
+                            <th className={TH}>Destination</th>
+                            <th className={TH}>Limit / hour</th>
+                            <th className={TH}>Sent today</th>
+                            <th className={`${TH} w-48`}>Utilization</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rateLimits.isps.map((isp) => (
+                            <tr key={isp.isp} className={T.row}>
+                              <td className={`${TD} font-medium`}>{isp.isp}</td>
+                              <td className={`${TD} ${CODE} tabular-nums`}>{isp.limitPerHour}</td>
+                              <td className={`${TD} ${CODE} tabular-nums`}>{isp.sentToday}</td>
+                              <td className={TD}>
+                                <Bar value={isp.utilizationPct} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <p className={`border-t border-[#EEF1F5] px-5 py-3 text-[11.5px] dark:border-[#1B2740] ${MUTED}`}>
+                        {rateLimits.note}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className={`${PANEL} p-5`}>
+                    <p className={`text-[13px] ${MUTED}`}>Loading…</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ===================== TAB: MTA & MIGRATION (F-021/F-022) ===================== */}
+            {activeTab === 'mta' && (
+              <>
+                <PageHeader
+                  title="MTA configuration & migration"
+                  description="Stalwart config templates with diff + rollback, and domain migration jobs."
+                />
+
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle>Configuration templates</SectionTitle>
+                  <div className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-3">
+                    {mtaTemplates.map((t) => (
+                      <div key={t.id} className="rounded-xl border border-[#E4E7EC] p-4 dark:border-[#22304A]">
+                        <p className="text-[13.5px] font-semibold text-[#101828] dark:text-white">{t.name}</p>
+                        <p className={`mt-1 text-[12px] ${MUTED}`}>{t.description}</p>
+                        <button onClick={() => void handleApplyTemplate(t.id)} className={`${btn('outline', 'xs')} mt-3`}>
+                          <MousePointerClick className="w-3 h-3" />
+                          Preview & apply
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {mtaResult && (
+                    <div className="border-t border-[#EEF1F5] p-5 dark:border-[#1B2740]">
+                      <p className="text-[12px] font-semibold tracking-[0.04em] text-[#98A2B3]">
+                        RENDERED CONFIG — template “{mtaResult.template}”
+                      </p>
+                      <pre className={`mt-2 overflow-x-auto rounded-xl bg-[#F8FAFC] p-4 ${CODE} text-gray-700 dark:bg-[#0A0F1A] dark:text-gray-300`}>
+                        {mtaResult.rendered}
+                      </pre>
+                      <p className={`mt-3 text-[12px] font-semibold ${MUTED}`}>Diff vs current config</p>
+                      <pre className={`mt-1 max-h-48 overflow-auto rounded-xl bg-[#F8FAFC] p-4 ${CODE} text-gray-700 dark:bg-[#0A0F1A] dark:text-gray-300`}>
+                        {mtaResult.diff.length > 0 ? mtaResult.diff.join('\n') : '(no textual diff — template starts from the live file)'}
+                      </pre>
+                      <p className={`mt-3 text-[11.5px] ${MUTED}`}>{mtaResult.note}</p>
+                    </div>
+                  )}
+                  {mtaVersions.length > 0 && (
+                    <div className="border-t border-[#EEF1F5] px-5 py-4 dark:border-[#1B2740]">
+                      <p className={`text-[12px] font-semibold ${MUTED}`}>Config snapshots (rollback points)</p>
+                      <ul className="mt-2 space-y-1">
+                        {mtaVersions.map((v) => (
+                          <li key={v.id} className={`${CODE} text-[12px] ${MUTED}`}>
+                            v{v.id} · {v.template_id} · {fmtBytes(v.size_bytes)} · {fmtWhen(v.created_at)} · {v.file}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle>Domain migration</SectionTitle>
+                  <form
+                    className="grid grid-cols-1 items-end gap-3 border-b border-[#EEF1F5] p-5 dark:border-[#1B2740] sm:grid-cols-[1fr_1fr_auto]"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleCreateMigration();
+                    }}
+                  >
+                    <div>
+                      <label className={LABEL} htmlFor="mig-domain">Domain</label>
+                      <select
+                        id="mig-domain"
+                        value={migDomain}
+                        onChange={(e) => setMigDomain(e.target.value)}
+                        className={`${INPUT} font-mono`}
+                      >
+                        <option value="">Select domain…</option>
+                        {domains.map((d) => (
+                          <option key={d.id} value={d.name}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={LABEL} htmlFor="mig-target">Target node</label>
+                      <select
+                        id="mig-target"
+                        value={migTarget}
+                        onChange={(e) => setMigTarget(e.target.value)}
+                        className={INPUT}
+                      >
+                        <option value="">Select node…</option>
+                        {servers.map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.hostname}{n.isLocal ? ' (this server)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <button type="submit" className={btn('primary')}>
+                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                      Create migration
+                    </button>
+                  </form>
+                  <div className="divide-y divide-[#EEF1F5] dark:divide-[#1B2740]">
+                    {migrations.map((m) => (
+                      <div key={m.id} className="px-5 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[13.5px] font-medium text-[#101828] dark:text-white">
+                            {m.domain} → {m.target_node}
+                          </p>
+                          <span className={m.status === 'blocked' ? BADGE_WARN : BADGE_NEUTRAL}>{m.status}</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {m.steps.map((s) => (
+                            <span
+                              key={s.name}
+                              className={s.status === 'done' ? BADGE_OK : s.status === 'blocked' ? BADGE_BAD : BADGE_NEUTRAL}
+                            >
+                              {s.name}
+                            </span>
+                          ))}
+                        </div>
+                        <p className={`mt-2 text-[11.5px] ${MUTED}`}>{m.note}</p>
+                      </div>
+                    ))}
+                    {migrations.length === 0 && (
+                      <p className={`px-5 py-4 text-[13px] ${MUTED}`}>
+                        No migration jobs. Register a remote node first — real migrations need a sync channel to it.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ===================== TAB: NOTIFICATIONS (F-009) ===================== */}
+            {activeTab === 'notifications' && (
+              <>
+                <PageHeader
+                  title="Notifications"
+                  description="Threshold-triggered alerts for queue, disk, services, and backups."
+                />
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle
+                      actions={<span className={BADGE_NEUTRAL}>{notifUnread} unread</span>}
+                    >
+                      Alerts
+                    </SectionTitle>
+                    <div className="max-h-[420px] divide-y divide-[#EEF1F5] overflow-y-auto dark:divide-[#1B2740]">
+                      {notifs.length === 0 && (
+                        <p className={`px-5 py-6 text-[13px] ${MUTED}`}>
+                          No alerts. Everything is inside the configured thresholds.
+                        </p>
+                      )}
+                      {notifs.map((n) => (
+                        <div key={n.id} className={`px-5 py-3.5 ${n.read ? 'opacity-60' : ''}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={n.severity === 'critical' ? BADGE_BAD : BADGE_WARN}>
+                                  {n.severity}
+                                </span>
+                                <p className="text-[13px] font-medium text-[#101828] dark:text-white">{n.title}</p>
+                              </div>
+                              <p className={`mt-1 text-[12px] ${MUTED}`}>{n.detail}</p>
+                              <p className={`mt-1 text-[11px] ${MUTED} tabular-nums`}>{fmtWhen(n.createdAt)}</p>
+                            </div>
+                            <div className="flex shrink-0 gap-1">
+                              {!n.read && (
+                                <button
+                                  onClick={() => {
+                                    void markNotifRead(n.id).then(loadNotifs);
+                                  }}
+                                  className={btn('ghost', 'xs')}
+                                >
+                                  Read
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  void dismissNotif(n.id).then(loadNotifs);
+                                }}
+                                className={btnIcon('ghost')}
+                                title="Dismiss"
+                                aria-label={`Dismiss ${n.title}`}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className={`border-t border-[#EEF1F5] px-5 py-3 text-[11.5px] dark:border-[#1B2740] ${MUTED}`}>
+                      Delivery: {notifDelivery || 'in-panel'}.
+                    </p>
+                  </div>
+
+                  <div className={`${PANEL} overflow-hidden`}>
+                    <SectionTitle>Thresholds & delivery</SectionTitle>
+                    <form
+                      className="space-y-4 p-5"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void handleSaveRules();
+                      }}
+                    >
+                      <div>
+                        <label className={LABEL} htmlFor="rule-queue">Queue spike threshold (messages)</label>
+                        <input id="rule-queue" type="number" min={1} value={ruleQueue} onChange={(e) => setRuleQueue(e.target.value)} className={`${INPUT} font-mono tabular-nums`} />
+                      </div>
+                      <div>
+                        <label className={LABEL} htmlFor="rule-disk">Disk usage threshold (%)</label>
+                        <input id="rule-disk" type="number" min={1} max={99} value={ruleDisk} onChange={(e) => setRuleDisk(e.target.value)} className={`${INPUT} font-mono tabular-nums`} />
+                      </div>
+                      <div>
+                        <label className={LABEL} htmlFor="rule-uptime">Service uptime threshold (%, 24h)</label>
+                        <input id="rule-uptime" type="number" min={0} max={100} value={ruleUptime} onChange={(e) => setRuleUptime(e.target.value)} className={`${INPUT} font-mono tabular-nums`} />
+                      </div>
+                      {notifRules && (
+                        <p className={`text-[12px] ${MUTED}`}>
+                          Backup alert: warn when the newest backup is older than{' '}
+                          {notifRules.backup_stale_days} day(s). Delivery target{' '}
+                          <span className={CODE}>{notifRules.email_to || '—'}</span>; Slack/Telegram
+                          webhook and admin-email delivery are not configured in this build.
+                        </p>
+                      )}
+                      <button type="submit" className={btn('primary')}>
+                        Save thresholds
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ===================== TAB: LOGIN ACTIVITY (F-008/F-010) ===================== */}
+            {activeTab === 'activity' && (
+              <>
+                <PageHeader
+                  title="Login activity"
+                  description="Admin sign-ins, active sessions, and the role model."
+                />
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle
+                    actions={
+                      <button onClick={() => void loadLoginLog()} className={btn('outline', 'xs')}>
+                        <RotateCw className="w-3 h-3" />
+                        Refresh
+                      </button>
+                    }
+                  >
+                    Active admin sessions
+                  </SectionTitle>
+                  <table className={TABLE_FIT}>
+                    <thead>
+                      <tr>
+                        <th className={TH}>User</th>
+                        <th className={TH}>IP</th>
+                        <th className={TH}>Since</th>
+                        <th className={`${TH} text-right`}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessionRows.map((s) => (
+                        <tr key={s.token} className={T.row}>
+                          <td className={`${TD} font-medium`}>{s.username}</td>
+                          <td className={`${TD} ${CODE} ${MUTED}`}>{s.ip}</td>
+                          <td className={`${TD} ${MUTED} tabular-nums`}>{fmtWhen(s.created_at)}</td>
+                          <td className={T.actions}>
+                            <button onClick={() => void handleRevokeSession(s)} className={btn('danger', 'xs')}>
+                              Force logout
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {sessionRows.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className={`px-4 py-4 text-[13px] ${MUTED}`}>
+                            No active sessions this server run.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle>Login history (this server run)</SectionTitle>
+                  <table className={TABLE}>
+                    <thead>
+                      <tr>
+                        <th className={TH}>Time</th>
+                        <th className={TH}>User</th>
+                        <th className={TH}>IP</th>
+                        <th className={`${TH} hidden md:table-cell`}>User agent</th>
+                        <th className={TH}>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loginRows.map((l, i) => (
+                        <tr key={i} className={T.row}>
+                          <td className={`${TD} ${MUTED} tabular-nums`}>{fmtWhen(l.ts)}</td>
+                          <td className={`${TD} font-medium`}>{l.username}</td>
+                          <td className={`${TD} ${CODE} ${MUTED}`}>{l.ip}</td>
+                          <td className={`${TD} hidden max-w-[280px] truncate text-[12px] md:table-cell ${MUTED}`}>
+                            {l.user_agent}
+                          </td>
+                          <td className={TD}>
+                            <span className={l.success ? BADGE_OK : BADGE_BAD}>
+                              {l.success ? 'Success' : 'Failed'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {loginRows.length === 0 && (
+                        <tr>
+                          <td colSpan={5}>
+                            <EmptyState icon={<Lock className="w-5 h-5" />} title="No logins recorded yet" />
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {loginGeoNote && (
+                    <p className={`border-t border-[#EEF1F5] px-5 py-3 text-[11.5px] dark:border-[#1B2740] ${MUTED}`}>
+                      {loginGeoNote}
+                    </p>
+                  )}
+                </div>
               </>
             )}
 
@@ -3002,6 +4310,108 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </AdminModal>
       )}
 
+      {/* ===================== MODAL: ASSIGN DEDICATED IP (F-014) ===================== */}
+      {assignModal && (
+        <AdminModal
+          title="Assign dedicated IP"
+          description={`All outbound mail for ${assignModal.domain} will route through the chosen IP.`}
+          onClose={() => setShowAssignModal(null)}
+        >
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleAssignIp(assignModal.domain, assignModal.ip);
+            }}
+          >
+            <div className="w-full">
+              <label className={LABEL} htmlFor="assign-ip">
+                Available IPs
+              </label>
+              <select
+                id="assign-ip"
+                value={assignModal.ip}
+                onChange={(e) => setShowAssignModal({ ...assignModal, ip: e.target.value })}
+                className={`${INPUT} font-mono`}
+                autoFocus
+              >
+                <option value="">Select IP…</option>
+                {ipDetails.map((i) => (
+                  <option key={i.ip} value={i.ip}>
+                    {i.ip} — {i.type}, {i.domains} domain(s){i.listedNow > 0 ? ' · LISTED' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className={`text-[12px] ${MUTED}`}>
+              Unassigned or shared IPs are listed. Assigning updates SPF guidance in the
+              deliverability panel; the DKIM record stays unchanged.
+            </p>
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
+              <button type="button" onClick={() => setShowAssignModal(null)} className={btn('outline')}>
+                Cancel
+              </button>
+              <button type="submit" disabled={!assignModal.ip} className={btn('primary')}>
+                Assign IP
+              </button>
+            </div>
+          </form>
+        </AdminModal>
+      )}
+
+      {/* ===================== MODAL: rDNS (F-017) ===================== */}
+      {rdnsEdit && (
+        <AdminModal
+          title="rDNS (PTR) record"
+          description={rdnsEdit.ip}
+          onClose={() => setRdnsEdit(null)}
+        >
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveRdns();
+            }}
+          >
+            <div className="w-full">
+              <label className={LABEL} htmlFor="rdns-host">PTR hostname</label>
+              <input
+                id="rdns-host"
+                type="text"
+                placeholder={`mail.${rdnsEdit.ip.split('.').slice(-2).join('.')}`}
+                value={rdnsValue}
+                onChange={(e) => setRdnsValue(e.target.value)}
+                className={`${INPUT} font-mono`}
+                autoFocus
+              />
+            </div>
+            <div className="rounded-[10px] bg-[#F8FAFC] px-3.5 py-3 text-[12px] dark:bg-white/5">
+              <p className={MUTED}>
+                Stored PTR: <span className={`${CODE} text-[#101828] dark:text-[#E6EAF2]`}>{rdnsEdit.info.rdns || '—'}</span>
+              </p>
+              <p className={`mt-1 ${MUTED}`}>
+                Forward-confirmed: {rdnsEdit.info.forwardConfirmed ? 'yes' : 'no'}
+                {rdnsEdit.info.resolvedA && (
+                  <> · A record: <span className={CODE}>{rdnsEdit.info.resolvedA}</span></>
+                )}
+              </p>
+            </div>
+            <p className={`text-[11.5px] ${MUTED}`}>
+              Set the same PTR at your hosting provider first — no provider API is connected, so this
+              panel records and validates it (PTR → A → IP) but cannot push it upstream.
+            </p>
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
+              <button type="button" onClick={() => setRdnsEdit(null)} className={btn('outline')}>
+                Cancel
+              </button>
+              <button type="submit" className={btn('primary')}>
+                Save & verify
+              </button>
+            </div>
+          </form>
+        </AdminModal>
+      )}
+
       {/* ===================== MODAL: DELIVERABILITY ===================== */}
       {selectedDnsDomain && (
         <AdminModal
@@ -3141,6 +4551,82 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </button>
             </div>
           </div>
+        </AdminModal>
+      )}
+      {/* ===================== MODAL: REGISTER NODE (F-011) ===================== */}
+      {showAddNodeModal && (
+        <AdminModal
+          title="Register server node"
+          description="Adds a node to the fleet. Remote health requires an agent — not configured in this build."
+          onClose={() => setShowAddNodeModal(false)}
+        >
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleCreateNode();
+            }}
+          >
+            <div className="w-full">
+              <label className={LABEL} htmlFor="node-hostname">Hostname</label>
+              <input
+                id="node-hostname"
+                type="text"
+                placeholder="mta2.hostaffin.com"
+                value={nodeHostname}
+                onChange={(e) => setNodeHostname(e.target.value)}
+                className={`${INPUT} font-mono`}
+                autoFocus
+              />
+            </div>
+            <div className="w-full">
+              <label className={LABEL} htmlFor="node-ip">Primary IP</label>
+              <input
+                id="node-ip"
+                type="text"
+                placeholder="203.0.113.20"
+                value={nodeIp}
+                onChange={(e) => setNodeIp(e.target.value)}
+                className={`${INPUT} font-mono`}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={LABEL} htmlFor="node-location">Location tag</label>
+                <input
+                  id="node-location"
+                  type="text"
+                  placeholder="EU-West"
+                  value={nodeLocation}
+                  onChange={(e) => setNodeLocation(e.target.value)}
+                  className={INPUT}
+                />
+              </div>
+              <div>
+                <label className={LABEL} htmlFor="node-role">Role</label>
+                <select
+                  id="node-role"
+                  value={nodeRole}
+                  onChange={(e) => setNodeRole(e.target.value)}
+                  className={INPUT}
+                >
+                  <option value="all-in-one">All-in-one</option>
+                  <option value="mta-outbound">MTA-outbound</option>
+                  <option value="mta-inbound">MTA-inbound</option>
+                  <option value="imap">IMAP</option>
+                  <option value="dns">DNS</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
+              <button type="button" onClick={() => setShowAddNodeModal(false)} className={btn('outline')}>
+                Cancel
+              </button>
+              <button type="submit" className={btn('primary')}>
+                Register node
+              </button>
+            </div>
+          </form>
         </AdminModal>
       )}
     </div>

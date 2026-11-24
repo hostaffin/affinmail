@@ -30,10 +30,15 @@ const SECRETS_FILE: &str = "/etc/stalwart/local-secrets.txt";
 const BACKUP_DIR: &str = "/var/www/affinmail/backups";
 const SERVER_IP: &str = "144.79.132.94";
 const SERVER_RDNS: &str = "mail.hostaffin.com";
-const RBL_LISTS: [&str; 3] = [
+const RBL_LISTS: [&str; 8] = [
     "zen.spamhaus.org",
     "bl.spamcop.net",
     "b.barracudacentral.org",
+    "dnsbl.sorbs.net",
+    "psbl.surriel.com",
+    "bl.spameatingmonkey.net",
+    "dnsbl-1.uceprotect.net",
+    "truncate.gbudb.net",
 ];
 
 /* ------------------------------------------------------------------ */
@@ -206,6 +211,59 @@ async fn probe_stalwart() -> bool {
         Err(_) => return false,
     };
     client.get("http://127.0.0.1:8080/").send().await.is_ok()
+}
+
+/// Public wrappers so admin routes can reuse the collector's probes.
+pub async fn probe_stalwart_public() -> bool {
+    probe_stalwart().await
+}
+
+pub async fn probe_redis_public() -> bool {
+    probe_redis().await
+}
+
+pub async fn pg_ok() -> bool {
+    pg_connect().await.is_some()
+}
+
+pub fn disk_total_bytes() -> i64 {
+    disk_space().0
+}
+
+pub fn disk_free_bytes() -> i64 {
+    disk_space().1
+}
+
+pub fn load_avg_public() -> [f64; 3] {
+    load_avg()
+}
+
+pub fn uptime_sec_public() -> i64 {
+    uptime_sec()
+}
+
+/// Forward-confirmed reverse DNS: does the PTR hostname resolve back to the IP?
+pub struct FcrDns {
+    pub matches: bool,
+    pub a_record: Option<String>,
+}
+
+pub async fn forward_confirm(ip: &str, ptr: &str) -> FcrDns {
+    let ptr = ptr.to_string();
+    let a = tokio::task::spawn_blocking(move || {
+        (ptr.as_str(), 0u16)
+            .to_socket_addrs()
+            .ok()
+            .and_then(|mut it| it.next())
+            .map(|addr| addr.ip().to_string())
+    })
+    .await
+    .ok()
+    .flatten();
+    FcrDns {
+        matches: a.as_deref() == Some(ip),
+        a_record: a,
+    }
 }
 
 async fn probe_redis() -> bool {
@@ -759,6 +817,75 @@ fn empty_history() -> Value {
     })
 }
 
+/// F-016: per-IP listing history from ip_rbl_checks (last 7 days).
+async fn rbl_history(pg: &Client) -> Vec<Value> {
+    let mut out = Vec::new();
+    if let Ok(rows) = pg
+        .query(
+            "SELECT host(p.ip_address), c.rbl_provider,
+                    to_char(min(c.checked_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
+                    to_char(max(c.checked_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
+                    count(*)::bigint
+             FROM ip_rbl_checks c JOIN ip_pools p ON p.id = c.ip_id
+             WHERE c.is_listed AND c.checked_at > now() - interval '7 days'
+             GROUP BY 1, 2 ORDER BY 1, 2",
+            &[],
+        )
+        .await
+    {
+        for r in rows {
+            out.push(json!({
+                "ip": r.get::<_, String>(0),
+                "provider": r.get::<_, String>(1),
+                "listedAt": r.get::<_, String>(2),
+                "lastSeen": r.get::<_, String>(3),
+                "checks": r.get::<_, i64>(4)
+            }));
+        }
+    }
+    out
+}
+
+/// F-020: outbound TLS version breakdown parsed from Stalwart logs into
+/// stats_mail_events-like counts. Returns per-version connection counts for
+/// the last 7 days; parsed live from the log files the collector already reads.
+fn tls_breakdown() -> Vec<Value> {
+    let mut counts: HashMap<String, i64> = HashMap::new();
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let yesterday = (Utc::now() - chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    for day in [yesterday, today] {
+        let path = format!("{}/stalwart.log.{}", LOG_DIR, day);
+        let data = match std::fs::read(&path) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let text = String::from_utf8_lossy(&data);
+        for line in text.lines() {
+            let line = strip_ansi(line);
+            if !line.contains("(tls.handshake)") {
+                continue;
+            }
+            // Version arrives as version = "TLSv1_3".
+            if let Some(v) = extract_quoted(&line, "version") {
+                *counts.entry(v).or_insert(0) += 1;
+            }
+        }
+    }
+    let mut out: Vec<Value> = counts
+        .into_iter()
+        .map(|(version, connections)| json!({ "version": version, "connections": connections }))
+        .collect();
+    out.sort_by(|a, b| {
+        b.get("connections")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            .cmp(&a.get("connections").and_then(|v| v.as_i64()).unwrap_or(0))
+    });
+    out
+}
+
 pub async fn admin_stats(state: &AppState) -> Value {
     let pg = match pg_connect().await {
         Some(p) => p,
@@ -1026,6 +1153,38 @@ pub async fn admin_stats(state: &AppState) -> Value {
     let (mem_total, mem_avail) = mem_info();
     let load = load_avg();
 
+    // --- F-013: warmup schedules (PostgreSQL schema already exists) -----
+    let mut warmups: Vec<Value> = Vec::new();
+    if let Ok(rows) = pg
+        .query(
+            "SELECT w.id::text, d.domain_name, host(p.ip_address), w.current_stage_day,
+                    w.max_daily_limit, w.sent_today_count, w.is_completed,
+                    to_char(w.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+             FROM ip_warmup_schedules w
+             JOIN domains d ON d.id = w.domain_id
+             JOIN ip_pools p ON p.id = w.ip_id
+             ORDER BY w.is_completed, d.domain_name LIMIT 50",
+            &[],
+        )
+        .await
+    {
+        for r in rows {
+            warmups.push(json!({
+                "id": r.get::<_, String>(0),
+                "domain": r.get::<_, String>(1),
+                "ip": r.get::<_, String>(2),
+                "day": r.get::<_, i32>(3),
+                "dailyLimit": r.get::<_, i32>(4),
+                "sentToday": r.get::<_, i32>(5),
+                "completed": r.get::<_, bool>(6),
+                "updatedAt": r.get::<_, String>(7)
+            }));
+        }
+    }
+
+    // --- F-016: RBL listing history, last 7 days ------------------------
+    let rbl_events = rbl_history(&pg).await;
+
     json!({
         "overview": {
             "total_domains": domains_total,
@@ -1043,8 +1202,11 @@ pub async fn admin_stats(state: &AppState) -> Value {
             "queueSeries": queue_series,
             "repSeries": rep_series,
             "uptime24h": uptime,
-            "ips": ips
+            "ips": ips,
+            "tls": tls_breakdown(),
+            "rblEvents": rbl_events
         },
+        "warmups": warmups,
         "byDomain": by_domain,
         "topMailboxes": top_mailboxes,
         "recentMailboxes": recent_mailboxes,
