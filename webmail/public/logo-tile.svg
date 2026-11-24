@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254" width="1254" height="1254" role="img" aria-label="AffinMail logo">
+  <rect x="60" y="60" width="1134" height="1134" rx="255" fill="#0B57D0"/>
+  <g transform="translate(222 222) scale(0.84375)">
+  <path d="M743 352 Q723 318 688 318 H600 V422 L694 578 H880 Z" fill="#FFFFFF"/>
+  <path d="M513 352 Q533 318 568 318 H690 Q719 318 706 339 L562 578 H376 Z" fill="#FFFFFF"/>
+  <path d="M376 578 L188 890 H330 C378 890 400 862 412 826 L562 578 Z" fill="#FFFFFF"/>
+  <path d="M880 578 L1068 890 H926 C878 890 856 862 844 826 L694 578 Z" fill="#FFFFFF"/>
+  <rect x="400" y="578" width="456" height="238" fill="#FFFFFF"/>
+  <rect x="408" y="600" width="440" height="212" rx="18" fill="#0B57D0"/>
+  <path d="M424 622 L628 742 L832 622" stroke="#FFFFFF" stroke-width="30" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
