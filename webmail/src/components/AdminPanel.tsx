@@ -18,6 +18,7 @@ import {
   Menu,
   X,
   LogIn,
+  Key,
   KeyRound,
   Gauge,
   Forward,
@@ -130,6 +131,12 @@ import {
   listMigrations,
   createMigration,
   type MigrationJobRow,
+  type ApiKeyRow,
+  listApiKeys,
+  createApiKey,
+  deleteApiKey,
+  rotateApiKey,
+  getApiKeyUsage,
 } from '../lib/adminApi';
 
 interface AdminPanelProps {
@@ -154,7 +161,8 @@ type AdminTab =
   | 'ratelimits'
   | 'mta'
   | 'storage'
-  | 'system';
+  | 'system'
+  | 'apikeys';
 
 interface DomainRow {
   id: string;
@@ -530,6 +538,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [storage, setStorage] = useState<StorageStatus | null>(null);
   const [healthData, setHealthData] = useState<Health | null>(null);
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
+  const [apiKeyName, setApiKeyName] = useState('');
+  const [apiKeyScopes, setApiKeyScopes] = useState<string[]>([]);
+  const [apiKeyBusy, setApiKeyBusy] = useState(false);
 
   // Modals
   const [showAddDomainModal, setShowAddDomainModal] = useState(false);
@@ -576,12 +588,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, m, ip, st, h] = await Promise.all([
+      const [d, m, ip, st, h, keys] = await Promise.all([
         listDomains(),
         listMailboxes(),
         listIpPools(),
         getStorage(),
         apiHealth(),
+        listApiKeys(),
       ]);
       const poolById = new Map(ip.ipPools.map((p) => [p.id, p]));
       setDomains(
@@ -626,6 +639,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       );
       setStorage(st);
       setHealthData(h);
+      setApiKeys(keys.map((k: ApiKeyRow) => k));
       void getStats()
         .then(setStats)
         .catch(() => {});
@@ -848,6 +862,52 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await deleteAlias(a.id);
       onNotify('Alias removed', 'info');
       await loadAliases();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // API keys
+  const handleCreateApiKey = async () => {
+    const name = apiKeyName.trim();
+    if (!name) {
+      onNotify('Key name is required', 'error');
+      return;
+    }
+    setApiKeyBusy(true);
+    try {
+      await createApiKey({ name, scopes: apiKeyScopes.length ? apiKeyScopes : ['mailbox:read'] });
+      setApiKeyName('');
+      setApiKeyScopes([]);
+      onNotify(`API key ${name} created`, 'success');
+      const keys = await listApiKeys();
+      setApiKeys(keys);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setApiKeyBusy(false);
+    }
+  };
+
+  const handleDeleteApiKey = async (id: string) => {
+    if (!confirm(`Delete API key ${id}?`)) return;
+    try {
+      await deleteApiKey(id);
+      onNotify('API key removed', 'info');
+      const keys = await listApiKeys();
+      setApiKeys(keys);
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleRotateApiKey = async (id: string) => {
+    if (!confirm(`Rotate API key ${id}?`)) return;
+    try {
+      await rotateApiKey(id);
+      onNotify('API key rotated', 'success');
+      const keys = await listApiKeys();
+      setApiKeys(keys);
     } catch (e) {
       fail(e);
     }
@@ -1655,6 +1715,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             ),
         },
         { id: 'activity', label: 'Login activity', icon: <Lock className="w-4 h-4" /> },
+        { id: 'apikeys', label: 'API keys', icon: <KeyRound className="w-4 h-4" /> },
       ],
     },
   ];
@@ -2740,6 +2801,132 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 icon={<Forward className="w-5 h-5" />}
                                 title="No aliases yet"
                                 description="Forward an address to an existing mailbox with the form above."
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ===================== TAB: API KEYS ===================== */}
+            {activeTab === 'apikeys' && (
+              <>
+                <PageHeader
+                  title="API keys"
+                  description="Management of API access keys for integrations and automation."
+                />
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle>Create API key</SectionTitle>
+                  <form
+                    className="grid grid-cols-1 items-end gap-3 p-5 sm:grid-cols-[1fr_1fr_auto]"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleCreateApiKey();
+                    }}
+                  >
+                    <div className="w-full">
+                      <label className={LABEL} htmlFor="api-key-name">
+                        Key name
+                      </label>
+                      <input
+                        id="api-key-name"
+                        type="text"
+                        placeholder="e.g. webhook-notifications"
+                        value={apiKeyName}
+                        onChange={(e) => setApiKeyName(e.target.value)}
+                        className={`${INPUT}`}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 w-full">
+                      <div>
+                        <label className={LABEL} htmlFor="api-key-scopes">
+                          Scopes
+                        </label>
+                        <select
+                          id="api-key-scopes"
+                          multiple
+                          className={`${INPUT}`}
+                          onChange={(e) => {
+                            const selected = Array.from(
+                              (e.target as HTMLSelectElement).selectedOptions,
+                            ).map((o) => o.value);
+                            setApiKeyScopes(selected);
+                          }}
+                        >
+                          <option value="mailbox:read">Mailbox read</option>
+                          <option value="mailbox:write">Mailbox write</option>
+                          <option value="domain:read">Domain read</option>
+                          <option value="domain:write">Domain write</option>
+                          <option value="statistics:read">Statistics read</option>
+                          <option value="batch:write">Batch write</option>
+                          <option value="system:read">System read</option>
+                        </select>
+                      </div>
+                    </div>
+                    <button type="submit" className={btn('primary')} disabled={apiKeyBusy}>
+                      <Plus className="w-3.5 h-3.5" />
+                      {apiKeyBusy ? 'Creating...' : 'Create key'}
+                    </button>
+                  </form>
+                </div>
+
+                <div className={`${PANEL} overflow-hidden`}>
+                  <SectionTitle actions={<span className={`${BADGE_NEUTRAL} tabular-num`}>{apiKeys.length}</span>}>
+                    API keys
+                  </SectionTitle>
+                  <div className="overflow-x-auto">
+                    <table className={TABLE}>
+                      <thead>
+                        <tr>
+                          <th className={TH}>Key ID</th>
+                          <th className={TH}>Name</th>
+                          <th className={TH}>Scopes</th>
+                          <th className={TH}>Created</th>
+                          <th className={`${TH} text-right`}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {apiKeys.map((k) => (
+                          <tr key={k.id} className={T.row}>
+                            <td className={`${TD} ${CODE} font-medium ${T.primary}`}>
+                              {k.id}
+                            </td>
+                            <td className={`${TD} ${CODE} font-medium`}>
+                              {k.name}
+                            </td>
+                            <td className={`${TD} font-mono ${MUTED}`}>
+                              {k.scopes.join(', ')}
+                            </td>
+                            <td className={`${TD} hidden sm:table-cell ${MUTED}`}>
+                              {k.created_at}
+                            </td>
+                            <td className={T.actions}>
+                              <button
+                                className={btn('outline', 'xs')}
+                                onClick={() => void handleRotateApiKey(k.id)}
+                              >
+                                <RotateCw className="w-3 h-3" />
+                              </button>
+                              <button
+                                className={btn('danger', 'xs')}
+                                onClick={() => void handleDeleteApiKey(k.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {apiKeys.length === 0 && (
+                          <tr>
+                            <td colSpan={6}>
+                              <EmptyState
+                                icon={<Key className="w-5 h-5" />}
+                                title="No API keys yet"
+                                description="Create your first API key to authorize integrations and automation."
                               />
                             </td>
                           </tr>

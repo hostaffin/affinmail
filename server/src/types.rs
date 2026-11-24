@@ -229,6 +229,33 @@ pub struct MtaVersion {
     pub created_at: String,
 }
 
+/// F-058: API key management
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKey {
+    pub id: String,
+    pub name: String,
+    pub scopes: Vec<String>,
+    pub created_at: String,
+    pub expires_at: Option<String>,
+    pub is_active: bool,
+    pub last_used_at: Option<String>,
+    pub ip_restriction: Option<String>,
+}
+
+/// F-064: API usage per key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiUsage {
+    pub key_id: String,
+    pub total_calls: u64,
+    pub calls_today: u64,
+    pub calls_this_month: u64,
+    pub error_count: u64,
+    pub rate_limit_hits: u64,
+    pub avg_latency_ms: f64,
+    pub last_call_at: Option<String>,
+    pub top_endpoints: Vec<(String, u64)>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiError {
     pub code: u16,

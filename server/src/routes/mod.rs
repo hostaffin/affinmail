@@ -1,5 +1,7 @@
 pub mod admin;
+pub mod api_keys;
 pub mod auth;
+pub mod batch;
 pub mod client;
 pub mod health;
 pub mod import_mail;

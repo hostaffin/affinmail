@@ -710,3 +710,78 @@ export const createMigration = (body: {
   source_node?: string;
 }) =>
   apiFetch<{ migration: MigrationJobRow }>('/migrations', { method: 'POST', body });
+
+/* ------------------------------------------------------- F-058 API keys */
+
+export interface ApiKeyRow {
+  id: string;
+  name: string;
+  scopes: string[];
+  created_at: string;
+  expires_at: string | null;
+  is_active: boolean;
+}
+
+export interface ApiUsageRow {
+  key_id: string;
+  total_calls: number;
+  calls_today: number;
+  calls_this_month: number;
+  error_count: number;
+  rate_limit_hits: number;
+  avg_latency_ms: number;
+  last_call_at: string | null;
+  top_endpoints: [string, number][];
+}
+
+export const listApiKeys = () => apiFetch<ApiKeyRow[]>('/api-keys');
+
+export const createApiKey = (body: { name: string; scopes: string[] }) =>
+  apiFetch<ApiKeyRow>('/api-keys', { method: 'POST', body });
+
+export const deleteApiKey = (id: string) =>
+  apiFetch<{ deleted: string }>(`/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const rotateApiKey = (id: string, body?: { new_name?: string; new_scopes?: string[] }) =>
+  apiFetch<ApiKeyRow>(`/api-keys/${encodeURIComponent(id)}/rotate`, { method: 'POST', body });
+
+export const getApiKeyUsage = (id: string) =>
+  apiFetch<ApiUsageRow>(`/api-keys/${encodeURIComponent(id)}/usage`);
+
+/* ------------------------------------------------------ F-066 batch jobs */
+
+export interface BatchJobRow {
+  job_id: string;
+  status: string;
+  job_type: string;
+  total: number;
+  processed: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export const batchCreateMailboxes = (body: {
+  domain_name: string;
+  emails: string[];
+  display_name?: string;
+  quota_limit_mb?: number;
+}) =>
+  apiFetch<{ job_id: string; created: number; errors: string[]; total: number }>('/batch/mailboxes', {
+    method: 'POST',
+    body,
+  });
+
+export const batchSuspend = (account_ids: string[]) =>
+  apiFetch<{ job_id: string; suspended: number; errors: string[]; total: number }>('/batch/suspend', {
+    method: 'POST',
+    body: { account_ids },
+  });
+
+export const batchDnsCheck = (domains: string[]) =>
+  apiFetch<{ job_id: string; results: Record<string, unknown>; total: number }>('/batch/dns-check', {
+    method: 'POST',
+    body: { domains },
+  });
+
+export const getBatchJob = (id: string) =>
+  apiFetch<BatchJobRow>(`/jobs/${encodeURIComponent(id)}`);

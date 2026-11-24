@@ -27,6 +27,11 @@ pub struct AppState {    pub plans: Arc<RwLock<HashMap<String, Plan>>>,
     pub mta_versions: Arc<RwLock<Vec<MtaVersion>>>,
     pub admin_token: String,
     pub jwt_secret: String,
+    /// F-058/F-064: API keys and per-key usage metrics (in-memory until DB grants exist).
+    pub api_keys: Arc<RwLock<HashMap<String, ApiKey>>>,
+    pub api_usage: Arc<RwLock<HashMap<String, ApiUsage>>>,
+    /// F-066: batch job tracking (in-memory, like import jobs).
+    pub batch_jobs: Arc<RwLock<HashMap<String, crate::routes::batch::BatchJob>>>,
 }
 
 impl AppState {
@@ -258,6 +263,9 @@ impl AppState {
             mta_versions: Arc::new(RwLock::new(Vec::new())),
             admin_token,
             jwt_secret,
+            api_keys: Arc::new(RwLock::new(HashMap::new())),
+            api_usage: Arc::new(RwLock::new(HashMap::new())),
+            batch_jobs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }

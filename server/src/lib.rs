@@ -343,6 +343,14 @@ pub fn create_app(state: AppState) -> Router {
             get(routes::infra::list_migrations).post(routes::infra::create_migration),
         )
         .route("/api/v1/admin/roles", get(routes::infra::roles))
+        .route("/api/v1/api-keys", get(routes::api_keys::list_api_keys).post(routes::api_keys::create_api_key))
+        .route("/api/v1/api-keys/{id}", delete(routes::api_keys::delete_api_key))
+        .route("/api/v1/api-keys/{id}/rotate", post(routes::api_keys::rotate_api_key))
+        .route("/api/v1/api-keys/{id}/usage", get(routes::api_keys::get_api_key_usage))
+        .route("/api/v1/batch/mailboxes", post(routes::batch::batch_mailboxes))
+        .route("/api/v1/batch/suspend", post(routes::batch::batch_suspend))
+        .route("/api/v1/batch/dns-check", post(routes::batch::batch_dns_check))
+        .route("/api/v1/jobs/{id}", get(routes::batch::get_batch_job))
         .layer(cors)
         .with_state(state)
 }
