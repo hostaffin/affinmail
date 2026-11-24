@@ -9,7 +9,7 @@ import {
   Send,
   Bold,
   Italic,
-  Underline,
+  Underline as UnderlineIcon,
   List,
   ListOrdered,
   Code,
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Underline from '@tiptap/extension-underline';
 import { validateAttachment, formatFileSize } from '../utils/attachmentValidator';
 import { Contact, searchContacts } from '../lib/collab';
 
@@ -220,7 +221,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
   const wasOpen = useRef(false);
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Underline],
     content: '',
     immediatelyRender: false,
     editorProps: {
@@ -519,7 +520,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                 className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('underline') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Underline"
               >
-                <Underline className="w-3.5 h-3.5 stroke-[1.5]" />
+                <UnderlineIcon className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
               <div className="h-4 w-px bg-[#E0E2E7] dark:bg-[#333538] mx-1 shrink-0"></div>
               <button
@@ -649,7 +650,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                 }`}
                 title="Formatting options"
               >
-                <Underline className="w-4 h-4 stroke-[1.5]" />
+                <UnderlineIcon className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               {/* Attach File */}

@@ -74,13 +74,15 @@ pub async fn client_dashboard(State(state): State<AppState>) -> impl IntoRespons
     let storage_used: i64 = mailboxes.values().map(|m| m.quota_used_mb).sum();
     let storage_limit: i64 = mailboxes.values().map(|m| m.quota_limit_mb).sum();
 
+    // Note: emails_sent_today/emails_received_today require JMAP stats not available in
+    // in-memory state; billing panel should call webmail JMAP endpoint directly for live stats.
     Json(json!({
         "status": "ok",
         "mailbox_count": mbox_count,
         "storage_used_mb": storage_used,
         "storage_limit_mb": storage_limit,
-        "emails_sent_today": 12,
-        "emails_received_today": 84,
+        "emails_sent_today": null,
+        "emails_received_today": null,
         "security_score_pct": 100,
         "dns_verified": true
     }))
