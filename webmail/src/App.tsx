@@ -693,7 +693,7 @@ export const App: React.FC = () => {
 
   if (isAdminMode) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-base-100">
+      <div className="h-dvh w-full overflow-hidden bg-base-100">
         <AdminPanel
           theme={theme}
           onToggleTheme={toggleTheme}
@@ -712,7 +712,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-gmail-canvas dark:bg-gmail-dark-canvas select-none">
+    <div className="flex flex-col h-dvh w-full overflow-hidden bg-gmail-canvas dark:bg-gmail-dark-canvas select-none">
       {/* 1. Header Bar */}
       <HeaderBar
         theme={theme}
@@ -737,7 +737,7 @@ export const App: React.FC = () => {
       />
 
       {/* 2. Main Workspace Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Navigation Sidebar */}
         <NavigationSidebar
           currentFolder={currentFolder}

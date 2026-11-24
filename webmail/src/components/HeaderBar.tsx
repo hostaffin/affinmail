@@ -61,7 +61,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   const [showSearchFilter, setShowSearchFilter] = useState(false);
 
   return (
-    <header className="h-16 px-4 bg-gmail-canvas dark:bg-gmail-dark-canvas flex items-center justify-between gap-4 select-none shrink-0 relative z-30">
+    <header className="h-16 px-4 pt-[env(safe-area-inset-top)] bg-gmail-canvas dark:bg-gmail-dark-canvas flex items-center justify-between gap-4 select-none shrink-0 relative z-30">
       {/* 1. Brand & Hamburger Toggle */}
       <div className={`flex items-center gap-3 shrink-0 min-w-0 sm:min-w-[230px] ${mobileSearch ? "max-sm:hidden" : ""}`}>
         <button
