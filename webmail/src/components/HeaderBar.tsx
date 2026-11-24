@@ -384,7 +384,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   setShowAccountMenu(false);
                   onOpenSettings?.();
                 }}
-                className="mt-3 h-9 px-3 rounded-lg border border-gmail-border dark:border-gmail-dark-border text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center gap-1.5"
+                className="mt-3 w-full h-9 px-3 rounded-lg border border-gmail-border dark:border-gmail-dark-border text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center gap-1.5"
               >
                 Manage your AffinMail account
               </button>
