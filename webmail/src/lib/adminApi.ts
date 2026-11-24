@@ -196,3 +196,71 @@ export async function validateToken(token: string): Promise<boolean> {
   });
   return res.status === 200;
 }
+
+/* ------------------------------------------------- panel auth & SSO */
+
+/** Sign in with the mail server's administrator (root) credentials. */
+export async function adminLogin(
+  username: string,
+  password: string
+): Promise<{ token: string; username: string }> {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok || payload?.status === 'error') {
+    throw new Error(payload?.error || `HTTP ${res.status}`);
+  }
+  const data = payload.data as { token: string; username: string };
+  setToken(data.token);
+  return data;
+}
+
+export async function adminLogout(): Promise<void> {
+  try {
+    await apiFetch('/auth/logout', { method: 'POST' });
+  } catch {
+    // session may already be gone; local sign-out proceeds regardless
+  }
+  clearToken();
+}
+
+/** Mint a one-time SSO link that opens the webmail as the given mailbox. */
+export const createSsoLink = (email: string) =>
+  apiFetch<{ ssoUrl: string; expiresAt: string }>('/auth/sso-token', {
+    method: 'POST',
+    body: { email },
+  });
+
+export const setMailboxQuota = (email: string, quotaLimitMb: number) =>
+  apiFetch<Mailbox>(`/mailboxes/${encodeURIComponent(email)}/quota`, {
+    method: 'PATCH',
+    body: { quotaLimitMb },
+  });
+
+export const setMailboxPassword = (email: string, password: string) =>
+  apiFetch<Mailbox | { email: string; passwordUpdated: boolean }>(
+    `/mailboxes/${encodeURIComponent(email)}/password`,
+    { method: 'PUT', body: { password } }
+  );
+
+/* ------------------------------------------------------------- aliases */
+
+export interface Alias {
+  id: string;
+  source_address: string;
+  destination_address: string;
+  domain: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export const listAliases = () => apiFetch<{ aliases: Alias[]; count: number }>('/aliases');
+
+export const createAlias = (source: string, destination: string) =>
+  apiFetch<Alias>('/aliases', { method: 'POST', body: { source, destination } });
+
+export const deleteAlias = (id: string) =>
+  apiFetch<{ deleted: string }>(`/aliases/${encodeURIComponent(id)}`, { method: 'DELETE' });

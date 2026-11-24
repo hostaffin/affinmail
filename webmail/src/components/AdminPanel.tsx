@@ -19,6 +19,10 @@ import {
   Terminal,
   Menu,
   X,
+  LogIn,
+  KeyRound,
+  Gauge,
+  Forward,
 } from 'lucide-react';
 import { AffinMailLogo } from './AffinMailLogo';
 import {
@@ -29,9 +33,16 @@ import {
   type Health,
   type DnsRecord,
   getToken,
-  setToken,
   clearToken,
-  validateToken,
+  adminLogin,
+  adminLogout,
+  createSsoLink,
+  setMailboxQuota,
+  setMailboxPassword,
+  type Alias,
+  listAliases,
+  createAlias,
+  deleteAlias,
   health as apiHealth,
   listDomains,
   createDomain,
@@ -56,7 +67,7 @@ interface AdminPanelProps {
   onNotify: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-type AdminTab = 'dashboard' | 'domains' | 'mailboxes' | 'ippools' | 'storage' | 'system';
+type AdminTab = 'dashboard' | 'domains' | 'mailboxes' | 'aliases' | 'ippools' | 'storage' | 'system';
 
 interface DomainRow {
   id: string;
@@ -75,9 +86,11 @@ interface MailboxRow {
   email: string;
   domain: string;
   quota: string;
+  quotaMb: number;
   used: string;
   route: string;
   status: string;
+  isServerOnly: boolean;
 }
 
 interface IpPoolRow {
@@ -113,7 +126,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Auth gate
   const [authed, setAuthed] = useState(() => !!getToken());
-  const [tokenInput, setTokenInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('admin');
+  const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -146,6 +160,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newIpType, setNewIpType] = useState<'shared' | 'dedicated'>('shared');
 
   const logout = useCallback((msg?: string) => {
+    void adminLogout();
     clearToken();
     setAuthed(false);
     setDomains([]);
@@ -196,7 +211,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           id: mb.id,
           email: mb.email,
           domain: mb.domain ?? mb.email.split('@')[1] ?? '',
-          quota: `${mb.quotaLimitMb} MB`,
+          quota: mb.quotaLimitMb > 0 ? `${mb.quotaLimitMb} MB` : 'Unlimited',
+          quotaMb: mb.quotaLimitMb,
+          isServerOnly: mb.id.startsWith('stalwart:'),
           used: fmtBytes(mb.quotaUsedBytes),
           route: mb.outboundRoute,
           status: mb.status,
@@ -248,23 +265,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }, [selectedDnsDomain, fail]);
 
   const handleLogin = async () => {
-    const token = tokenInput.trim();
-    if (!token) {
-      setAuthError('Enter an admin token');
+    const username = usernameInput.trim();
+    if (!username || !passwordInput) {
+      setAuthError('Enter the server administrator username and password');
       return;
     }
     setAuthBusy(true);
     setAuthError('');
     try {
-      if (await validateToken(token)) {
-        setToken(token);
-        setTokenInput('');
-        setAuthed(true);
-      } else {
-        setAuthError('Invalid admin token');
-      }
-    } catch {
-      setAuthError('Cannot reach the admin API');
+      await adminLogin(username, passwordInput);
+      setPasswordInput('');
+      setAuthed(true);
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'Sign-in failed');
     } finally {
       setAuthBusy(false);
     }
@@ -342,6 +355,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleToggleMailboxStatus = async (mb: MailboxRow) => {
+    if (mb.isServerOnly) {
+      onNotify('This mailbox is managed on the mail server itself', 'error');
+      return;
+    }
     const next = mb.status === 'active' ? 'suspended' : 'active';
     try {
       await setMailboxStatus(mb.email, next);
@@ -353,6 +370,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleDeleteMailbox = async (mb: MailboxRow) => {
+    if (mb.isServerOnly) {
+      onNotify('This mailbox is managed on the mail server itself', 'error');
+      return;
+    }
     if (!confirm(`Delete mailbox ${mb.email}?`)) return;
     try {
       await deleteMailbox(mb.email);
@@ -378,6 +399,102 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setNewIpRdns('');
       setShowAddIpModal(false);
       onNotify(`Outbound IP ${newIpAddress.trim()} bound`, 'success');
+      await loadData();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // Aliases
+  const [aliases, setAliases] = useState<Alias[]>([]);
+  const [newAliasSource, setNewAliasSource] = useState('');
+  const [newAliasDest, setNewAliasDest] = useState('');
+
+  const loadAliases = useCallback(async () => {
+    try {
+      const r = await listAliases();
+      setAliases(r.aliases);
+    } catch (e) {
+      fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'aliases') void loadAliases();
+  }, [authed, activeTab, loadAliases]);
+
+  const handleCreateAlias = async () => {
+    const source = newAliasSource.trim().toLowerCase();
+    const destination = newAliasDest.trim().toLowerCase();
+    if (!source || !destination) {
+      onNotify('Source and destination addresses are required', 'error');
+      return;
+    }
+    try {
+      await createAlias(source, destination);
+      setNewAliasSource('');
+      setNewAliasDest('');
+      onNotify(`Alias ${source} → ${destination} created`, 'success');
+      await loadAliases();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleDeleteAlias = async (a: Alias) => {
+    if (!confirm(`Delete alias ${a.source_address}?`)) return;
+    try {
+      await deleteAlias(a.id);
+      onNotify('Alias removed', 'info');
+      await loadAliases();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // Mailbox SSO + password + quota
+  const [passwordTarget, setPasswordTarget] = useState<MailboxRow | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [quotaTarget, setQuotaTarget] = useState<MailboxRow | null>(null);
+  const [newQuota, setNewQuota] = useState('');
+
+  const handleOpenMailbox = async (mb: MailboxRow) => {
+    try {
+      const r = await createSsoLink(mb.email);
+      window.open(r.ssoUrl, '_blank', 'noopener');
+      onNotify(`Opening ${mb.email} in a new tab`, 'info');
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!passwordTarget) return;
+    if (newPassword.length < 8) {
+      onNotify('Password must be at least 8 characters', 'error');
+      return;
+    }
+    try {
+      await setMailboxPassword(passwordTarget.email, newPassword);
+      onNotify(`Password updated for ${passwordTarget.email}`, 'success');
+      setPasswordTarget(null);
+      setNewPassword('');
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleSaveQuota = async () => {
+    if (!quotaTarget) return;
+    const mb = Number(newQuota);
+    if (!Number.isFinite(mb) || mb < 1) {
+      onNotify('Enter a quota of at least 1 MB', 'error');
+      return;
+    }
+    try {
+      await setMailboxQuota(quotaTarget.email, mb);
+      onNotify(`Quota for ${quotaTarget.email} set to ${mb} MB`, 'success');
+      setQuotaTarget(null);
       await loadData();
     } catch (e) {
       fail(e);
@@ -479,6 +596,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
           <span className="font-mono text-xs tabular-nums text-base-content/60">
             {mailboxes.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('aliases');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
+            activeTab === 'aliases'
+              ? 'bg-base-200 text-base-content font-medium'
+              : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Forward className="w-4 h-4 stroke-[1.5] text-base-content/60" />
+            <span>Aliases and forwarding</span>
+          </div>
+          <span className="font-mono text-xs tabular-nums text-base-content/60">
+            {aliases.length}
           </span>
         </button>
 
@@ -589,21 +726,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <h1 className="text-sm font-medium">Admin sign in</h1>
             </div>
             <p className="text-xs text-base-content/60">
-              Enter the AffinMail admin API token to manage this server.
+              Sign in with the mail server's administrator (root) credentials —
+              the same username and password as the mail server itself. No
+              separate panel account is needed.
             </p>
 
             <div className="space-y-1">
-              <label className="text-xs text-base-content/70 block" htmlFor="admin-token">
-                Admin token
+              <label className="text-xs text-base-content/70 block" htmlFor="admin-username">
+                Username
               </label>
               <input
-                id="admin-token"
-                type="password"
-                autoComplete="off"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
+                id="admin-username"
+                type="text"
+                autoComplete="username"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
                 className="input input-bordered input-sm w-full font-mono rounded-lg"
                 autoFocus
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-base-content/70 block" htmlFor="admin-password">
+                Password
+              </label>
+              <input
+                id="admin-password"
+                type="password"
+                autoComplete="current-password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="input input-bordered input-sm w-full rounded-lg"
               />
             </div>
 
@@ -721,7 +874,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* Mobile Slide-over Drawer */}
         {isMobileNavOpen && (
-          <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true">
+          <div className="fixed inset-0 z-50 md:hidden flex h-dvh" role="dialog" aria-modal="true">
             <div
               className="fixed inset-0 bg-black/40 transition-opacity"
               onClick={() => setIsMobileNavOpen(false)}
@@ -991,19 +1144,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               {mb.status}
                             </span>
                           </td>
-                          <td className="text-right space-x-1">
+                          <td className="text-right space-x-1 whitespace-nowrap">
                             <button
-                              onClick={() => void handleToggleMailboxStatus(mb)}
-                              className="btn btn-ghost btn-xs font-medium text-base-content/70 hover:text-base-content rounded-lg-lg"
+                              onClick={() => void handleOpenMailbox(mb)}
+                              className="btn btn-ghost btn-xs font-medium text-primary hover:bg-base-200 rounded-lg"
+                              title={`Open ${mb.email} in the webmail (SSO)`}
                             >
-                              {mb.status === 'active' ? 'Suspend' : 'Unsuspend'}
+                              <LogIn className="w-3.5 h-3.5 stroke-[1.5] inline" /> Open
                             </button>
                             <button
-                              onClick={() => void handleDeleteMailbox(mb)}
-                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded-lg"
+                              onClick={() => {
+                                setPasswordTarget(mb);
+                                setNewPassword('');
+                              }}
+                              className="btn btn-ghost btn-xs font-medium text-base-content/70 hover:text-base-content rounded-lg"
+                              title="Set a new password"
                             >
-                              Delete
+                              <KeyRound className="w-3.5 h-3.5 stroke-[1.5] inline" /> Password
                             </button>
+                            {!mb.isServerOnly && (
+                              <button
+                                onClick={() => {
+                                  setQuotaTarget(mb);
+                                  setNewQuota(String(mb.quotaMb || 5120));
+                                }}
+                                className="btn btn-ghost btn-xs font-medium text-base-content/70 hover:text-base-content rounded-lg"
+                                title="Change storage quota"
+                              >
+                                <Gauge className="w-3.5 h-3.5 stroke-[1.5] inline" /> Quota
+                              </button>
+                            )}
+                            {!mb.isServerOnly && (
+                              <>
+                                <button
+                                  onClick={() => void handleToggleMailboxStatus(mb)}
+                                  className="btn btn-ghost btn-xs font-medium text-base-content/70 hover:text-base-content rounded-lg-lg"
+                                >
+                                  {mb.status === 'active' ? 'Suspend' : 'Unsuspend'}
+                                </button>
+                                <button
+                                  onClick={() => void handleDeleteMailbox(mb)}
+                                  className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded-lg"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                            {mb.isServerOnly && (
+                              <span className="text-xs text-base-content/40 font-mono">server</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1011,6 +1200,93 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <tr>
                           <td colSpan={6} className="text-center text-xs text-base-content/50 py-6">
                             No mailboxes yet
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===================== TAB: ALIASES ===================== */}
+          {activeTab === 'aliases' && (
+            <div className="space-y-6 max-w-6xl">
+              <div>
+                <h2 className="text-base font-medium text-base-content">Aliases and forwarding</h2>
+                <p className="text-xs text-base-content/60">
+                  An alias delivers mail for one address into another mailbox on this server.
+                </p>
+              </div>
+
+              <div className="bg-base-100 border border-base-300 rounded-xl p-4 space-y-3">
+                <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                  <div>
+                    <label className="text-xs text-base-content/70 mb-1 block">Alias address</label>
+                    <input
+                      type="email"
+                      placeholder="sales@example.com"
+                      value={newAliasSource}
+                      onChange={(e) => setNewAliasSource(e.target.value)}
+                      className="input input-bordered input-xs h-8 w-full font-mono rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-base-content/70 mb-1 block">Delivers to mailbox</label>
+                    <input
+                      type="email"
+                      placeholder="owner@example.com"
+                      value={newAliasDest}
+                      onChange={(e) => setNewAliasDest(e.target.value)}
+                      className="input input-bordered input-xs h-8 w-full font-mono rounded-lg"
+                    />
+                  </div>
+                  <button
+                    onClick={() => void handleCreateAlias()}
+                    className="btn btn-primary btn-xs h-8 px-3 rounded-lg font-medium"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[1.5]" /> Add alias
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto w-full">
+                  <table className="table table-sm w-full text-xs min-w-[520px]">
+                    <thead className="bg-base-200/60 text-base-content/60 font-medium">
+                      <tr>
+                        <th>Alias address</th>
+                        <th>Delivers to</th>
+                        <th>Status</th>
+                        <th className="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-base-300">
+                      {aliases.map((a) => (
+                        <tr key={a.id} className="hover:bg-base-200/40">
+                          <td className="font-medium text-base-content font-mono">{a.source_address}</td>
+                          <td className="font-mono text-base-content/70">{a.destination_address}</td>
+                          <td>
+                            <span className="inline-flex items-center gap-1.5 text-xs text-base-content/80 font-mono">
+                              <span className={`w-1.5 h-1.5 rounded-full ${a.isActive ? 'bg-success' : 'bg-error'}`}></span>
+                              {a.isActive ? 'active' : 'inactive'}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            <button
+                              onClick={() => void handleDeleteAlias(a)}
+                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded-lg"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {aliases.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="text-center text-xs text-base-content/50 py-6">
+                            No aliases yet
                           </td>
                         </tr>
                       )}
@@ -1236,6 +1512,64 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       )}
 
       {/* ===================== MODAL: CREATE MAILBOX ===================== */}
+      {/* ===================== MODAL: RESET PASSWORD ===================== */}
+      {passwordTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">
+            <h3 className="text-sm font-medium text-base-content">Set password for {passwordTarget.email}</h3>
+            <div>
+              <label className="text-xs text-base-content/70 mb-1 block">New password (min. 8 characters)</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="input input-bordered input-xs h-8 w-full rounded-lg"
+                autoFocus
+              />
+              <p className="text-xs text-base-content/50 mt-1">
+                The mailbox user signs in with this password from now on. Panel SSO into
+                this mailbox keeps working after a reset.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
+              <button onClick={() => setPasswordTarget(null)} className="btn btn-ghost btn-xs h-8 px-3 rounded-lg font-medium">
+                Cancel
+              </button>
+              <button onClick={() => void handleResetPassword()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
+                Set password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== MODAL: QUOTA ===================== */}
+      {quotaTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">
+            <h3 className="text-sm font-medium text-base-content">Storage quota for {quotaTarget.email}</h3>
+            <div>
+              <label className="text-xs text-base-content/70 mb-1 block">Quota (MB)</label>
+              <input
+                type="number"
+                value={newQuota}
+                onChange={(e) => setNewQuota(e.target.value)}
+                className="input input-bordered input-xs h-8 w-full font-mono tabular-nums rounded-lg"
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
+              <button onClick={() => setQuotaTarget(null)} className="btn btn-ghost btn-xs h-8 px-3 rounded-lg font-medium">
+                Cancel
+              </button>
+              <button onClick={() => void handleSaveQuota()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
+                Save quota
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddMailboxModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">

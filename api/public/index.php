@@ -693,7 +693,44 @@ function mailboxList(): never
     $st = db()->prepare($sql);
     $st->execute($args);
     $rows = $st->fetchAll();
-    ok(['mailboxes' => array_map('mailboxOut', $rows), 'count' => count($rows)]);
+    $out = array_map('mailboxOut', $rows);
+    $seen = [];
+    foreach ($out as $o) {
+        $seen[strtolower((string)$o['email'])] = true;
+    }
+    // Merge in mailboxes that exist only in Stalwart (created directly on the
+    // mail server, e.g. the server admin account and early test mailboxes) so
+    // the panel can manage every real mailbox on the server.
+    try {
+        foreach (stalwartAccounts() as $a) {
+            $email = strtolower((string)($a['emailAddress'] ?? ''));
+            if ($email === '' || isset($seen[$email])) {
+                continue;
+            }
+            if ($domFilter !== null && $domFilter !== '' && !str_ends_with($email, '@' . $domFilter)) {
+                continue;
+            }
+            $quota = $a['quota'] ?? null;
+            $out[] = [
+                'id'                => 'stalwart:' . (string)($a['id'] ?? ''),
+                'email'             => $email,
+                'displayName'       => (string)($a['description'] ?? $a['name'] ?? ''),
+                'quotaLimitMb'      => is_numeric($quota) ? (int)round(((float)$quota) / 1048576) : 0,
+                'quotaUsedBytes'    => 0,
+                'hourlyRateLimit'   => 0,
+                'outboundRoute'     => 'direct',
+                'status'            => !empty($a['isDisabled']) ? 'suspended' : 'active',
+                'domain'            => substr($email, strpos($email, '@') + 1),
+                'stalwartAccountId' => (string)($a['id'] ?? ''),
+                'createdAt'         => '',
+            ];
+            $seen[$email] = true;
+        }
+    } catch (Throwable) {
+        // Stalwart unavailable: serve the billing mirror only.
+    }
+    usort($out, static fn(array $x, array $y): int => strcmp((string)$x['email'], (string)$y['email']));
+    ok(['mailboxes' => $out, 'count' => count($out)]);
 }
 
 function mailboxFind(string $email): array
@@ -754,15 +791,24 @@ function mailboxStatus(string $email): never
     if (!in_array($status, ['suspended', 'active'], true)) {
         fail(400, 'status must be "suspended" or "active"');
     }
-    if (empty($row['stalwart_account_id']) || empty($row['secret_vault'])) {
-        fail(409, 'mailbox was not provisioned through this API (missing Stalwart account/vault)');
+    $swId = !empty($row['stalwart_account_id'])
+        ? (string)$row['stalwart_account_id']
+        : (string)(stalwartFindAccountByEmail($row['email'])['id'] ?? '');
+    if ($swId === '') {
+        fail(409, 'mailbox has no Stalwart account');
     }
 
     try {
-        $secret = $status === 'suspended'
-            ? substr(bin2hex(random_bytes(20)), 0, 32)
-            : vaultDecrypt($row['secret_vault']);
-        stalwartSetPassword((string)$row['stalwart_account_id'], $secret);
+        if ($status === 'suspended') {
+            stalwartSetAccount(['update' => [$swId => ['isDisabled' => true]]]);
+        } else {
+            stalwartSetAccount(['update' => [$swId => ['isDisabled' => false]]]);
+            // Legacy rows suspended by password scramble get their real
+            // password back from the vault.
+            if (!empty($row['secret_vault'])) {
+                stalwartSetPassword($swId, vaultDecrypt($row['secret_vault']));
+            }
+        }
     } catch (RuntimeException $e) {
         fail(502, 'stalwart update failed: ' . $e->getMessage());
     }
@@ -1082,6 +1128,240 @@ function systemRestart(): never
     ok(['restarting' => 'stalwart.service']);
 }
 
+
+/* ------------------------------------------------- admin panel auth */
+
+function adminLoginRateLimit(): void
+{
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    try {
+        $n = (int)redis()->get('auth:login:count:' . $ip);
+    } catch (Throwable) {
+        return;
+    }
+    if ($n >= 10) {
+        fail(429, 'too many login attempts - try again in a few minutes');
+    }
+}
+
+function adminLoginBump(): void
+{
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    try {
+        $r = redis();
+        $k = 'auth:login:count:' . $ip;
+        $n = (int)$r->incr($k);
+        if ($n === 1) {
+            $r->expire($k, 300);
+        }
+    } catch (Throwable) {
+    }
+}
+
+/**
+ * Panel sign-in with the mail server's own administrator (root) credentials.
+ * Credentials are verified against Stalwart itself and the account must carry
+ * the Admin role - there is no separate panel account. Returns an opaque
+ * session token (12 h) that authenticate() also accepts.
+ */
+function adminLogin(): never
+{
+    adminLoginRateLimit();
+    $b = body();
+    $username = trim(stringField($b, 'username', 255));
+    $password = stringField($b, 'password', 1024);
+    if ($username === '' || $password === '') {
+        fail(400, 'username and password are required');
+    }
+
+    // Stalwart accounts sign in with their full email address; the server
+    // administrator may type the bare name ("admin") - resolve it to the
+    // matching account's email address first.
+    $loginId = $username;
+    if (!str_contains($loginId, '@')) {
+        foreach (stalwartAccounts() as $a) {
+            if (strcasecmp((string)($a['name'] ?? ''), $loginId) === 0 && ($a['emailAddress'] ?? '') !== '') {
+                $loginId = (string)$a['emailAddress'];
+                break;
+            }
+        }
+    }
+
+    $ch = curl_init(cfg('STALWART_URL', 'http://127.0.0.1:8080') . '/jmap/session');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_USERPWD        => $loginId . ':' . $password,
+    ]);
+    $raw = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($raw === false || $code !== 200) {
+        adminLoginBump();
+        fail(401, 'invalid credentials');
+    }
+    $d = json_decode($raw, true);
+    $acctId = is_array($d) ? (string)(array_key_first($d['accounts'] ?? []) ?? '') : '';
+    $sessionUser = is_array($d) ? (string)($d['username'] ?? $username) : $username;
+
+    $account = $acctId !== '' ? stalwartAccountById($acctId) : null;
+    if ($account === null || (($account['roles']['@type'] ?? '') !== 'Admin')) {
+        fail(403, 'this sign-in is for the server administrator account only');
+    }
+
+    $token = bin2hex(random_bytes(32));
+    try {
+        redis()->setex('auth:session:' . hash('sha256', $token), 43200, $sessionUser);
+    } catch (Throwable) {
+        fail(500, 'session store unavailable');
+    }
+    ok(['token' => $token, 'username' => $sessionUser, 'expiresInSeconds' => 43200]);
+}
+
+function adminLogout(): never
+{
+    $given = bearer();
+    if ($given !== '') {
+        try {
+            redis()->del('auth:session:' . hash('sha256', $given));
+        } catch (Throwable) {
+        }
+    }
+    ok(['signedOut' => true]);
+}
+
+/** Remove expired one-time SSO credentials from Stalwart accounts. */
+function sweepTempCredentials(): void
+{
+    try {
+        $all = redis()->hGetAll('auth:sso:tempcreds');
+    } catch (Throwable) {
+        return;
+    }
+    if (!is_array($all)) {
+        return;
+    }
+    $now = time();
+    foreach ($all as $k => $exp) {
+        if ((int)$exp > $now) {
+            continue;
+        }
+        $parts = explode(':', (string)$k, 2);
+        if (count($parts) === 2 && $parts[0] !== '' && $parts[1] !== '') {
+            try {
+                stalwartSetAccount(['update' => [$parts[0] => ['credentials/' . $parts[1] => null]]]);
+            } catch (Throwable) {
+            }
+        }
+        try {
+            redis()->hDel('auth:sso:tempcreds', (string)$k);
+        } catch (Throwable) {
+        }
+    }
+}
+
+/**
+ * Exchange a one-time SSO token (from POST /auth/sso-token) for a temporary
+ * mailbox credential. The token is consumed atomically; the credential is an
+ * extra credential on the account and is swept after 5 minutes.
+ */
+function ssoExchange(): never
+{
+    sweepTempCredentials();
+    $b = body();
+    $token = stringField($b, 'token', 128);
+    $email = null;
+    try {
+        $val = redis()->eval(
+            "local v = redis.call('get', KEYS[1]); if v then redis.call('del', KEYS[1]); end; return v",
+            ['auth:sso:token:' . $token],
+            1
+        );
+        $email = is_string($val) ? $val : null;
+    } catch (Throwable) {
+        try {
+            $r = redis();
+            $v = $r->get('auth:sso:token:' . $token);
+            if (is_string($v) && $v !== '') {
+                $r->del('auth:sso:token:' . $token);
+                $email = $v;
+            }
+        } catch (Throwable) {
+            fail(500, 'token store unavailable');
+        }
+    }
+    if (!is_string($email) || $email === '') {
+        fail(401, 'invalid or expired sso token');
+    }
+    $acct = stalwartFindAccountByEmail($email);
+    if ($acct === null) {
+        fail(404, 'mailbox not found');
+    }
+    $accountId = (string)$acct['id'];
+
+    // Stalwart allows exactly ONE password credential per account, so the
+    // mailbox's real password is resolved server-side instead of issuing a
+    // temporary one: API-provisioned mailboxes keep it in the vault; for any
+    // other mailbox the admin API's own configured credential is used when
+    // the target is the server admin account itself.
+    $password = null;
+    $st = db()->prepare('SELECT secret_vault FROM mailboxes WHERE email = ?');
+    $st->execute([$email]);
+    $vault = $st->fetchColumn();
+    if (is_string($vault) && $vault !== '') {
+        try {
+            $password = vaultDecrypt($vault);
+        } catch (Throwable) {
+            $password = null;
+        }
+    }
+    if ($password === null && (($acct['roles']['@type'] ?? '') === 'Admin')) {
+        // The server administrator account: the API's configured credential
+        // is this account's own password.
+        $password = (string)cfg('STALWART_ADMIN_PASSWORD');
+    }
+    if ($password === null || $password === '') {
+        fail(409, 'mailbox password is not held by the admin API (mailbox was not provisioned through the API) - reset its password from the panel to enable SSO');
+    }
+    ok(['email' => $email, 'password' => $password]);
+}
+
+/** Set a new password for a mailbox (Stalwart + billing mirror when present). */
+function mailboxPassword(string $email): never
+{
+    $b = body();
+    $password = stringField($b, 'password', 256);
+    if (strlen($password) < 8) {
+        fail(400, 'password must be 8-256 characters');
+    }
+    $email = strtolower($email);
+    $acct = stalwartFindAccountByEmail($email);
+    $st = db()->prepare('SELECT * FROM mailboxes WHERE email = ?');
+    $st->execute([$email]);
+    $row = $st->fetch();
+    if ($acct === null && !$row) {
+        fail(404, 'mailbox not found');
+    }
+    try {
+        if ($acct !== null) {
+            stalwartSetPassword((string)$acct['id'], $password);
+        }
+    } catch (RuntimeException $e) {
+        fail(502, 'stalwart update failed: ' . $e->getMessage());
+    }
+    if ($row) {
+        db()->prepare('UPDATE mailboxes SET password_hash = ?, secret_vault = ?, updated_at = NOW() WHERE id = ?')
+            ->execute([password_hash($password, PASSWORD_ARGON2ID), vaultEncrypt($password), $row['id']]);
+        $st2 = db()->prepare('SELECT m.*, d.domain_name FROM mailboxes m JOIN domains d ON d.id = m.domain_id WHERE m.id = ?');
+        $st2->execute([$row['id']]);
+        $fresh = $st2->fetch();
+        if ($fresh) {
+            ok(mailboxOut($fresh));
+        }
+    }
+    ok(['email' => $email, 'passwordUpdated' => true]);
+}
+
 /* ---------------------------------------------------------------- sso */
 
 function ssoToken(): never
@@ -1093,9 +1373,7 @@ function ssoToken(): never
     }
     $ttl = intField($b, 'ttlSeconds', 120, 30, 86400);
 
-    $st = db()->prepare('SELECT 1 FROM mailboxes WHERE email = ?');
-    $st->execute([$email]);
-    if (!$st->fetchColumn()) {
+    if (stalwartFindAccountByEmail($email) === null) {
         fail(404, 'mailbox not found');
     }
 
@@ -1975,8 +2253,20 @@ function bearer(): string
 
 function authenticate(): string
 {
-    $expected = cfg('AFFINMAIL_ADMIN_TOKEN');
     $given = bearer();
+    if ($given !== '') {
+        // Panel session token (issued by POST /auth/login) — see adminLogin().
+        try {
+            $sessUser = redis()->get('auth:session:' . hash('sha256', $given));
+        } catch (Throwable) {
+            $sessUser = null;
+        }
+        if (is_string($sessUser) && $sessUser !== '') {
+            $GLOBALS['admin_user'] = $sessUser;
+            return $given;
+        }
+    }
+    $expected = cfg('AFFINMAIL_ADMIN_TOKEN');
     if ($expected === '' || $given === '' || !hash_equals($expected, $given)) {
         fail(401, 'unauthorized');
     }
@@ -2075,6 +2365,14 @@ if (!str_starts_with($path, API_PREFIX . '/')) {
     fail(404, 'not found');
 }
 
+if ($path === API_PREFIX . '/auth/login' && $method === 'POST') {
+    adminLogin();
+}
+
+if ($path === API_PREFIX . '/auth/sso-exchange' && $method === 'POST') {
+    ssoExchange();
+}
+
 $isImport = str_starts_with($path, API_PREFIX . '/import/');
 
 if ($isImport) {
@@ -2120,6 +2418,8 @@ try {
             mailboxQuota($seg[1]);
         case $n === 3 && $seg[0] === 'mailboxes' && $seg[2] === 'status' && $method === 'PUT':
             mailboxStatus($seg[1]);
+        case $n === 3 && $seg[0] === 'mailboxes' && $seg[2] === 'password' && $method === 'PUT':
+            mailboxPassword($seg[1]);
 
         // aliases
         case $n === 1 && $seg[0] === 'aliases' && $method === 'GET':
@@ -2154,6 +2454,8 @@ try {
         // sso
         case $n === 2 && $seg[0] === 'auth' && $seg[1] === 'sso-token' && $method === 'POST':
             ssoToken();
+        case $n === 2 && $seg[0] === 'auth' && $seg[1] === 'logout' && $method === 'POST':
+            adminLogout();
 
         // import / migration
         case $n === 2 && $seg[0] === 'import' && $seg[1] === 'mbox' && $method === 'POST':

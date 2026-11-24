@@ -29,6 +29,7 @@ import {
   JmapMailbox,
   keywords,
   listMailboxes,
+  login,
   logout,
   moveTo,
   queryEmails,
@@ -156,6 +157,49 @@ export const App: React.FC = () => {
 
   // Auth state
   const [authEmail, setAuthEmail] = useState<string | null>(() => getAuth()?.email ?? null);
+
+  // One-time admin SSO link (/sso?token=...): exchange the token for the
+  // mailbox credential via the admin API, sign in, then reload into the
+  // mailbox. The token is single-use and short-lived.
+  const [ssoPhase, setSsoPhase] = useState<'idle' | 'working' | 'error'>(() =>
+    typeof window !== 'undefined' && window.location.pathname === '/sso' ? 'working' : 'idle'
+  );
+  const [ssoError, setSsoError] = useState('');
+  useEffect(() => {
+    if (ssoPhase !== 'working') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = new URLSearchParams(window.location.search).get('token') ?? '';
+        if (!token) throw new Error('Missing SSO token');
+        const res = await fetch('/api/v1/auth/sso-exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const payload = await res.json().catch(() => null);
+        if (!res.ok || payload?.status === 'error') {
+          throw new Error(payload?.error || `HTTP ${res.status}`);
+        }
+        const { email, password } = payload.data as { email: string; password: string };
+        await login(email, password);
+        try {
+          sessionStorage.setItem('affinmail_sso_admin', email);
+        } catch {
+          // banner is cosmetic; the sign-in itself already succeeded
+        }
+        if (!cancelled) window.location.replace('/');
+      } catch (e) {
+        if (!cancelled) {
+          setSsoError(e instanceof Error ? e.message : 'SSO sign-in failed');
+          setSsoPhase('error');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ssoPhase]);
 
   // Session & server data
   const [mailboxes, setMailboxes] = useState<JmapMailbox[]>([]);
@@ -673,6 +717,11 @@ export const App: React.FC = () => {
   );
 
   const handleLogout = () => {
+    try {
+      sessionStorage.removeItem('affinmail_sso_admin');
+    } catch {
+      // ignore
+    }
     logout();
     setAuthEmail(null);
     setUser(null);
@@ -681,13 +730,24 @@ export const App: React.FC = () => {
     setQuota(null);
   };
 
-  if (!authEmail) {
+  if (ssoPhase !== 'idle') {
     return (
-      <Login
-        onSuccess={() => {
-          setAuthEmail(getAuth()?.email ?? null);
-        }}
-      />
+      <div className="flex flex-col h-dvh w-full items-center justify-center bg-base-100 text-base-content p-6">
+        {ssoPhase === 'working' ? (
+          <p className="text-sm text-base-content/70">Signing you in…</p>
+        ) : (
+          <div className="space-y-3 text-center max-w-sm">
+            <p className="text-sm font-medium">SSO sign-in failed</p>
+            <p className="text-xs text-base-content/60">{ssoError}</p>
+            <button
+              onClick={() => window.location.replace('/')}
+              className="btn btn-primary btn-sm rounded-lg font-medium"
+            >
+              Go to sign in
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -705,14 +765,43 @@ export const App: React.FC = () => {
     );
   }
 
+  if (!authEmail) {
+    return (
+      <Login
+        onSuccess={() => {
+          setAuthEmail(getAuth()?.email ?? null);
+        }}
+      />
+    );
+  }
+
   const currentUser: UserProfile = user ?? {
     email: authEmail,
     displayName: authEmail.split('@')[0],
     domain: authEmail.split('@')[1] ?? '',
   };
 
+  const ssoAdminEmail = (() => {
+    try {
+      return sessionStorage.getItem('affinmail_sso_admin');
+    } catch {
+      return null;
+    }
+  })();
+
   return (
     <div className="flex flex-col h-dvh w-full overflow-hidden bg-gmail-canvas dark:bg-gmail-dark-canvas select-none">
+      {ssoAdminEmail && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-warning text-warning-content text-xs shrink-0">
+          <span className="truncate">
+            Admin SSO — you are viewing <span className="font-mono font-medium">{ssoAdminEmail}</span>'s
+            mailbox as the server administrator.
+          </span>
+          <button onClick={handleLogout} className="btn btn-xs btn-ghost font-medium shrink-0">
+            Exit mailbox
+          </button>
+        </div>
+      )}
       {/* 1. Header Bar */}
       <HeaderBar
         theme={theme}
