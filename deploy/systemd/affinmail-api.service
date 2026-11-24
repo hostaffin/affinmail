@@ -1,15 +1,15 @@
 [Unit]
-Description=AffinMail Admin REST API (PHP built-in server)
+Description=AffinMail Admin REST API (Native Rust Server)
 Documentation=https://github.com/hostaffin/affinmail
 After=network.target postgresql.service redis.service stalwart.service
 Wants=network.target
 
 [Service]
 User=root
-WorkingDirectory=/var/www/affinmail/api
-EnvironmentFile=/var/www/affinmail/api/.env
-Environment=PHP_CLI_SERVER_WORKERS=8
-ExecStart=/usr/bin/php -S 127.0.0.1:8090 -t /var/www/affinmail/api/public /var/www/affinmail/api/public/index.php
+WorkingDirectory=/opt/affinmail
+Environment=PORT=8090
+Environment=RUST_LOG=info
+ExecStart=/opt/affinmail/target/release/affinmail-server
 Restart=always
 RestartSec=3
 StandardOutput=journal

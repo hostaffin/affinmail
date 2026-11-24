@@ -4,7 +4,7 @@
 .DESCRIPTION
     Runs AffinMail natively on Windows without Docker using:
     - Native Caddy 2 for dual-port routing (Port 2087 Admin Panel & Port 2083 User Panel)
-    - Lightweight Python Mock Backend for JMAP and Admin REST API (Port 8080)
+    - Native Rust Backend Server (Axum 0.8) on Port 8080 / 2087
     - Pre-built React 19 / DaisyUI 5 Webmail SPA
 #>
 
@@ -22,10 +22,9 @@ if (-not (Get-Command caddy -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# 2. Check Python
-$PythonCmd = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } elseif (Get-Command py -ErrorAction SilentlyContinue) { "py" } else { $null }
-if (-not $PythonCmd) {
-    Write-Host "[ERROR] Python 3 is not found in PATH." -ForegroundColor Red
+# 2. Check Cargo
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    Write-Host "[ERROR] Cargo (Rust) is not found in PATH." -ForegroundColor Red
     exit 1
 }
 
@@ -38,9 +37,15 @@ if (-not (Test-Path "$ScriptDir\webmail\dist\index.html")) {
     npm --prefix "$ScriptDir\webmail" run build
 }
 
-# 4. Start Python Mock Backend on Port 8080 (background process)
-Write-Host "[*] Starting AffinMail Local Mock Backend on 127.0.0.1:8080..." -ForegroundColor Cyan
-$BackendProcess = Start-Process -FilePath $PythonCmd -ArgumentList "$ScriptDir\scripts\mock-backend.py" -PassThru -NoNewWindow
+# 4. Start Native Rust Backend Server on Port 8080 (background process)
+Write-Host "[*] Starting AffinMail Native Rust Server on 127.0.0.1:8080..." -ForegroundColor Cyan
+$BackendBinary = "$ScriptDir\target\debug\affinmail-server.exe"
+if (-not (Test-Path $BackendBinary)) {
+    cargo build -p affinmail-server
+}
+
+$env:PORT = "8080"
+$BackendProcess = Start-Process -FilePath $BackendBinary -PassThru -NoNewWindow
 
 # Register cleanup on exit
 Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PsEngineEvent]::Exiting) -Action {
@@ -56,7 +61,7 @@ Write-Host "  AffinMail Local Services are Active on Windows!                " -
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "  Admin Panel (REST API):  http://localhost:2087" -ForegroundColor Yellow
 Write-Host "  User Panel (MCP Ready):  http://localhost:2083" -ForegroundColor Yellow
-Write-Host "  Mock JMAP / REST API:    http://127.0.0.1:8080" -ForegroundColor Cyan
+Write-Host "  Native Rust Backend:     http://127.0.0.1:8080" -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C at any time to stop the server.`n" -ForegroundColor DarkGray
 
@@ -70,7 +75,7 @@ try {
     caddy run --config "$ScriptDir\deploy\Caddyfile.windows"
 }
 finally {
-    Write-Host "`n[*] Stopping background mock backend..." -ForegroundColor Yellow
+    Write-Host "`n[*] Stopping native Rust backend..." -ForegroundColor Yellow
     if ($BackendProcess -and -not $BackendProcess.HasExited) {
         Stop-Process -Id $BackendProcess.Id -Force -ErrorAction SilentlyContinue
     }

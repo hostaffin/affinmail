@@ -18,16 +18,15 @@ is kept byte-identical to it.
 ## Web Server / Reverse Proxy
 
 There is **no** `affinmail-caddy.service`. The AffinMail vhosts (port 443,
-2083, 2087) are served by the existing FrankenPHP/Caddy service, configured in
-`/etc/frankenphp/Caddyfile`. A standalone Caddy service would fight it for the
-same ports. See the Caddyfile for the vhost blocks.
+2083, 2087) are served by Caddy, configured in
+`/etc/caddy/Caddyfile`. See the Caddyfile for the vhost blocks.
 
 ## Systemd Units
 
 | File | Purpose |
 | :--- | :--- |
 | `stalwart.service` | Stalwart mail engine (canonical binary + config) |
-| `affinmail-api.service` | AffinMail Admin REST API (PHP built-in server, 127.0.0.1:8090) |
+| `affinmail-api.service` | AffinMail Admin REST API (Native Rust Server, 127.0.0.1:8090) |
 | `affinmail.target` | Aggregated stack target (Wants/After: stalwart, api, postgresql, redis) |
 | `affinmail-backup.service` | Oneshot backup job (runs `scripts/backup.sh`) |
 | `affinmail-backup.timer` | Daily timer (OnCalendar=daily, Persistent=true) |

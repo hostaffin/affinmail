@@ -27,21 +27,32 @@ catch {
     $Failed++
 }
 
-# Test 2: PHP WHMCS Driver Lint & Syntax
-Write-Host "`n[Test 2/4] Verifying Hostaffin PHP Module Syntax..." -ForegroundColor Cyan
+# Test 2: Rust Backend Server Native Suite
+Write-Host "`n[Test 2/4] Verifying AffinMail Native Rust Server (Axum 0.8)..." -ForegroundColor Cyan
 try {
-    php -l driver/AffinMail/AffinMail.php
-    php -l driver/AffinMail/tests/AffinMailTest.php
-    Write-Host "[PASS] PHP driver syntax verified with PHP 8.5+." -ForegroundColor Green
+    cargo test --manifest-path server/Cargo.toml
+    Write-Host "[PASS] Rust server unit & integration tests passed." -ForegroundColor Green
     $Passed++
 }
 catch {
-    Write-Host "[FAIL] PHP driver syntax check failed." -ForegroundColor Red
+    Write-Host "[FAIL] Rust server tests failed." -ForegroundColor Red
     $Failed++
 }
 
-# Test 3: Caddy Configuration Validation
-Write-Host "`n[Test 3/4] Validating Caddy Dual-Port Routing Configuration..." -ForegroundColor Cyan
+# Test 3: Rust MCP Server Suite
+Write-Host "`n[Test 3/4] Verifying AffinMail Rust MCP Server Suite..." -ForegroundColor Cyan
+try {
+    cargo test --manifest-path mcp-server/Cargo.toml
+    Write-Host "[PASS] Rust MCP server tests passed." -ForegroundColor Green
+    $Passed++
+}
+catch {
+    Write-Host "[FAIL] Rust MCP server tests failed." -ForegroundColor Red
+    $Failed++
+}
+
+# Test 4: Caddy Configuration Validation
+Write-Host "`n[Test 4/4] Validating Caddy Dual-Port Routing Configuration..." -ForegroundColor Cyan
 try {
     caddy validate --config deploy/Caddyfile.windows
     Write-Host "[PASS] Caddyfile configuration is valid." -ForegroundColor Green
@@ -49,18 +60,6 @@ try {
 }
 catch {
     Write-Host "[FAIL] Caddyfile validation failed." -ForegroundColor Red
-    $Failed++
-}
-
-# Test 4: Python Mock Backend Syntax
-Write-Host "`n[Test 4/4] Verifying Python Mock Backend Engine..." -ForegroundColor Cyan
-try {
-    python -m py_compile scripts/mock-backend.py
-    Write-Host "[PASS] Python mock server syntax is valid." -ForegroundColor Green
-    $Passed++
-}
-catch {
-    Write-Host "[FAIL] Python mock server compile error." -ForegroundColor Red
     $Failed++
 }
 

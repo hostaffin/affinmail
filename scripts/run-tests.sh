@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# AffinMail test runner: webmail vitest, driver PHPUnit, mcp-server cargo, Playwright E2E.
+# AffinMail test runner: webmail vitest, server cargo, mcp-server cargo, Playwright E2E.
+# 100% Rust backend and TypeScript frontend. Zero PHP. Zero Docker dependency.
 # No outbound mail and no external network calls; every suite targets localhost.
 set -u
 
@@ -17,20 +18,17 @@ section() { echo; echo "=== $1 ==="; }
 section "webmail vitest"
 if npm --prefix webmail test; then record vitest PASS; else record vitest FAIL; fi
 
-# 2. Driver PHPUnit
-section "driver PHPUnit"
-if [ ! -x driver/AffinMail/vendor/bin/phpunit ]; then
-  echo "vendor/bin/phpunit missing - run: composer install -d driver/AffinMail"
-  record phpunit FAIL
-elif driver/AffinMail/vendor/bin/phpunit -c driver/AffinMail/phpunit.xml.dist; then
-  record phpunit PASS
+# 2. Native Rust Backend Server cargo tests
+section "affinmail-server cargo test"
+if cargo test --manifest-path server/Cargo.toml; then
+  record server_cargo PASS
 else
-  record phpunit FAIL
+  record server_cargo FAIL
 fi
 
 # 3. MCP server cargo tests
 section "mcp-server cargo test"
-if cargo test --manifest-path mcp-server/Cargo.toml; then record cargo PASS; else record cargo FAIL; fi
+if cargo test --manifest-path mcp-server/Cargo.toml; then record mcp_cargo PASS; else record mcp_cargo FAIL; fi
 
 # 4. Playwright E2E (optional: needs browsers installed)
 section "webmail Playwright"
@@ -54,8 +52,8 @@ fi
 echo
 echo "SUMMARY"
 echo "-------"
-for suite in vitest phpunit cargo playwright; do
-  printf '%-12s %s\n' "$suite" "${STATUS[$suite]}"
+for suite in vitest server_cargo mcp_cargo playwright; do
+  printf '%-14s %s\n' "$suite" "${STATUS[$suite]}"
 done
 
 if [ "$FAILED" -ne 0 ]; then
