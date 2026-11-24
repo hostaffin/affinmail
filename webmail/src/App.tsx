@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Columns2, X } from 'lucide-react';
 import { HeaderBar } from './components/HeaderBar';
 import { NavigationSidebar } from './components/NavigationSidebar';
 import { ActionToolbar } from './components/ActionToolbar';
@@ -224,6 +225,9 @@ export const App: React.FC = () => {
   const [threads, setThreads] = useState<EmailThread[]>([]);
   const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
   const [activeThread, setActiveThread] = useState<EmailThread | null>(null);
+  const [compareThreads, setCompareThreads] = useState<EmailThread[]>([]);
+  const [comparePicking, setComparePicking] = useState(false);
+  const [compareActivePane, setCompareActivePane] = useState(0);
   const [cursorIndex, setCursorIndex] = useState(0);
 
   // Compose Modal State
@@ -349,6 +353,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!authEmail) return;
     setActiveThread(null);
+    setCompareThreads([]);
+    setComparePicking(false);
     setCursorIndex(0);
     refreshThreads();
   }, [authEmail, currentFolder, debouncedSearch, refreshThreads]);
@@ -577,6 +583,84 @@ export const App: React.FC = () => {
     }
   };
 
+  const loadFullThread = useCallback(async (thread: EmailThread): Promise<EmailThread> => {
+    try {
+      const emails = thread.threadId ? await getThreadEmails(thread.threadId) : await getEmails([thread.id]);
+      if (emails.length > 0) {
+        const messages = emails.map(toMessage);
+        const last = messages[messages.length - 1];
+        return {
+          ...thread,
+          messages,
+          messageCount: messages.length,
+          snippet: last.snippet,
+          hasAttachments: messages.some((m) => (m.attachments ?? []).length > 0),
+          senderName: last.senderName,
+          senderEmail: last.senderEmail,
+        };
+      }
+    } catch {
+      // Body fetch is best-effort; the preview still renders.
+    }
+    return thread;
+  }, []);
+
+  // ---- Side-by-side compare (2-3 emails) ----
+  const exitCompare = useCallback(() => {
+    setCompareThreads([]);
+    setComparePicking(false);
+    setCompareActivePane(0);
+  }, []);
+
+  const startCompareWith = async (thread: EmailThread) => {
+    setActiveThread(null);
+    setComparePicking(true);
+    const full = await loadFullThread(thread);
+    setCompareThreads([full]);
+  };
+
+  const toggleComparePick = async (thread: EmailThread) => {
+    if (thread.isDraft) {
+      addToast('Drafts cannot be compared', 'info');
+      return;
+    }
+    if (compareThreads.some((t) => t.id === thread.id)) {
+      setCompareThreads((prev) => prev.filter((t) => t.id !== thread.id));
+      return;
+    }
+    if (compareThreads.length >= 3) {
+      addToast('You can compare up to 3 emails at a time', 'info');
+      return;
+    }
+    const full = await loadFullThread(thread);
+    setCompareThreads((prev) =>
+      prev.some((t) => t.id === thread.id) || prev.length >= 3 ? prev : [...prev, full]
+    );
+  };
+
+  const openCompareFromSelection = async () => {
+    const picked = filteredThreads
+      .filter((t) => selectedThreadIds.has(t.id) && !t.isDraft)
+      .slice(0, 3);
+    if (picked.length < 2) return;
+    const full = await Promise.all(picked.map((t) => loadFullThread(t)));
+    setCompareThreads(full);
+    setComparePicking(false);
+    setCompareActivePane(0);
+    setSelectedThreadIds(new Set());
+  };
+
+  const closeComparePane = (id: string) => {
+    const next = compareThreads.filter((t) => t.id !== id);
+    if (next.length === 1) {
+      setCompareThreads([]);
+      setActiveThread(next[0]);
+    } else {
+      setCompareThreads(next);
+    }
+    setCompareActivePane(0);
+  };
+
   const handleSelectThread = async (thread: EmailThread) => {
     if (thread.isDraft) {
       await openDraft(thread);
@@ -587,28 +671,20 @@ export const App: React.FC = () => {
       applyLocal([thread.id], (t) => ({ ...t, isUnread: false }));
       setEmail(thread.id, keywords({ $seen: true })).catch(() => undefined);
     }
-    try {
-      const emails = thread.threadId ? await getThreadEmails(thread.threadId) : await getEmails([thread.id]);
-      if (emails.length > 0) {
-        const messages = emails.map(toMessage);
-        const last = messages[messages.length - 1];
-        setActiveThread((prev) =>
-          prev && prev.id === thread.id
-            ? {
-                ...prev,
-                messages,
-                messageCount: messages.length,
-                snippet: last.snippet,
-                hasAttachments: messages.some((m) => (m.attachments ?? []).length > 0),
-                senderName: last.senderName,
-                senderEmail: last.senderEmail,
-              }
-            : prev
-        );
-      }
-    } catch {
-      // Body fetch is best-effort; the preview still renders.
-    }
+    const full = await loadFullThread(thread);
+    setActiveThread((prev) =>
+      prev && prev.id === thread.id
+        ? {
+            ...prev,
+            messages: full.messages,
+            messageCount: full.messageCount,
+            snippet: full.snippet,
+            hasAttachments: full.hasAttachments,
+            senderName: full.senderName,
+            senderEmail: full.senderEmail,
+          }
+        : prev
+    );
   };
 
   const handleSendCompose = async (msg: ComposePayload) => {
@@ -705,11 +781,13 @@ export const App: React.FC = () => {
       },
       onMarkSpam: () => addToast('Reported as spam', 'info'),
       onBackToList: () => {
-        if (activeThread) setActiveThread(null);
+        if (compareThreads.length >= 2 || comparePicking) exitCompare();
+        else if (activeThread) setActiveThread(null);
       },
       onSearchFocus: () => searchInputRef.current?.focus(),
       onEscape: () => {
-        if (activeThread) setActiveThread(null);
+        if (compareThreads.length >= 2 || comparePicking) exitCompare();
+        else if (activeThread) setActiveThread(null);
         else if (isComposeOpen) setIsComposeOpen(false);
       },
     },
@@ -892,37 +970,130 @@ export const App: React.FC = () => {
                 .finally(() => setIsAppLoading(false));
             }}
             isDetailView={!!activeThread}
-            onBackToList={() => setActiveThread(null)}
+            onBackToList={() => {
+              if (compareThreads.length >= 2 || comparePicking) exitCompare();
+              else setActiveThread(null);
+            }}
+            onCompare={() => void openCompareFromSelection()}
           />
 
-          {/* Thread List or Conversation View */}
-          {activeThread ? (
-            <ConversationView
-              thread={activeThread}
-              currentUserEmail={currentUser.email}
-              onToggleStar={handleToggleStar}
-              onSendQuickReply={handleQuickReply}
-              onForward={handleForward}
-              maxAttachmentMb={quota?.maxAttachmentSizeMb ?? 25}
-              onComposeTo={handleComposeTo}
-            />
+          {/* Thread List, Conversation View or Compare panes */}
+          {compareThreads.length >= 2 && !comparePicking ? (
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="flex lg:hidden items-stretch border-b border-[#E0E2E7] dark:border-[#333538] shrink-0">
+                {compareThreads.map((t, i) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setCompareActivePane(i)}
+                    className={`flex-1 min-w-0 px-3 h-10 text-xs truncate border-b-2 -mb-px ${
+                      i === compareActivePane
+                        ? 'border-b-gmail-blue dark:border-b-gmail-dark-blue-text text-gmail-blue dark:text-gmail-dark-blue-text font-medium'
+                        : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5]'
+                    }`}
+                  >
+                    {t.subject || '(no subject)'}
+                  </button>
+                ))}
+                <button
+                  onClick={exitCompare}
+                  className="h-10 w-10 min-h-10 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5]"
+                  title="Exit compare"
+                  aria-label="Exit compare"
+                >
+                  <X className="w-4 h-4 stroke-[1.5]" />
+                </button>
+              </div>
+              <div className="flex-1 flex flex-col lg:flex-row min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-[#E0E2E7] dark:divide-[#333538]">
+                {compareThreads.map((t, i) => (
+                  <div
+                    key={t.id}
+                    className={`flex-1 min-w-0 min-h-0 flex-col ${i === compareActivePane ? 'flex' : 'hidden'} lg:flex`}
+                  >
+                    <ConversationView
+                      thread={t}
+                      currentUserEmail={currentUser.email}
+                      onToggleStar={handleToggleStar}
+                      onSendQuickReply={() => undefined}
+                      maxAttachmentMb={quota?.maxAttachmentSizeMb ?? 25}
+                      compact
+                      onClose={() => closeComparePane(t.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : (
-            <EmailThreadList
-              threads={filteredThreads}
-              selectedThreadIds={selectedThreadIds}
-              cursorIndex={cursorIndex}
-              currentFolder={currentFolder}
-              activeTab={activeCategoryTab}
-              onTabChange={setActiveCategoryTab}
-              onSelectThread={handleSelectThread}
-              onToggleSelectCheckbox={handleToggleSelectCheckbox}
-              onToggleStar={handleToggleStar}
-              onArchiveThread={handleArchiveSingle}
-              onDeleteThread={handleDeleteSingle}
-              onToggleReadThread={handleToggleReadSingle}
-              onSnoozeThread={handleSnoozeSingle}
-              onComposeTo={handleComposeTo}
-            />
+            <>
+              {comparePicking && (
+                <div className="flex flex-wrap items-center gap-2 px-3 sm:px-4 py-2 border-b border-[#E0E2E7] dark:border-[#333538] bg-[#F2F6FC] dark:bg-[#282A2C] shrink-0">
+                  <Columns2 className="w-4 h-4 stroke-[1.5] text-[#0B57D0] dark:text-[#A8C7FA] shrink-0" />
+                  <span className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
+                    Compare - pick up to 3 emails ({compareThreads.length} picked)
+                  </span>
+                  {compareThreads.map((t) => (
+                    <span
+                      key={t.id}
+                      className="flex items-center gap-1 max-w-[220px] px-2 py-0.5 rounded-full bg-white dark:bg-[#1E1F20] border border-[#E0E2E7] dark:border-[#333538] text-xs text-[#444746] dark:text-[#C4C7C5]"
+                    >
+                      <span className="truncate">{t.subject || '(no subject)'}</span>
+                      <button
+                        onClick={() => setCompareThreads((prev) => prev.filter((x) => x.id !== t.id))}
+                        className="shrink-0 hover:text-red-600 dark:hover:text-red-400"
+                        title="Remove"
+                        aria-label="Remove from compare"
+                      >
+                        <X className="w-3.5 h-3.5 stroke-[1.5]" />
+                      </button>
+                    </span>
+                  ))}
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => setComparePicking(false)}
+                    disabled={compareThreads.length < 2}
+                    className="h-8 px-3 rounded-full bg-gmail-blue hover:bg-gmail-blue-hover disabled:opacity-40 text-white text-xs font-medium transition-colors"
+                  >
+                    View side by side
+                  </button>
+                  <button
+                    onClick={exitCompare}
+                    className="h-8 px-3 rounded-full border border-[#C4C7C5] dark:border-[#5F6368] text-xs font-medium text-[#444746] dark:text-[#C4C7C5]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+              {activeThread ? (
+                <ConversationView
+                  thread={activeThread}
+                  currentUserEmail={currentUser.email}
+                  onToggleStar={handleToggleStar}
+                  onSendQuickReply={handleQuickReply}
+                  onForward={handleForward}
+                  maxAttachmentMb={quota?.maxAttachmentSizeMb ?? 25}
+                  onComposeTo={handleComposeTo}
+                  onCompare={(t) => void startCompareWith(t)}
+                />
+              ) : (
+                <EmailThreadList
+                  threads={filteredThreads}
+                  selectedThreadIds={selectedThreadIds}
+                  cursorIndex={cursorIndex}
+                  currentFolder={currentFolder}
+                  activeTab={activeCategoryTab}
+                  onTabChange={setActiveCategoryTab}
+                  onSelectThread={comparePicking ? (t) => void toggleComparePick(t) : handleSelectThread}
+                  onToggleSelectCheckbox={handleToggleSelectCheckbox}
+                  onToggleStar={handleToggleStar}
+                  onArchiveThread={handleArchiveSingle}
+                  onDeleteThread={handleDeleteSingle}
+                  onToggleReadThread={handleToggleReadSingle}
+                  onSnoozeThread={handleSnoozeSingle}
+                  onComposeTo={handleComposeTo}
+                  comparePickMode={comparePicking}
+                  comparePickedIds={new Set(compareThreads.map((t) => t.id))}
+                />
+              )}
+            </>
           )}
             </>
           )}

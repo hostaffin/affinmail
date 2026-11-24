@@ -15,6 +15,7 @@ import {
 import { EmailThread } from '../types';
 import { GmailCheckbox } from './GmailCheckbox';
 import { ContactHovercard } from './ContactHovercard';
+import { SenderAvatar } from './SenderAvatar';
 
 interface EmailThreadListProps {
   threads: EmailThread[];
@@ -31,6 +32,8 @@ interface EmailThreadListProps {
   onToggleReadThread?: (threadId: string) => void;
   onSnoozeThread?: (threadId: string) => void;
   onComposeTo?: (email: string) => void;
+  comparePickMode?: boolean;
+  comparePickedIds?: Set<string>;
 }
 
 const TAB_BASE =
@@ -55,6 +58,8 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
   onToggleReadThread,
   onSnoozeThread,
   onComposeTo,
+  comparePickMode = false,
+  comparePickedIds,
 }) => {
   const isInbox = currentFolder === 'inbox';
 
@@ -107,6 +112,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
       <div className="divide-y divide-[#F2F4F7] dark:divide-[#333538]">
         {threads.map((thread, index) => {
           const isSelected = selectedThreadIds.has(thread.id);
+          const isPicked = comparePickedIds?.has(thread.id) ?? false;
           const isCursor = index === cursorIndex;
           const isUnread = thread.isUnread;
 
@@ -115,7 +121,9 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
               key={thread.id}
               onClick={() => onSelectThread(thread)}
               className={`gmail-row group cursor-pointer text-xs transition-colors flex flex-wrap items-center px-3 sm:px-4 min-h-12 sm:min-h-10 py-1.5 relative border-l-2 ${
-                isSelected
+                isPicked
+                  ? 'bg-[#C2E7FF]/60 dark:bg-[#004A77]/40 border-l-gmail-blue dark:border-l-gmail-dark-blue-text'
+                  : isSelected
                   ? 'bg-[#C2E7FF]/60 dark:bg-[#004A77]/40 border-l-gmail-blue dark:border-l-gmail-dark-blue-text'
                   : isCursor
                   ? 'bg-[#F2F6FC] dark:bg-[#282A2C] border-l-transparent'
@@ -163,6 +171,12 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
                 <ChevronRight className="w-4 h-4 stroke-[1.5]" />
               </button>
 
+              <SenderAvatar
+                name={thread.senderName}
+                email={thread.senderEmail}
+                className="w-8 h-8 text-[11px] mr-2 sm:mr-2.5"
+              />
+
               <div className="flex-1 min-w-0 sm:flex-none sm:w-36 md:w-48 sm:shrink-0 flex items-center gap-1.5 mr-3">
                 <ContactHovercard
                   senderName={thread.senderName}
@@ -186,7 +200,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
                 )}
               </div>
 
-              <div className="flex-1 min-w-0 flex items-center gap-2 mr-3 max-sm:order-5 max-sm:basis-full max-sm:pl-[68px]">
+              <div className="flex-1 min-w-0 flex items-center gap-2 mr-3 max-sm:order-5 max-sm:basis-full max-sm:pl-[108px]">
                 {thread.labels
                   .filter((l) => l !== 'inbox' && l !== 'sent' && l !== 'drafts')
                   .slice(0, 2)

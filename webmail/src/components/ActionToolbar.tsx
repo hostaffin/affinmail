@@ -15,6 +15,7 @@ import {
   Clock,
   MoreVertical,
   CheckSquare,
+  Columns2,
 } from 'lucide-react';
 import { GmailCheckbox } from './GmailCheckbox';
 
@@ -33,6 +34,8 @@ interface ActionToolbarProps {
   onRefresh: () => void;
   isDetailView?: boolean;
   onBackToList?: () => void;
+  /** Shown when 2-3 conversations are checkbox-selected. */
+  onCompare?: () => void;
 }
 
 const ICON_BTN =
@@ -55,6 +58,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
   onRefresh,
   isDetailView = false,
   onBackToList,
+  onCompare,
 }) => {
   const [isSelectMenuOpen, setIsSelectMenuOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -104,7 +108,13 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
         ) : (
           <div className="relative flex items-center mr-0.5 sm:mr-1 shrink-0" ref={selectMenuRef}>
             <div className="flex items-center rounded-lg hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] p-1 transition-colors">
-              <div className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center">
+              <div
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center cursor-pointer [&>div]:pointer-events-none"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelectAll();
+                }}
+              >
                 <GmailCheckbox
                   checked={allSelected}
                   indeterminate={selectedCount > 0 && !allSelected}
@@ -224,6 +234,17 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
             </div>
           )}
         </div>
+
+        {!isDetailView && selectedCount >= 2 && selectedCount <= 3 && onCompare && (
+          <button
+            onClick={onCompare}
+            title="Open the selected emails side by side"
+            className="h-10 min-h-10 md:h-8 md:min-h-8 px-2.5 ml-1 shrink-0 flex items-center gap-1.5 rounded-full border border-[#C4C7C5] dark:border-[#5F6368] text-xs font-medium text-[#0B57D0] dark:text-[#A8C7FA] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] transition-colors"
+          >
+            <Columns2 className="w-4 h-4 stroke-[1.5]" />
+            <span className="hidden sm:inline">Compare</span>
+          </button>
+        )}
 
         {selectedCount > 0 && (
           <span className="text-xs text-[#444746] dark:text-[#C4C7C5] font-normal ml-2 shrink-0 tabular-nums">

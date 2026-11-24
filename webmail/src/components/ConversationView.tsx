@@ -12,6 +12,7 @@ import {
   ExternalLink,
   ChevronDown,
   MoreVertical,
+  Columns2,
   CheckCircle2,
   Trash2,
   Link2,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import { EmailThread } from '../types';
 import { ContactHovercard } from './ContactHovercard';
+import { SenderAvatar } from './SenderAvatar';
 import { downloadBlob } from '../lib/jmap';
 
 interface ConversationViewProps {
@@ -29,6 +31,12 @@ interface ConversationViewProps {
   onForward?: (thread: EmailThread) => void;
   maxAttachmentMb: number;
   onComposeTo?: (email: string) => void;
+  /** Side-by-side pane: tighter padding, no reply UI. */
+  compact?: boolean;
+  /** Shows a close (X) button in the header - used by compare panes. */
+  onClose?: () => void;
+  /** Shows a "compare side by side" button in the header. */
+  onCompare?: (thread: EmailThread) => void;
 }
 
 const ICON_BTN =
@@ -45,6 +53,9 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   onSendQuickReply,
   onForward,
   onComposeTo,
+  compact = false,
+  onClose,
+  onCompare,
 }) => {
   const [replyText, setReplyText] = useState('');
   const [showReplyBox, setShowReplyBox] = useState(false);
@@ -80,7 +91,11 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   );
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden bg-white dark:bg-[#1E1F20] flex flex-col p-3 sm:p-6 space-y-4 select-none">
+    <div
+      className={`flex-1 overflow-y-auto overflow-x-hidden bg-white dark:bg-[#1E1F20] flex flex-col select-none ${
+        compact ? 'p-3 sm:p-4 space-y-3' : 'p-3 sm:p-6 space-y-4'
+      }`}
+    >
       {/* Thread header */}
       <div className="flex items-start justify-between border-b border-[#E0E2E7] dark:border-[#333538] pb-4 gap-2 sm:gap-4">
         <div className="space-y-2 max-w-4xl min-w-0 flex-1">
@@ -118,6 +133,24 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
           >
             <ExternalLink className="w-4 h-4 stroke-[1.5]" />
           </button>
+          {onCompare && !compact && (
+            <button
+              onClick={() => onCompare(thread)}
+              className={`${ICON_BTN} hidden sm:inline-flex`}
+              title="Compare side by side"
+            >
+              <Columns2 className="w-4 h-4 stroke-[1.5]" />
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className={ICON_BTN}
+              title="Close this pane"
+            >
+              <X className="w-4 h-4 stroke-[1.5]" />
+            </button>
+          )}
           <button
             onClick={() => onToggleStar(thread.id)}
             className={`${ICON_BTN} hover:text-[#B06000] dark:hover:text-[#F4B400]`}
@@ -143,9 +176,11 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
               senderEmail={thread.senderEmail}
               onComposeTo={onComposeTo}
             >
-              <div className="w-10 h-10 rounded-full bg-[#0B57D0] dark:bg-[#A8C7FA] text-white dark:text-[#042B5C] font-medium flex items-center justify-center text-sm shrink-0 hover:ring-2 hover:ring-gmail-blue/40 dark:hover:ring-white/20 transition-[box-shadow]">
-                {thread.senderName.charAt(0).toUpperCase()}
-              </div>
+              <SenderAvatar
+                name={thread.senderName}
+                email={thread.senderEmail}
+                className="w-10 h-10 text-sm hover:ring-2 hover:ring-gmail-blue/40 dark:hover:ring-white/20 transition-[box-shadow]"
+              />
             </ContactHovercard>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
@@ -175,7 +210,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                 </button>
 
                 {showDetailsDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-[min(24rem,calc(100vw-2rem))] bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] p-4 z-50 text-xs space-y-2 select-text">
+                  <div className="absolute top-full left-0 mt-1 max-sm:fixed max-sm:inset-x-2 max-sm:top-20 max-sm:w-auto w-[min(24rem,calc(100vw-2rem))] max-h-[70dvh] overflow-y-auto bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] p-4 z-50 text-xs space-y-2 select-text">
                     <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-1.5 text-xs">
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">From</span>
                       <span className="font-medium text-[#1F1F1F] dark:text-[#E3E3E3] break-all">
@@ -244,15 +279,17 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
               />
             </button>
 
-            <button
-              onClick={() => setShowReplyBox(true)}
-              className={ICON_BTN}
-              title="Reply"
-            >
-              <Reply className="w-4 h-4 stroke-[1.5]" />
-            </button>
+            {!compact && (
+              <button
+                onClick={() => setShowReplyBox(true)}
+                className={ICON_BTN}
+                title="Reply"
+              >
+                <Reply className="w-4 h-4 stroke-[1.5]" />
+              </button>
+            )}
 
-            <div className="relative" ref={moreMenuRef}>
+            <div className={`relative ${compact ? 'hidden' : ''}`} ref={moreMenuRef}>
               <button
                 onClick={() => setShowMoreMenu((prev) => !prev)}
                 className={ICON_BTN}
@@ -374,7 +411,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
         )}
 
         {/* Reply / forward */}
-        {!showReplyBox && (
+        {!compact && !showReplyBox && (
           <div className="p-4 bg-white dark:bg-[#1E1F20] border-t border-[#E0E2E7] dark:border-[#333538] flex flex-wrap items-center gap-2 sm:gap-3">
             <button onClick={() => setShowReplyBox(true)} className={OUTLINED_BUTTON}>
               <Reply className="w-4 h-4 stroke-[1.5]" />
@@ -395,7 +432,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
       </div>
 
       {/* Inline reply */}
-      {showReplyBox && (
+      {!compact && showReplyBox && (
         <div className="border border-[#E0E2E7] dark:border-[#333538] rounded-xl bg-white dark:bg-[#1E1F20] overflow-hidden space-y-3 p-4">
           <div className="flex items-center justify-between gap-2 text-xs text-[#5E5E5E] dark:text-[#8E918F] border-b border-[#F2F4F7] dark:border-[#333538] pb-2">
             <div className="flex items-center gap-2 min-w-0">
