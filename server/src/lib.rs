@@ -161,6 +161,66 @@ pub fn create_app(state: AppState) -> Router {
             "/api/v1/client/mailboxes/{id}/app-passwords/{pid}",
             delete(routes::client::delete_app_password),
         )
+        // Module I — Security, Compliance & Reports (F-089..F-096)
+        .route(
+            "/api/v1/client/mailboxes/{id}/login-history",
+            get(routes::client::mailbox_login_history),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/sessions",
+            get(routes::client::list_client_sessions)
+                .delete(routes::client::revoke_client_session)
+                .post(routes::client::revoke_all_client_sessions),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/quarantine",
+            get(routes::client::list_quarantine),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/quarantine/{mid}/release",
+            post(routes::client::release_quarantine),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/quarantine/{mid}",
+            delete(routes::client::delete_quarantine),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/whitelist",
+            get(routes::client::list_user_whitelist)
+                .post(routes::client::add_user_whitelist)
+                .delete(routes::client::delete_user_whitelist),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/blacklist",
+            get(routes::client::list_user_blacklist)
+                .post(routes::client::add_user_blacklist)
+                .delete(routes::client::delete_user_blacklist),
+        )
+        .route(
+            "/api/v1/client/domains/{domain}/sent-report",
+            get(routes::client::domain_sent_report),
+        )
+        .route(
+            "/api/v1/client/audit-log",
+            get(routes::client::client_audit_log),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/export",
+            post(routes::client::create_export_job),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/export/{job_id}",
+            get(routes::client::get_export_job),
+        )
+        // F-094 encryption
+        .route(
+            "/api/v1/client/mailboxes/{id}/encryption",
+            get(routes::client::get_encryption).put(routes::client::put_encryption),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/encryption/generate-pgp",
+            post(routes::client::generate_pgp_key),
+        )
         // Admin API (/api/v1/domains, mailboxes, queue, etc.)
         .route(
             "/api/v1/domains",
@@ -286,6 +346,11 @@ pub fn create_app(state: AppState) -> Router {
             "/api/v1/system/restart",
             post(routes::admin::restart_services),
         )
+        // F-097 branding + F-099 backup & DR
+        .route("/api/v1/admin/branding", get(routes::admin::get_branding).put(routes::admin::update_branding))
+        .route("/api/v1/admin/branding/{client_id}", get(routes::admin::get_client_branding).put(routes::admin::update_client_branding))
+        .route("/api/v1/admin/backups", get(routes::admin::list_backups).post(routes::admin::trigger_backup_admin))
+        .route("/api/v1/admin/backups/{id}/restore-check", post(routes::admin::restore_check))
         // Infrastructure & panel extensions (Module A + B)
         .route(
             "/api/v1/servers",

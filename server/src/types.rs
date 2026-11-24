@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plan {
@@ -240,6 +241,132 @@ pub struct ApiKey {
     pub is_active: bool,
     pub last_used_at: Option<String>,
     pub ip_restriction: Option<String>,
+}
+
+/// F-089: Login history entry for a mailbox
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginHistoryEntry {
+    pub ts: String,
+    pub ip: String,
+    pub protocol: String, // IMAP, POP3, Webmail, SMTP, MCP
+    pub geo_country: Option<String>,
+    pub geo_city: Option<String>,
+    pub user_agent: String,
+    pub success: bool,
+}
+
+/// F-090: Active client session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientSession {
+    pub id: String,
+    pub mailbox_id: String,
+    pub protocol: String, // webmail, imap, mcp
+    pub ip: String,
+    pub user_agent: Option<String>,
+    pub started_at: String,
+    pub last_activity: String,
+    pub idle_seconds: Option<i64>,
+}
+
+/// F-091: Quarantine message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuarantineMessage {
+    pub id: String,
+    pub mailbox_id: String,
+    pub sender: String,
+    pub subject: String,
+    pub spam_score: f64,
+    pub received_at: String,
+    pub size_bytes: i64,
+}
+
+/// F-092: Whitelist/Blacklist entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListEntry {
+    pub id: String,
+    pub mailbox_id: Option<String>, // None = domain-level
+    pub domain: Option<String>,
+    pub entry_type: String, // "whitelist" | "blacklist"
+    pub value: String, // email or domain (e.g. "user@domain.com" or "domain.com")
+    pub created_at: String,
+}
+
+/// F-093: Sent mail report entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SentReportEntry {
+    pub mailbox_id: String,
+    pub email: String,
+    pub display_name: String,
+    pub sent_today: i64,
+    pub sent_this_week: i64,
+    pub sent_this_month: i64,
+    pub bounces_today: i64,
+    pub bounce_rate_pct: f64,
+    pub delivery_success_pct: f64,
+}
+
+/// F-094: PGP/S/MIME key management
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PgpKey {
+    pub id: String,
+    pub mailbox_id: String,
+    pub key_type: String, // "pgp" | "smime"
+    pub public_key: String, // armored public key or certificate
+    pub private_key_encrypted: Option<String>, // browser-encrypted private key (never server plaintext)
+    pub key_id: String, // PGP key ID or S/MIME cert fingerprint
+    pub created_at: String,
+    pub expires_at: Option<String>,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptionSettings {
+    pub mailbox_id: String,
+    pub auto_encrypt: bool, // encrypt outgoing if recipient key known
+    pub auto_sign: bool,    // sign outgoing
+    pub require_encryption: bool, // reject if cannot encrypt
+}
+
+/// F-095: Audit log entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditLogEntry {
+    pub id: String,
+    pub actor: String, // admin username or client email
+    pub action: String,
+    pub target_type: String, // "mailbox", "alias", "domain", "settings", etc.
+    pub target_id: String,
+    pub details: Value,
+    pub ip: String,
+    pub created_at: String,
+}
+
+/// F-096: Export job
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportJob {
+    pub id: String,
+    pub mailbox_id: String,
+    pub domain: Option<String>, // None = single mailbox, Some = whole domain
+    pub status: String, // pending, running, completed, failed
+    pub format: String, // "eml", "zip"
+    pub file_path: Option<String>,
+    pub file_size_bytes: Option<i64>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub expires_at: String,
+}
+
+/// F-097: Branding configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrandingConfig {
+    pub company_name: String,
+    pub logo_svg: Option<String>,
+    pub favicon_svg: Option<String>,
+    pub primary_color: String,
+    pub secondary_color: String,
+    pub login_background: Option<String>,
+    pub webmail_theme: String, // "default" | "custom"
+    pub email_templates: serde_json::Value, // { welcome, password_reset, quota_warning, quarantine_digest }
+    pub custom_css: Option<String>,
 }
 
 /// F-064: API usage per key

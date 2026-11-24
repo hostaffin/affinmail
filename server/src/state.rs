@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
-pub struct AppState {    pub plans: Arc<RwLock<HashMap<String, Plan>>>,
+pub struct AppState {
+    pub plans: Arc<RwLock<HashMap<String, Plan>>>,
     pub accounts: Arc<RwLock<HashMap<String, Account>>>,
     pub domains: Arc<RwLock<HashMap<String, Domain>>>,
     pub mailboxes: Arc<RwLock<HashMap<String, Mailbox>>>,
@@ -32,6 +33,22 @@ pub struct AppState {    pub plans: Arc<RwLock<HashMap<String, Plan>>>,
     pub api_usage: Arc<RwLock<HashMap<String, ApiUsage>>>,
     /// F-066: batch job tracking (in-memory, like import jobs).
     pub batch_jobs: Arc<RwLock<HashMap<String, crate::routes::batch::BatchJob>>>,
+    /// F-089: per-mailbox login history
+    pub mailbox_login_history: Arc<RwLock<HashMap<String, Vec<LoginHistoryEntry>>>>,
+    /// F-090: active client sessions
+    pub client_sessions: Arc<RwLock<HashMap<String, Vec<ClientSession>>>>,
+    /// F-091: quarantine messages per mailbox
+    pub quarantine_messages: Arc<RwLock<HashMap<String, Vec<QuarantineMessage>>>>,
+    /// F-092: user + domain whitelist/blacklist
+    pub list_entries: Arc<RwLock<Vec<ListEntry>>>,
+    /// F-094: PGP/S/MIME keys per mailbox
+    pub pgp_keys: Arc<RwLock<HashMap<String, PgpKey>>>,
+    /// F-095: audit trail
+    pub audit_log: Arc<RwLock<Vec<AuditLogEntry>>>,
+    /// F-096: export jobs
+    pub export_jobs: Arc<RwLock<HashMap<String, ExportJob>>>,
+    /// F-097: branding
+    pub branding: Arc<RwLock<BrandingConfig>>,
 }
 
 impl AppState {
@@ -266,6 +283,30 @@ impl AppState {
             api_keys: Arc::new(RwLock::new(HashMap::new())),
             api_usage: Arc::new(RwLock::new(HashMap::new())),
             batch_jobs: Arc::new(RwLock::new(HashMap::new())),
+            // Module I & J state
+            mailbox_login_history: Arc::new(RwLock::new(HashMap::new())),
+            client_sessions: Arc::new(RwLock::new(HashMap::new())),
+            quarantine_messages: Arc::new(RwLock::new(HashMap::new())),
+            list_entries: Arc::new(RwLock::new(Vec::new())),
+            pgp_keys: Arc::new(RwLock::new(HashMap::new())),
+            audit_log: Arc::new(RwLock::new(Vec::new())),
+            export_jobs: Arc::new(RwLock::new(HashMap::new())),
+            branding: Arc::new(RwLock::new(BrandingConfig {
+                company_name: "AffinMail".to_string(),
+                logo_svg: None,
+                favicon_svg: None,
+                primary_color: "#0B57D0".to_string(),
+                secondary_color: "#475467".to_string(),
+                login_background: None,
+                webmail_theme: "default".to_string(),
+                email_templates: serde_json::json!({
+                    "welcome": "Welcome to {{company_name}}, {{user_name}}! Your domain {{domain}} is ready.",
+                    "password_reset": "Reset your password at {{reset_url}}.",
+                    "quota_warning": "You have used {{usage_pct}}% of your storage quota on {{domain}}.",
+                    "quarantine_digest": "You have {{count}} messages in quarantine on {{domain}}."
+                }),
+                custom_css: None,
+            })),
         }
     }
 }
