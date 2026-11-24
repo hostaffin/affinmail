@@ -28,8 +28,8 @@ const STATE_FILE: &str = "/var/www/affinmail/data/collector-state.json";
 const STALWART_CONFIG: &str = "/etc/stalwart/config.json";
 const SECRETS_FILE: &str = "/etc/stalwart/local-secrets.txt";
 const BACKUP_DIR: &str = "/var/www/affinmail/backups";
-const SERVER_IP: &str = "144.79.132.94";
-const SERVER_RDNS: &str = "mail.hostaffin.com";
+pub const SERVER_IP: &str = "144.79.132.94";
+pub const SERVER_RDNS: &str = "mail.hostaffin.com";
 const RBL_LISTS: [&str; 8] = [
     "zen.spamhaus.org",
     "bl.spamcop.net",
@@ -115,16 +115,18 @@ fn stalwart_admin() -> Option<(String, String)> {
     Some((user?, pass?))
 }
 
-/// Live queue depth + first items from Stalwart over JMAP.
-async fn jmap_queue() -> Option<(i64, Vec<Value>)> {
+/// Generic Stalwart admin call over JMAP (`urn:stalwart:jmap`).
+/// `method_calls` is the raw methodCalls array; returns methodResponses[0][1]
+/// (the first response's arguments), or None when Stalwart is unreachable.
+pub async fn stalwart_jmap(method_calls: Value) -> Option<Value> {
     let (user, pass) = stalwart_admin()?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
         .build()
         .ok()?;
     let body = json!({
-        "using": ["urn:stalwart:jmap"],
-        "methodCalls": [["x:QueuedMessage/query", {"calculateTotal": true}, "0"]]
+        "using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"],
+        "methodCalls": method_calls,
     });
     let resp = client
         .post("http://127.0.0.1:8080/jmap")
@@ -134,7 +136,12 @@ async fn jmap_queue() -> Option<(i64, Vec<Value>)> {
         .await
         .ok()?;
     let v: Value = resp.json().await.ok()?;
-    let r = v.get("methodResponses")?.get(0)?.get(1)?;
+    v.get("methodResponses")?.get(0)?.get(1).cloned()
+}
+
+/// Live queue depth + first items from Stalwart over JMAP.
+async fn jmap_queue() -> Option<(i64, Vec<Value>)> {
+    let r = stalwart_jmap(json!([["x:QueuedMessage/query", {"calculateTotal": true}, "0"]])).await?;
     let total = r.get("total")?.as_i64()?;
     let ids: Vec<String> = r
         .get("ids")?
@@ -145,29 +152,16 @@ async fn jmap_queue() -> Option<(i64, Vec<Value>)> {
         .collect();
     let mut items = Vec::new();
     if !ids.is_empty() {
-        let body2 = json!({
-            "using": ["urn:stalwart:jmap"],
-            "methodCalls": [["x:QueuedMessage/get", {"ids": ids}, "0"]]
-        });
-        if let Ok(resp2) = client
-            .post("http://127.0.0.1:8080/jmap")
-            .basic_auth(&user, Some(&pass))
-            .json(&body2)
-            .send()
+        if let Some(list) = stalwart_jmap(json!([["x:QueuedMessage/get", {"ids": ids}, "0"]]))
             .await
-        {
-            if let Ok(v2) = resp2.json::<Value>().await {
-                if let Some(list) = v2
-                    .get("methodResponses")
-                    .and_then(|m| m.get(0))
-                    .and_then(|m| m.get(1))
-                    .and_then(|m| m.get("list"))
+            .and_then(|v2| {
+                v2.get("list")
                     .and_then(|l| l.as_array())
-                {
-                    for it in list {
-                        items.push(map_queue_item(it));
-                    }
-                }
+                    .cloned()
+            })
+        {
+            for it in list {
+                items.push(map_queue_item(&it));
             }
         }
     }

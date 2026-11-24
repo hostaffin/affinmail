@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[derive(Deserialize)]
 pub struct CreateMailboxPayload {
@@ -32,6 +32,13 @@ pub struct ChangePasswordPayload {
 pub struct CreateAliasPayload {
     pub source: String,
     pub destination: String,
+    /// F-028 distribution-list extras.
+    pub destinations: Option<Vec<String>>,
+    pub is_list: Option<bool>,
+    pub reply_to: Option<String>,
+    pub who_can_post: Option<String>,
+    pub max_message_size_kb: Option<i32>,
+    pub footer: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -213,23 +220,64 @@ pub async fn list_aliases(
     Json(json!({ "aliases": list, "count": list.len() }))
 }
 
-// POST /api/v1/client/domains/:domain/aliases
+// POST /api/v1/client/domains/:domain/aliases — also handles distribution
+// lists (F-028) when destinations has more than one entry or is_list is set.
 pub async fn create_alias(
     State(state): State<AppState>,
-    Path(_domain): Path<String>,
+    Path(domain): Path<String>,
     Json(payload): Json<CreateAliasPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let destinations: Vec<String> = payload
+        .destinations
+        .unwrap_or_default()
+        .into_iter()
+        .map(|d| d.trim().to_lowercase())
+        .filter(|d| !d.is_empty())
+        .collect();
+    let first = destinations
+        .first()
+        .cloned()
+        .unwrap_or_else(|| payload.destination.trim().to_lowercase());
+    if first.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(400, "At least one destination is required")),
+        ));
+    }
+    let is_list = payload.is_list.unwrap_or(false) || destinations.len() > 1;
+    let domain_key = {
+        let domains = state.domains.read().unwrap();
+        domains
+            .iter()
+            .find(|(_, d)| d.domain_name.eq_ignore_ascii_case(&domain))
+            .map(|(k, _)| k.clone())
+            .unwrap_or_else(|| domain.clone())
+    };
     let al_id = format!("al_{}", uuid::Uuid::new_v4().simple());
     let alias = Alias {
         id: al_id.clone(),
-        domain_id: "dom_1".to_string(),
+        domain_id: domain_key,
         source_email: payload.source.to_lowercase(),
-        destination_email: payload.destination.to_lowercase(),
+        destination_email: first.clone(),
+        is_list,
+        destinations: if is_list { destinations.clone() } else { vec![first] },
+        reply_to: payload.reply_to,
+        who_can_post: payload.who_can_post,
+        max_message_size_kb: payload.max_message_size_kb,
+        footer: payload.footer,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
 
     state.aliases.write().unwrap().insert(al_id, alias.clone());
-    Ok((StatusCode::CREATED, Json(json!({ "alias": alias }))))
+    Ok((StatusCode::CREATED, Json(json!({
+        "alias": alias,
+        "kind": if is_list { "distribution_list" } else { "alias" },
+        "stalwartNote": if is_list {
+            "Distribution lists route through Stalwart mailing lists; member addresses above are the routing table."
+        } else {
+            "Simple alias — all destinations receive a copy; does not consume a mailbox slot."
+        },
+    }))))
 }
 
 // DELETE /api/v1/client/aliases/:id
@@ -349,19 +397,104 @@ pub async fn update_autoresponder(
     })))
 }
 
-// GET /api/v1/client/domains/:domain/dns-check
+// GET /api/v1/autoresponders — F-032: every autoresponder across all domains.
+pub async fn list_autoresponders(State(state): State<AppState>) -> impl IntoResponse {
+    let mailboxes = state.mailboxes.read().unwrap();
+    let list: Vec<Value> = mailboxes
+        .values()
+        .filter(|m| m.vacation_enabled)
+        .map(|m| {
+            json!({
+                "mailboxId": m.id,
+                "email": m.email,
+                "domain": m.domain_name,
+                "subject": m.vacation_subject,
+                "start": m.vacation_start,
+                "end": m.vacation_end,
+            })
+        })
+        .collect();
+    Json(json!({ "autoresponders": list, "count": list.len() }))
+}
+
+// POST /api/v1/mailboxes/:id/autoresponder/override — F-032: force-disable
+// one autoresponder (loop/abuse). Client sees the admin note.
+#[derive(Deserialize)]
+pub struct OverridePayload {
+    pub reason: String,
+}
+
+pub async fn override_autoresponder(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<OverridePayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mut mailboxes = state.mailboxes.write().unwrap();
+    let mbox = match mailboxes.get_mut(&id) {
+        Some(m) => m,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new(404, "Mailbox not found")),
+            ))
+        }
+    };
+
+    let was = mbox.vacation_enabled;
+    mbox.vacation_enabled = false;
+    let email = mbox.email.clone();
+    Ok(Json(json!({
+        "status": "overridden",
+        "email": email,
+        "wasEnabled": was,
+        "reason": payload.reason,
+        "clientNotice": "An administrator disabled your auto-responder (reason recorded). You can re-enable it in settings.",
+        "bulkNote": "For domain-wide disable, POST this endpoint for each mailbox of the domain (list via /autoresponders filtered by domain).",
+    })))
+}
+
+// GET /api/v1/client/domains/:domain/dns-check — real DNS lookups (DoH),
+// same checks as the admin deliverability endpoint.
 pub async fn check_domain_dns(
     Path(domain): Path<String>,
 ) -> impl IntoResponse {
+    let dm = domain.trim_end_matches('.').to_lowercase();
+
+    let mx = crate::routes::security::dns_query_pub(&format!("{}.", dm), "MX").await;
+    let our_host = format!("mail.{}", dm);
+    let mx_ok = mx.as_ref().map(|recs| {
+        recs.iter().any(|r| {
+            let host = r.split_whitespace().last().unwrap_or("").trim_end_matches('.');
+            host == our_host || host == crate::stats::SERVER_RDNS
+        })
+    });
+
+    let spf = crate::routes::security::dns_query_pub(&format!("{}.", dm), "TXT").await;
+    let spf_record = spf
+        .as_ref()
+        .and_then(|recs| recs.iter().find(|r| r.replace('"', "").starts_with("v=spf1")).cloned());
+
+    let dmarc = crate::routes::security::dns_query_pub(&format!("_dmarc.{}", dm), "TXT").await;
+    let dmarc_record = dmarc
+        .as_ref()
+        .and_then(|recs| recs.iter().find(|r| r.contains("v=DMARC1")).cloned());
+
+    let status = |ok: Option<bool>| match ok {
+        None => "unknown",
+        Some(true) => "pass",
+        Some(false) => "fail",
+    };
+
     Json(json!({
-        "domain": domain,
-        "status": "verified",
+        "domain": dm,
+        "status": if mx_ok == Some(true) && dmarc_record.is_some() { "verified" } else { "pending" },
         "records": {
-            "mx": { "status": "pass", "target": format!("mail.{}", domain), "priority": 10 },
-            "spf": { "status": "pass", "record": "v=spf1 a mx ip4:198.51.100.10 ~all" },
-            "dkim": { "status": "pass", "selector": "affinmail", "record": "v=DKIM1; k=rsa; p=..." },
-            "dmarc": { "status": "pass", "policy": "quarantine", "record": "v=DMARC1; p=quarantine" }
-        }
+            "mx": { "status": status(mx_ok), "target": our_host, "found": mx },
+            "spf": { "status": if spf_record.is_some() { "pass" } else { "fail" }, "record": spf_record },
+            "dkim": { "status": "unknown", "note": "selector-dependent — see /domains/{}/dns for the live selector" },
+            "dmarc": { "status": if dmarc_record.is_some() { "pass" } else { "fail" }, "record": dmarc_record }
+        },
+        "dnsReachable": mx.is_some(),
     }))
 }
 

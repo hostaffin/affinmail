@@ -172,6 +172,18 @@ pub async fn sso_exchange(
         let now = chrono::Utc::now().timestamp();
         if now <= expires {
             let session_token = format!("aff_cli_{}", uuid::Uuid::new_v4().simple());
+            // F-034: close the impersonation audit entry opened by
+            // provision_sso_token for this account (most recent open entry).
+            if let Some(entry) = state
+                .impersonation_log
+                .write()
+                .unwrap()
+                .iter_mut()
+                .rev()
+                .find(|i| i.account_id == acct_id && i.ended_at.is_none())
+            {
+                entry.ended_at = Some(chrono::Utc::now().to_rfc3339());
+            }
             return Ok(Json(json!({
                 "status": "success",
                 "session_token": session_token,

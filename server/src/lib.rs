@@ -1,4 +1,5 @@
 pub mod routes;
+pub mod security_keys;
 pub mod stats;
 pub mod state;
 pub mod types;
@@ -27,8 +28,20 @@ pub fn create_app(state: AppState) -> Router {
         .route("/api/v1/auth/sso-exchange", post(routes::auth::sso_exchange))
         .route("/api/v1/auth/logout", post(routes::auth::admin_logout))
         // Provisioning API (/api/v1/provision/*)
-        .route("/api/v1/provision/plans", get(routes::provision::list_plans))
-        .route("/api/v1/provision/plans/{id}", get(routes::provision::get_plan))
+        .route(
+            "/api/v1/provision/plans",
+            get(routes::provision::list_plans).post(routes::provision::create_plan),
+        )
+        .route(
+            "/api/v1/provision/plans/{id}",
+            get(routes::provision::get_plan)
+                .put(routes::provision::update_plan)
+                .delete(routes::provision::delete_plan),
+        )
+        .route(
+            "/api/v1/provision/impersonations",
+            get(routes::provision::list_impersonations),
+        )
         .route(
             "/api/v1/provision/accounts",
             post(routes::provision::create_account),
@@ -172,6 +185,52 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/api/v1/domains/{id}/dkim-rotate",
             post(routes::admin::rotate_domain_dkim),
+        )
+        // F-033 domain send limits
+        .route(
+            "/api/v1/domains/{id}/send-limits",
+            get(routes::admin::get_send_limits).put(routes::admin::put_send_limits),
+        )
+        // F-032 admin autoresponder override
+        .route(
+            "/api/v1/autoresponders",
+            get(routes::client::list_autoresponders),
+        )
+        .route(
+            "/api/v1/mailboxes/{id}/autoresponder/override",
+            post(routes::client::override_autoresponder),
+        )
+        // Module D security (F-035..F-046)
+        .route("/api/v1/security/dkim", get(routes::security::dkim_overview))
+        .route("/api/v1/security/dkim/rotate", post(routes::security::dkim_rotate))
+        .route("/api/v1/security/dmarc/{domain}", get(routes::security::dmarc_get))
+        .route("/api/v1/security/dmarc-reports", get(routes::security::dmarc_reports))
+        .route("/api/v1/security/mta-sts/{domain}", get(routes::security::mta_sts))
+        .route("/api/v1/security/tls-rpt/{domain}", get(routes::security::tls_rpt))
+        .route("/api/v1/security/arc", get(routes::security::arc_settings))
+        .route("/api/v1/security/certificates", get(routes::security::certificates))
+        .route("/api/v1/security/spam", get(routes::security::spam_settings))
+        .route("/api/v1/security/bruteforce", get(routes::security::bruteforce))
+        // F-027 mailbox import (mbox/eml upload → JMAP Email/import)
+        .route(
+            "/api/v1/import/mbox",
+            post(routes::import_mail::import_mbox),
+        )
+        .route(
+            "/api/v1/import/eml",
+            post(routes::import_mail::import_eml),
+        )
+        .route(
+            "/api/v1/import/imap",
+            post(routes::import_mail::import_imap),
+        )
+        .route(
+            "/api/v1/import/jobs",
+            get(routes::import_mail::list_jobs),
+        )
+        .route(
+            "/api/v1/import/jobs/{id}",
+            get(routes::import_mail::get_job),
         )
         .route(
             "/api/v1/mailboxes",

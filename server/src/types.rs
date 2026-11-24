@@ -5,14 +5,24 @@ pub struct Plan {
     pub id: String,
     pub slug: String,
     pub name: String,
+    pub description: String,
     pub max_domains: i32,
     pub max_mailboxes: i32,
     pub storage_mb: i64,
+    pub max_aliases: i32,
+    pub max_distribution_lists: i32,
+    pub max_send_per_hour: i32,
+    pub max_send_per_day: i32,
     pub max_attachment_size_mb: i32,
     pub hourly_rate_limit: i32,
+    pub webmail_access: bool,
+    pub custom_branding: bool,
+    pub dedicated_ip_count: i32,
     pub has_dedicated_ip: bool,
     pub has_sieve_vacation: bool,
     pub has_mcp_access: bool,
+    pub has_dmarc_reports: bool,
+    pub external_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -45,6 +55,13 @@ pub struct Domain {
     pub dkim_public_key: String,
     pub dkim_private_key: String,
     pub catch_all_mailbox_id: Option<String>,
+    /// F-033: per-domain send limits (independent of plan defaults).
+    pub hourly_send_limit: i32,
+    pub daily_send_limit: i32,
+    pub send_limit_action: String, // defer | reject
+    /// F-030: suspension bookkeeping.
+    pub suspend_reason: Option<String>,
+    pub terminated_at: Option<String>,
     pub created_at: String,
 }
 
@@ -76,6 +93,13 @@ pub struct Alias {
     pub domain_id: String,
     pub source_email: String,
     pub destination_email: String,
+    /// F-028: distribution-list behaviour when is_list is true.
+    pub is_list: bool,
+    pub destinations: Vec<String>,
+    pub reply_to: Option<String>,       // list | sender
+    pub who_can_post: Option<String>,   // members | anyone | moderated
+    pub max_message_size_kb: Option<i32>,
+    pub footer: Option<String>,
     pub created_at: String,
 }
 
@@ -163,6 +187,18 @@ pub struct AdminSession {
     pub username: String,
     pub ip: String,
     pub created_at: String,
+}
+
+/// F-034: impersonation audit trail (one entry per SSO-as-client session).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImpersonationLog {
+    pub id: String,
+    pub admin_username: String,
+    pub account_id: String,
+    pub account_email: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
