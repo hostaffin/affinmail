@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600&family=Roboto+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,6 +6,7 @@
 
 :root {
   color-scheme: light dark;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html, body, #root {
@@ -51,7 +52,7 @@ body {
   padding-left: 1.25rem;
 }
 
-/* Gmail Custom scrollbar */
+/* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -70,9 +71,9 @@ body {
   background: rgba(100, 100, 100, 0.4);
 }
 
-/* Gmail row animations and transition */
+/* Row hover reveals the quick actions */
 .gmail-row {
-  transition: background-color 0.1s ease, box-shadow 0.1s ease;
+  transition: background-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
 }
 
 .gmail-row:hover .gmail-hover-actions {
@@ -87,54 +88,38 @@ body {
   pointer-events: none !important;
 }
 
-/* Gmail-Style Indeterminate Progress Bar for Splash Screen */
-@keyframes gmailProgress {
+/* Indeterminate progress bar: transform only, no gradient */
+@keyframes progressBar {
   0% {
-    left: -40%;
-    width: 35%;
+    transform: translateX(-100%) scaleX(0.35);
   }
   50% {
-    left: 25%;
-    width: 65%;
+    transform: translateX(30%) scaleX(0.65);
   }
   100% {
-    left: 100%;
-    width: 35%;
+    transform: translateX(100%) scaleX(0.35);
   }
 }
 
 .animate-gmail-progress {
   position: absolute;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(90deg, #2563EB 0%, #06B6D4 100%);
+  inset: 0;
+  width: 100%;
+  background: #0B57D0;
   border-radius: 9999px;
-  animation: gmailProgress 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: left center;
+  animation: progressBar 1.4s var(--ease-out) infinite;
 }
 
-@keyframes pulseSubtle {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.02);
-    opacity: 0.95;
-  }
+.dark .animate-gmail-progress {
+  background: #A8C7FA;
 }
 
-.animate-pulse-subtle {
-  animation: pulseSubtle 2.2s ease-in-out infinite;
-}
-
-/* Gmail-Style Splash Staggered SVG Logo Animation */
+/* Logo entrance: one short fade and rise per piece, one easing curve */
 @keyframes ribbonRise {
   0% {
     opacity: 0;
-    transform: translateY(30px) scale(0.92);
-  }
-  60% {
-    opacity: 1;
+    transform: translateY(12px) scale(0.98);
   }
   100% {
     opacity: 1;
@@ -145,10 +130,7 @@ body {
 @keyframes ribbonFold {
   0% {
     opacity: 0;
-    transform: translateY(-22px) scale(0.88);
-  }
-  60% {
-    opacity: 0.9;
+    transform: translateY(-8px) scale(0.98);
   }
   100% {
     opacity: 1;
@@ -159,25 +141,18 @@ body {
 @keyframes flapDrop {
   0% {
     opacity: 0;
-    transform: translateY(-35px) scale(0.72);
-  }
-  65% {
-    opacity: 1;
-    transform: translateY(5px) scale(1.05);
-  }
-  85% {
-    transform: translateY(-2px) scale(0.98);
+    transform: translateY(-10px);
   }
   100% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 @keyframes crossbarFade {
   0% {
     opacity: 0;
-    transform: scaleX(0.75);
+    transform: scaleX(0.85);
   }
   100% {
     opacity: 1;
@@ -185,54 +160,38 @@ body {
   }
 }
 
-@keyframes logoSheen {
-  0%, 100% {
-    filter: drop-shadow(0 0 0 rgba(37, 99, 235, 0));
-  }
-  50% {
-    filter: drop-shadow(0 0 14px rgba(6, 182, 212, 0.4));
-  }
-}
-
-.anim-logo-sheen {
-  animation: logoSheen 2.4s ease-in-out infinite 0.7s;
-}
-
 .anim-crossbar {
   transform-box: fill-box;
   transform-origin: center;
-  animation: crossbarFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+  animation: crossbarFade 240ms var(--ease-out) 0ms both;
 }
 
 .anim-leg-left {
   transform-box: fill-box;
   transform-origin: bottom center;
-  animation: ribbonRise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+  animation: ribbonRise 300ms var(--ease-out) 40ms both;
 }
 
 .anim-fold-front {
   transform-box: fill-box;
   transform-origin: top center;
-  animation: ribbonFold 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+  animation: ribbonFold 300ms var(--ease-out) 80ms both;
 }
 
 .anim-fold-back {
   transform-box: fill-box;
   transform-origin: top center;
-  animation: ribbonFold 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+  animation: ribbonFold 300ms var(--ease-out) 120ms both;
 }
 
 .anim-leg-right {
   transform-box: fill-box;
   transform-origin: bottom center;
-  animation: ribbonRise 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+  animation: ribbonRise 300ms var(--ease-out) 160ms both;
 }
 
 .anim-envelope {
   transform-box: fill-box;
   transform-origin: center;
-  animation: flapDrop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.45s both;
+  animation: flapDrop 300ms var(--ease-out) 200ms both;
 }
-
-
-

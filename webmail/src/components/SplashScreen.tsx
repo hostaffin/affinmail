@@ -47,16 +47,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       {/* Top Spacer */}
       <div className="h-6" />
 
-      {/* Center: Brand Mark, Wordmark & Animated Gmail Progress Bar */}
-      <div className="flex flex-col items-center max-w-sm w-full animate-pulse-subtle">
-        <div className="mb-6 transform transition-transform">
-          <AffinMailLogo
-            variant="full"
-            size="lg"
-            tagline="Optimized Workspace of Efficient Business."
-            withGlow
-            animated={true}
-          />
+      {/* Center: Brand Mark, Wordmark & Gmail-style Progress Bar */}
+      <div className="flex flex-col items-center max-w-sm w-full">
+        <div className="mb-6">
+          <AffinMailLogo variant="full" size="lg" />
         </div>
 
         {/* Gmail Iconic Progress Bar */}
@@ -70,15 +64,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         </p>
       </div>
 
-      {/* Bottom Footer Watermark (Google Workspace / Gmail Style) */}
-      <div className="flex flex-col items-center gap-1 text-[11px] text-slate-400 dark:text-slate-600 font-mono">
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
-          <span>Sovereign Rust Stalwart Engine</span>
-        </div>
-        <span className="text-[10px] text-slate-400/70 dark:text-slate-600/70">
-          Hostaffin Cloud Infrastructure
-        </span>
+      {/* Bottom Footer (Gmail style: one quiet line) */}
+      <div className="flex flex-col items-center text-[11px] text-slate-400 dark:text-slate-500">
+        <span>Powered by Hostaffin</span>
       </div>
     </div>
   );
