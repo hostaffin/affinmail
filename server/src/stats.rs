@@ -22,6 +22,12 @@ use serde_json::{json, Value};
 use tokio_postgres::Client;
 
 use crate::state::AppState;
+use axum::{
+    body::Body,
+    extract::{Request, State},
+    http::{header::AUTHORIZATION, StatusCode},
+    response::IntoResponse,
+};
 
 const LOG_DIR: &str = "/var/log/stalwart";
 const STATE_FILE: &str = "/var/www/affinmail/data/collector-state.json";
@@ -30,7 +36,7 @@ const SECRETS_FILE: &str = "/etc/stalwart/local-secrets.txt";
 const BACKUP_DIR: &str = "/var/www/affinmail/backups";
 pub const SERVER_IP: &str = "144.79.132.94";
 pub const SERVER_RDNS: &str = "mail.hostaffin.com";
-const RBL_LISTS: [&str; 8] = [
+const RBL_LISTS: [&str; 10] = [
     "zen.spamhaus.org",
     "bl.spamcop.net",
     "b.barracudacentral.org",
@@ -39,6 +45,8 @@ const RBL_LISTS: [&str; 8] = [
     "bl.spameatingmonkey.net",
     "dnsbl-1.uceprotect.net",
     "truncate.gbudb.net",
+    "bl.mailspike.net",
+    "ips.backscatterer.org",
 ];
 
 /* ------------------------------------------------------------------ */
@@ -1346,4 +1354,67 @@ pub async fn domain_stats(domain: &str) -> Value {
         "storageQuotaBytes": storage_quota_bytes,
         "reputation": reputation
     })
+}
+
+/// F-004: `GET /api/v1/stats/export?format=csv` — mailDaily + byDomain as CSV.
+pub async fn stats_export(
+    State(state): State<AppState>,
+    req: Request,
+) -> (StatusCode, Body) {
+    // API-key auth (F-058/F-064) — inline check for Bearer token
+    let headers = req.headers();
+    let auth_header = headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
+    if let Some(token) = auth_header {
+        let api_keys = state.api_keys.read().unwrap();
+        match api_keys.get(token) {
+            Some(key) if !key.scopes.is_empty() => {}
+            Some(_) => return (StatusCode::FORBIDDEN, Body::from("API key has no scopes")),
+            None => return (StatusCode::FORBIDDEN, Body::from("Invalid API key")),
+        }
+        // Count the call (F-064)
+        let mut usage = state.api_usage.write().unwrap();
+        let entry = usage.entry(token.to_string()).or_insert_with(|| crate::types::ApiUsage {
+            key_id: token.to_string(),
+            total_calls: 0,
+            calls_today: 0,
+            calls_this_month: 0,
+            error_count: 0,
+            rate_limit_hits: 0,
+            avg_latency_ms: 0.0,
+            last_call_at: None,
+            top_endpoints: Vec::new(),
+        });
+        entry.total_calls += 1;
+        entry.last_call_at = Some(chrono::Utc::now().to_rfc3339());
+    }
+
+    // Build CSV from the same stats the JSON endpoint serves.
+    let stats = admin_stats(&state).await;
+    let mut csv = String::new();
+    csv.push_str("section,key1,key2,key3,key4,key5,key6\n");
+    if let Some(days) = stats.get("history").and_then(|h| h.get("mailDaily")).and_then(|d| d.as_array()) {
+        for d in days {
+            csv.push_str(&format!(
+                "mailDaily,{},{},{},{},{},{}\n",
+                d.get("day").and_then(|v| v.as_str()).unwrap_or(""),
+                d.get("queued").and_then(|v| v.as_i64()).unwrap_or(0),
+                d.get("delivered").and_then(|v| v.as_i64()).unwrap_or(0),
+                d.get("failed").and_then(|v| v.as_i64()).unwrap_or(0),
+                d.get("deferred").and_then(|v| v.as_i64()).unwrap_or(0),
+                d.get("spam").and_then(|v| v.as_i64()).unwrap_or(0),
+            ));
+        }
+    }
+    if let Some(domains) = stats.get("byDomain").and_then(|d| d.as_array()) {
+        for d in domains {
+            csv.push_str(&format!(
+                "byDomain,{},{},{},{},,\n",
+                d.get("domain").and_then(|v| v.as_str()).unwrap_or(""),
+                d.get("mailboxes").and_then(|v| v.as_i64()).unwrap_or(0),
+                d.get("usedBytes").and_then(|v| v.as_i64()).unwrap_or(0),
+                d.get("quotaMb").and_then(|v| v.as_i64()).unwrap_or(0),
+            ));
+        }
+    }
+    (StatusCode::OK, Body::from(csv))
 }

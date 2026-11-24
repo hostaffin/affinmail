@@ -11,6 +11,17 @@ use axum::{
 use state::AppState;
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::types::ErrorResponse;
+use axum::{
+    Json,
+    http::{StatusCode, header::AUTHORIZATION},
+    body::Body,
+    response::IntoResponse,
+};
+use chrono::Utc;
+
+
+
 pub fn create_app(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -21,6 +32,7 @@ pub fn create_app(state: AppState) -> Router {
         // Health & Stats
         .route("/api/v1/health", get(routes::health::health_check))
         .route("/api/v1/stats", get(routes::health::stats_overview))
+        .route("/api/v1/stats/export", get(stats::stats_export))
         .route("/api/v1/storage", get(routes::health::storage_status))
         // Auth
         .route("/api/v1/auth/login", post(routes::auth::admin_login))

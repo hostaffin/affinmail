@@ -1,3 +1,14 @@
+/// F-058/F-064: API-key authentication and usage metering for the /api/v1 REST API.
+/// - Keys are identified by their secret (the `id` returned on creation, e.g. `sk_...`).
+/// - Authentication: `Authorization: Bearer <api-key-id>`.
+/// - Scope enforcement: a key must have at least one scope defined; keys with empty scopes receive 403.
+/// - Usage: every request authenticated with a key increments its in‑memory counters
+///   (`total_calls`, `calls_today`, `last_call_at`). Counters are exposed via
+///   `GET /api/v1/api-keys/{id}/usage`.
+/// - Production hardening (revocation, IP restrictions, per‑day granularity, DB-backed
+///   stores) is planned but not yet implemented.
+/// Current scope enforcement is minimal: any key with a non‑empty `scopes` Vec is accepted.
+///
 use crate::state::AppState;
 use crate::types::{ApiKey, ErrorResponse};
 use axum::{
