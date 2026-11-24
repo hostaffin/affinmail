@@ -15,6 +15,7 @@ import {
   CornerUpRight,
   Smartphone,
   Mail,
+  Activity,
 } from 'lucide-react';
 import {
   buildVacationSieve,
@@ -35,6 +36,7 @@ import { DnsWizardSettings } from './settings/DnsWizardSettings';
 import { ForwardingSettings } from './settings/ForwardingSettings';
 import { AppPasswordsSettings } from './settings/AppPasswordsSettings';
 import { ClientConfigSettings } from './settings/ClientConfigSettings';
+import { DomainActivitySettings } from './settings/DomainActivitySettings';
 
 interface SettingsViewProps {
   onNotify: (message: string, type?: 'error' | 'success' | 'info') => void;
@@ -51,6 +53,7 @@ type Section =
   | 'app_passwords'
   | 'client_setup'
   | 'dns'
+  | 'domain_activity'
   | 'ai_mcp';
 
 const NEW_SCRIPT = `require ["fileinto"];\n\n# Example: file invoices into a folder\n# if header :contains "subject" "invoice" {\n#     fileinto "Invoices";\n# }\n`;
@@ -236,6 +239,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
     { id: 'app_passwords', label: 'App passwords', icon: Smartphone },
     { id: 'client_setup', label: 'Client setup', icon: Mail },
     { id: 'dns', label: 'DNS setup & verify', icon: Globe },
+    { id: 'domain_activity', label: 'Domain activity', icon: Activity },
     { id: 'ai_mcp', label: 'AI & MCP integration', icon: Bot },
   ];
 
@@ -510,6 +514,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
         {section === 'client_setup' && <ClientConfigSettings userEmail={userEmail} onNotify={onNotify} />}
 
         {section === 'dns' && <DnsWizardSettings userEmail={userEmail} onNotify={onNotify} />}
+
+        {section === 'domain_activity' && <DomainActivitySettings userEmail={userEmail} onNotify={onNotify} />}
 
         {section === 'ai_mcp' && <AiMcpSettings userEmail={userEmail} onNotify={onNotify} />}
       </div>

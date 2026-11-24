@@ -9,6 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(2087);
 
     let state = AppState::new();
+    tokio::spawn(affinmail_server::stats::run_collector());
     let app = create_app(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

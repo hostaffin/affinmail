@@ -618,3 +618,9 @@ pub async fn delete_app_password(
         ))
     }
 }
+
+/// Self-service domain activity: mail flow, delivery and reputation
+/// for the signed-in customer's own domain.
+pub async fn domain_stats(Path(domain): Path<String>) -> impl IntoResponse {
+    Json(crate::stats::domain_stats(&domain).await)
+}

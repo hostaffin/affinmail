@@ -15,34 +15,7 @@ pub async fn health_check(State(_state): State<AppState>) -> impl IntoResponse {
 }
 
 pub async fn stats_overview(State(state): State<AppState>) -> impl IntoResponse {
-    let domains_count = state.domains.read().unwrap().len();
-    let mailboxes_count = state.mailboxes.read().unwrap().len();
-    let accounts_count = state.accounts.read().unwrap().len();
-    let queue_count = state.queue.read().unwrap().len();
-    let pools_count = state.ip_pools.read().unwrap().len();
-
-    Json(json!({
-        "overview": {
-            "total_domains": domains_count,
-            "total_mailboxes": mailboxes_count,
-            "total_accounts": accounts_count,
-            "active_users": mailboxes_count,
-            "queue_depth": queue_count,
-            "ip_pools_count": pools_count,
-            "storage_consumed_mb": 4096,
-            "emails_sent_today": 342,
-            "emails_received_today": 1280,
-            "bounce_rate_pct": 0.29,
-            "spam_catch_rate_pct": 99.4
-        },
-        "system": {
-            "mta": "Rust Stalwart SMTP/JMAP",
-            "uptime_seconds": 86400,
-            "cpu_load": 0.08,
-            "ram_used_mb": 84,
-            "disk_free_gb": 420.5
-        }
-    }))
+    Json(crate::stats::admin_stats(&state).await)
 }
 
 pub async fn storage_status(State(state): State<AppState>) -> impl IntoResponse {

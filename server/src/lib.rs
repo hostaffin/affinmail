@@ -1,4 +1,5 @@
 pub mod routes;
+pub mod stats;
 pub mod state;
 pub mod types;
 
@@ -110,6 +111,10 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/api/v1/client/domains/{domain}/dns-check",
             get(routes::client::check_domain_dns),
+        )
+        .route(
+            "/api/v1/client/domains/{domain}/stats",
+            get(routes::client::domain_stats),
         )
         .route(
             "/api/v1/client/domains/{domain}/autoconfig",
