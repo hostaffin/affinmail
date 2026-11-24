@@ -126,7 +126,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Auth gate
   const [authed, setAuthed] = useState(() => !!getToken());
-  const [usernameInput, setUsernameInput] = useState('admin');
+  const [usernameInput, setUsernameInput] = useState('root');
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);

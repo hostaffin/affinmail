@@ -1179,6 +1179,12 @@ function adminLogin(): never
     // matching account's email address first.
     $loginId = $username;
     if (!str_contains($loginId, '@')) {
+        // WHM-style: the panel's master login is "root" - it maps to the mail
+        // server's own administrator account. This root is the mail
+        // platform's root, isolated from the operating system's root user.
+        if (strcasecmp($loginId, 'root') === 0) {
+            $loginId = (string)cfg('STALWART_ADMIN_USER', 'admin');
+        }
         foreach (stalwartAccounts() as $a) {
             if (strcasecmp((string)($a['name'] ?? ''), $loginId) === 0 && ($a['emailAddress'] ?? '') !== '') {
                 $loginId = (string)$a['emailAddress'];
