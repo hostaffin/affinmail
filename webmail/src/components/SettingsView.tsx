@@ -1,5 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Calendar, Filter, KeyRound, Loader2, Plus, Save, Trash2, Upload, User, Zap } from 'lucide-react';
+import {
+  Calendar,
+  Filter,
+  KeyRound,
+  Loader2,
+  Plus,
+  Save,
+  Trash2,
+  Upload,
+  User,
+  Zap,
+  Bot,
+  Globe,
+  CornerUpRight,
+  Smartphone,
+  Mail,
+} from 'lucide-react';
 import {
   buildVacationSieve,
   changePassword,
@@ -14,6 +30,11 @@ import {
   updateIdentityName,
   VacationSettings,
 } from '../lib/collab';
+import { AiMcpSettings } from './settings/AiMcpSettings';
+import { DnsWizardSettings } from './settings/DnsWizardSettings';
+import { ForwardingSettings } from './settings/ForwardingSettings';
+import { AppPasswordsSettings } from './settings/AppPasswordsSettings';
+import { ClientConfigSettings } from './settings/ClientConfigSettings';
 
 interface SettingsViewProps {
   onNotify: (message: string, type?: 'error' | 'success' | 'info') => void;
@@ -21,7 +42,16 @@ interface SettingsViewProps {
   onOpenImport?: () => void;
 }
 
-type Section = 'profile' | 'password' | 'filters' | 'vacation';
+type Section =
+  | 'profile'
+  | 'password'
+  | 'filters'
+  | 'vacation'
+  | 'forwarding'
+  | 'app_passwords'
+  | 'client_setup'
+  | 'dns'
+  | 'ai_mcp';
 
 const NEW_SCRIPT = `require ["fileinto"];\n\n# Example: file invoices into a folder\n# if header :contains "subject" "invoice" {\n#     fileinto "Invoices";\n# }\n`;
 
@@ -47,7 +77,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
   const [savingScript, setSavingScript] = useState(false);
 
   // Vacation
-  const [vacation, setVacation] = useState<VacationSettings>({ isEnabled: false });
+  const [vacation, setVacationState] = useState<VacationSettings>({ isEnabled: false });
   const [savingVacation, setSavingVacation] = useState(false);
 
   const loadFunctions = useCallback(async () => {
@@ -66,7 +96,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
       setScripts([]);
     }
     try {
-      setVacation(await getVacation());
+      setVacationState(await getVacation());
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Could not load vacation responder', 'error');
     }
@@ -202,6 +232,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
     { id: 'password', label: 'Password', icon: KeyRound },
     { id: 'filters', label: 'Filters', icon: Filter },
     { id: 'vacation', label: 'Vacation responder', icon: Calendar },
+    { id: 'forwarding', label: 'Email forwarding', icon: CornerUpRight },
+    { id: 'app_passwords', label: 'App passwords', icon: Smartphone },
+    { id: 'client_setup', label: 'Client setup', icon: Mail },
+    { id: 'dns', label: 'DNS setup & verify', icon: Globe },
+    { id: 'ai_mcp', label: 'AI & MCP integration', icon: Bot },
   ];
 
   const inputClass =
@@ -388,63 +423,95 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
         )}
 
         {section === 'vacation' && (
-          <form onSubmit={saveVacation} className="max-w-md w-full space-y-3">
-            <h3 className="text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Vacation responder</h3>
-            <label className="flex items-center gap-2 text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
-              <input
-                type="checkbox"
-                checked={vacation.isEnabled}
-                onChange={(e) => setVacation({ ...vacation, isEnabled: e.target.checked })}
-                className="checkbox checkbox-sm checkbox-primary"
-              />
-              Enable out-of-office replies
-            </label>
-            <label className={labelClass}>
-              Subject
-              <input
-                value={vacation.subject ?? ''}
-                onChange={(e) => setVacation({ ...vacation, subject: e.target.value })}
-                className={inputClass}
-              />
-            </label>
-            <label className={labelClass}>
-              Message
-              <textarea
-                value={vacation.textBody ?? ''}
-                onChange={(e) => setVacation({ ...vacation, textBody: e.target.value })}
-                rows={6}
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E0E2E7] dark:border-[#333538] bg-transparent text-sm text-[#1F1F1F] dark:text-[#E3E3E3] outline-none focus:border-gmail-blue resize-none"
-              />
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className={labelClass}>
-                From (optional)
-                <input
-                  type="date"
-                  value={vacation.fromDate?.slice(0, 10) ?? ''}
-                  onChange={(e) => setVacation({ ...vacation, fromDate: e.target.value || undefined })}
-                  className={inputClass}
-                />
-              </label>
-              <label className={labelClass}>
-                To (optional)
-                <input
-                  type="date"
-                  value={vacation.toDate?.slice(0, 10) ?? ''}
-                  onChange={(e) => setVacation({ ...vacation, toDate: e.target.value || undefined })}
-                  className={inputClass}
-                />
-              </label>
+          <form onSubmit={saveVacation} className="max-w-md w-full space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Vacation Auto-Responder</h3>
+              <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
+                Send automated responses to incoming emails while you are away from the office.
+              </p>
             </div>
+
+            <div className="rounded-xl border border-[#E0E2E7] dark:border-[#333538] p-4 space-y-4 bg-white dark:bg-[#1E1F20]">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={vacation.isEnabled}
+                  onChange={(e) => setVacationState({ ...vacation, isEnabled: e.target.checked })}
+                  className="checkbox checkbox-sm checkbox-primary mt-0.5"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">
+                    Enable out-of-office replies
+                  </span>
+                  <p className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F]">
+                    When active, AffinMail replies automatically to each unique sender.
+                  </p>
+                </div>
+              </label>
+
+              <label className={labelClass}>
+                Subject
+                <input
+                  value={vacation.subject ?? ''}
+                  onChange={(e) => setVacationState({ ...vacation, subject: e.target.value })}
+                  placeholder="e.g. Out of office: On leave until next week"
+                  className={inputClass}
+                />
+              </label>
+
+              <label className={labelClass}>
+                Message
+                <textarea
+                  value={vacation.textBody ?? ''}
+                  onChange={(e) => setVacationState({ ...vacation, textBody: e.target.value })}
+                  placeholder="Thank you for your message. I am currently out of the office with limited access to email..."
+                  rows={6}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E0E2E7] dark:border-[#333538] bg-transparent text-sm text-[#1F1F1F] dark:text-[#E3E3E3] outline-none focus:border-gmail-blue resize-none"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className={labelClass}>
+                  From (optional)
+                  <input
+                    type="date"
+                    value={vacation.fromDate?.slice(0, 10) ?? ''}
+                    onChange={(e) => setVacationState({ ...vacation, fromDate: e.target.value || undefined })}
+                    className={inputClass}
+                  />
+                </label>
+                <label className={labelClass}>
+                  To (optional)
+                  <input
+                    type="date"
+                    value={vacation.toDate?.slice(0, 10) ?? ''}
+                    onChange={(e) => setVacationState({ ...vacation, toDate: e.target.value || undefined })}
+                    className={inputClass}
+                  />
+                </label>
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={savingVacation}
-              className="h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60"
+              className="h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60 flex items-center gap-1.5"
             >
-              {savingVacation ? 'Saving…' : 'Save responder'}
+              {savingVacation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {savingVacation ? 'Saving…' : 'Save Vacation Responder'}
             </button>
           </form>
         )}
+
+        {section === 'forwarding' && <ForwardingSettings onNotify={onNotify} />}
+
+        {section === 'app_passwords' && <AppPasswordsSettings onNotify={onNotify} />}
+
+        {section === 'client_setup' && <ClientConfigSettings userEmail={userEmail} onNotify={onNotify} />}
+
+        {section === 'dns' && <DnsWizardSettings userEmail={userEmail} onNotify={onNotify} />}
+
+        {section === 'ai_mcp' && <AiMcpSettings userEmail={userEmail} onNotify={onNotify} />}
       </div>
     </div>
   );

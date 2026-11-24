@@ -1,12 +1,17 @@
+use crate::auth::start_of_today_iso;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::env;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const CORE: &str = "urn:ietf:params:jmap:core";
 const MAIL: &str = "urn:ietf:params:jmap:mail";
 const QUOTA: &str = "urn:ietf:params:jmap:quota";
+const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
+const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 
 /// Pick the JMAP mail account id from a session document.
-fn account_id_from_session(session: &Value) -> Result<String, String> {
+pub fn account_id_from_session(session: &Value) -> Result<String, String> {
     if let Some(id) = session
         .pointer("/primaryAccounts/urn:ietf:params:jmap:mail")
         .and_then(|v| v.as_str())
@@ -24,13 +29,13 @@ fn account_id_from_session(session: &Value) -> Result<String, String> {
 }
 
 /// Resolve a mailbox NAME or ROLE (case-insensitive) to its real mailbox id.
-fn resolve_mailbox_id(list: &[Value], wanted: &str) -> Result<String, String> {
-    let wanted = wanted.to_lowercase();
+pub fn resolve_mailbox_id(list: &[Value], wanted: &str) -> Result<String, String> {
+    let wanted_lower = wanted.to_lowercase();
     for mb in list {
         let name = mb.get("name").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
         let role = mb.get("role").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
         if let Some(id) = mb.get("id").and_then(|v| v.as_str()) {
-            if name == wanted || role == wanted {
+            if name == wanted_lower || role == wanted_lower || id == wanted {
                 return Ok(id.to_string());
             }
         }
@@ -38,8 +43,8 @@ fn resolve_mailbox_id(list: &[Value], wanted: &str) -> Result<String, String> {
     Err(format!("Mailbox '{}' not found in account", wanted))
 }
 
-/// Combine Quota/get and Mailbox/get responses into the tool's summary object.
-fn build_quota_summary(
+/// Combine Quota/get and Mailbox/get responses into the quota summary object.
+pub fn build_quota_summary(
     quota_raw: Value,
     quota_error: Value,
     mailbox_raw: Value,
@@ -141,7 +146,7 @@ impl JmapClient {
         }
     }
 
-    fn session_url(&self) -> String {
+    pub fn session_url(&self) -> String {
         let base = self.base_url.trim_end_matches('/');
         match base.strip_suffix("/jmap") {
             Some(root) => format!("{}/jmap/session", root),
@@ -150,7 +155,7 @@ impl JmapClient {
     }
 
     /// Resolve the mail accountId from the JMAP session document.
-    async fn account_id(&self) -> Result<String, String> {
+    pub async fn account_id(&self) -> Result<String, String> {
         let url = self.session_url();
         let resp = self
             .auth(self.http_client.get(&url))
@@ -171,7 +176,7 @@ impl JmapClient {
     }
 
     /// All mailboxes with the properties needed for folder resolution and quota sums.
-    async fn mailboxes(&self) -> Result<Vec<Value>, String> {
+    pub async fn mailboxes(&self) -> Result<Vec<Value>, String> {
         let payload = json!({
             "using": [CORE, MAIL],
             "methodCalls": [
@@ -179,7 +184,7 @@ impl JmapClient {
                     "Mailbox/get",
                     {
                         "properties": [
-                            "id", "name", "role",
+                            "id", "name", "role", "parentId", "sortOrder",
                             "totalEmails", "totalThreads", "unreadEmails", "unreadThreads"
                         ]
                     },
@@ -202,25 +207,37 @@ impl JmapClient {
         resolve_mailbox_id(&list, wanted)
     }
 
-    /// Search emails by keyword, mailbox folder, and unread status.
+    /// Search emails by query, folder, sender, unread_only, limit, and date range.
     pub async fn search_emails(
         &self,
-        query: &str,
+        query: Option<&str>,
         folder: Option<&str>,
+        sender: Option<&str>,
         limit: Option<usize>,
         unread_only: bool,
+        before: Option<&str>,
+        after: Option<&str>,
     ) -> Result<Value, String> {
         let max_limit = limit.unwrap_or(20);
         let mut filter = json!({});
-        if !query.trim().is_empty() {
-            filter["text"] = json!(query);
-        }
 
-        if let Some(f) = folder {
+        if let Some(q) = query.filter(|s| !s.trim().is_empty()) {
+            filter["text"] = json!(q);
+        }
+        if let Some(f) = folder.filter(|s| !s.trim().is_empty()) {
             filter["inMailbox"] = json!(self.mailbox_id(f).await?);
+        }
+        if let Some(s) = sender.filter(|s| !s.trim().is_empty()) {
+            filter["from"] = json!(s);
         }
         if unread_only {
             filter["hasKeyword"] = json!("$unread");
+        }
+        if let Some(b) = before.filter(|s| !s.trim().is_empty()) {
+            filter["before"] = json!(b);
+        }
+        if let Some(a) = after.filter(|s| !s.trim().is_empty()) {
+            filter["after"] = json!(a);
         }
 
         let query_payload = json!({
@@ -257,8 +274,8 @@ impl JmapClient {
                     {
                         "ids": ids,
                         "properties": [
-                            "id", "threadId", "subject", "from",
-                            "receivedAt", "keywords", "preview"
+                            "id", "threadId", "mailboxIds", "subject", "from", "to",
+                            "receivedAt", "keywords", "preview", "hasAttachment"
                         ]
                     },
                     "call_get_1"
@@ -274,6 +291,132 @@ impl JmapClient {
             .unwrap_or_default();
 
         Ok(json!({ "total": emails.len(), "emails": emails, "query": query_res }))
+    }
+
+    /// Read full email content by ID (subject, from, to, cc, date, body_text, body_html, attachments)
+    pub async fn read_email(&self, email_id: &str) -> Result<Value, String> {
+        let payload = json!({
+            "using": [CORE, MAIL],
+            "methodCalls": [
+                [
+                    "Email/get",
+                    {
+                        "ids": [email_id],
+                        "properties": [
+                            "id", "threadId", "mailboxIds", "subject", "from", "to", "cc", "bcc",
+                            "replyTo", "sentAt", "receivedAt", "keywords", "preview", "hasAttachment",
+                            "size", "textBody", "htmlBody", "bodyValues", "attachments"
+                        ],
+                        "fetchTextBodyValues": true,
+                        "fetchHTMLBodyValues": true
+                    },
+                    "call_read_1"
+                ]
+            ]
+        });
+
+        let res = self.post_jmap(&payload).await?;
+        let email = res
+            .pointer("/methodResponses/0/1/list/0")
+            .cloned()
+            .ok_or_else(|| format!("Email '{}' not found", email_id))?;
+
+        // Extract body_text
+        let mut body_text = String::new();
+        if let Some(parts) = email.get("textBody").and_then(|v| v.as_array()) {
+            for part in parts {
+                if let Some(part_id) = part.get("partId").and_then(|v| v.as_str()) {
+                    if let Some(val) = email.pointer(&format!("/bodyValues/{}/value", part_id)).and_then(|v| v.as_str()) {
+                        if !body_text.is_empty() {
+                            body_text.push('\n');
+                        }
+                        body_text.push_str(val);
+                    }
+                }
+            }
+        }
+        if body_text.is_empty() {
+            if let Some(preview) = email.get("preview").and_then(|v| v.as_str()) {
+                body_text = preview.to_string();
+            }
+        }
+
+        // Extract body_html
+        let mut body_html = String::new();
+        if let Some(parts) = email.get("htmlBody").and_then(|v| v.as_array()) {
+            for part in parts {
+                if let Some(part_id) = part.get("partId").and_then(|v| v.as_str()) {
+                    if let Some(val) = email.pointer(&format!("/bodyValues/{}/value", part_id)).and_then(|v| v.as_str()) {
+                        if !body_html.is_empty() {
+                            body_html.push('\n');
+                        }
+                        body_html.push_str(val);
+                    }
+                }
+            }
+        }
+
+        // Extract attachments
+        let attachments: Vec<Value> = email
+            .get("attachments")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|att| {
+                        json!({
+                            "name": att.get("name").cloned().unwrap_or(json!("unnamed")),
+                            "type": att.get("type").cloned().unwrap_or(json!("application/octet-stream")),
+                            "size": att.get("size").cloned().unwrap_or(json!(0)),
+                            "blobId": att.get("blobId").cloned().unwrap_or(Value::Null),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let date = email
+            .get("receivedAt")
+            .or_else(|| email.get("sentAt"))
+            .cloned()
+            .unwrap_or(Value::Null);
+
+        Ok(json!({
+            "id": email.get("id").cloned().unwrap_or(json!(email_id)),
+            "thread_id": email.get("threadId").cloned().unwrap_or(Value::Null),
+            "subject": email.get("subject").cloned().unwrap_or(json!("")),
+            "from": email.get("from").cloned().unwrap_or(json!([])),
+            "to": email.get("to").cloned().unwrap_or(json!([])),
+            "cc": email.get("cc").cloned().unwrap_or(json!([])),
+            "bcc": email.get("bcc").cloned().unwrap_or(json!([])),
+            "date": date,
+            "preview": email.get("preview").cloned().unwrap_or(json!("")),
+            "body_text": body_text,
+            "body_html": body_html,
+            "attachments": attachments,
+            "mailbox_ids": email.get("mailboxIds").cloned().unwrap_or(json!({})),
+            "keywords": email.get("keywords").cloned().unwrap_or(json!({})),
+        }))
+    }
+
+    /// List all mail folders with unread and total counts
+    pub async fn list_folders(&self) -> Result<Value, String> {
+        let mailboxes = self.mailboxes().await?;
+        let folders: Vec<Value> = mailboxes
+            .into_iter()
+            .map(|mb| {
+                json!({
+                    "id": mb.get("id").cloned().unwrap_or(Value::Null),
+                    "name": mb.get("name").cloned().unwrap_or(json!("")),
+                    "role": mb.get("role").cloned().unwrap_or(Value::Null),
+                    "total_emails": mb.get("totalEmails").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "unread_emails": mb.get("unreadEmails").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "total_threads": mb.get("totalThreads").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "unread_threads": mb.get("unreadThreads").and_then(|v| v.as_i64()).unwrap_or(0),
+                })
+            })
+            .collect();
+
+        Ok(json!({ "folders": folders }))
     }
 
     /// Retrieve full email thread by threadId
@@ -294,7 +437,7 @@ impl JmapClient {
         self.post_jmap(&payload).await
     }
 
-    /// Send a new email message (submission flow kept, real Sent mailbox id used)
+    /// Send a new email message via JMAP EmailSubmission
     pub async fn send_email(
         &self,
         to: &[String],
@@ -335,7 +478,7 @@ impl JmapClient {
         message["mailboxIds"] = Value::Object(mailbox_ids);
 
         let payload = json!({
-            "using": [CORE, MAIL, "urn:ietf:params:jmap:submission"],
+            "using": [CORE, MAIL, SUBMISSION],
             "methodCalls": [
                 [
                     "Email/set",
@@ -363,7 +506,7 @@ impl JmapClient {
         self.post_jmap(&payload).await
     }
 
-    /// Create a new draft or update an existing one (Email/set "update" keyed by draft_id)
+    /// Create a new draft or update an existing one in Drafts folder
     pub async fn draft_email(
         &self,
         to: &[String],
@@ -421,26 +564,147 @@ impl JmapClient {
         self.post_jmap(&payload).await
     }
 
-    /// Update labels on every email of a thread (thread_id is never an Email/set key)
+    /// Move email IDs to a target folder
+    pub async fn move_emails(&self, email_ids: &[String], target_folder: &str) -> Result<Value, String> {
+        let target_id = self.mailbox_id(target_folder).await?;
+        let mut mailbox_ids = serde_json::Map::new();
+        mailbox_ids.insert(target_id.clone(), json!(true));
+
+        let mut update = serde_json::Map::new();
+        for id in email_ids {
+            update.insert(id.clone(), json!({
+                "mailboxIds": Value::Object(mailbox_ids.clone())
+            }));
+        }
+
+        let payload = json!({
+            "using": [CORE, MAIL],
+            "methodCalls": [
+                [
+                    "Email/set",
+                    {
+                        "update": Value::Object(update)
+                    },
+                    "move_emails_call"
+                ]
+            ]
+        });
+
+        let res = self.post_jmap(&payload).await?;
+        Ok(json!({
+            "target_folder": target_folder,
+            "target_mailbox_id": target_id,
+            "moved_ids": email_ids,
+            "result": res
+        }))
+    }
+
+    /// Update flags (flag, unflag, read, unread, archive, etc.) on email IDs
+    pub async fn flag_emails(
+        &self,
+        email_ids: &[String],
+        action: Option<&str>,
+        flagged: Option<bool>,
+        read: Option<bool>,
+        archive: Option<bool>,
+        add_labels: Option<&[String]>,
+        remove_labels: Option<&[String]>,
+    ) -> Result<Value, String> {
+        let mut patch = serde_json::Map::new();
+
+        // 1. Action string
+        match action.map(|s| s.to_lowercase()).as_deref() {
+            Some("flag") => {
+                patch.insert("keywords/$flagged".to_string(), json!(true));
+            }
+            Some("unflag") => {
+                patch.insert("keywords/$flagged".to_string(), json!(null));
+            }
+            Some("read") => {
+                patch.insert("keywords/$seen".to_string(), json!(true));
+                patch.insert("keywords/$unread".to_string(), json!(null));
+            }
+            Some("unread") => {
+                patch.insert("keywords/$seen".to_string(), json!(null));
+                patch.insert("keywords/$unread".to_string(), json!(true));
+            }
+            _ => {}
+        }
+
+        // 2. Boolean overrides
+        if let Some(f) = flagged {
+            patch.insert(
+                "keywords/$flagged".to_string(),
+                if f { json!(true) } else { json!(null) },
+            );
+        }
+        if let Some(r) = read {
+            if r {
+                patch.insert("keywords/$seen".to_string(), json!(true));
+                patch.insert("keywords/$unread".to_string(), json!(null));
+            } else {
+                patch.insert("keywords/$seen".to_string(), json!(null));
+                patch.insert("keywords/$unread".to_string(), json!(true));
+            }
+        }
+
+        // 3. Custom labels
+        if let Some(adds) = add_labels {
+            for lbl in adds {
+                patch.insert(format!("keywords/{}", lbl), json!(true));
+            }
+        }
+        if let Some(rems) = remove_labels {
+            for lbl in rems {
+                patch.insert(format!("keywords/{}", lbl), json!(null));
+            }
+        }
+
+        // 4. Archive handling
+        let should_archive = action
+            .map(|s| s.eq_ignore_ascii_case("archive"))
+            .unwrap_or(false)
+            || archive.unwrap_or(false);
+
+        if should_archive {
+            let archive_id = self.mailbox_id("archive").await?;
+            let mut mb_map = serde_json::Map::new();
+            mb_map.insert(archive_id, json!(true));
+            patch.insert("mailboxIds".to_string(), Value::Object(mb_map));
+        }
+
+        let mut update = serde_json::Map::new();
+        for id in email_ids {
+            update.insert(id.clone(), Value::Object(patch.clone()));
+        }
+
+        let payload = json!({
+            "using": [CORE, MAIL],
+            "methodCalls": [
+                [
+                    "Email/set",
+                    {
+                        "update": Value::Object(update)
+                    },
+                    "flag_emails_call"
+                ]
+            ]
+        });
+
+        let res = self.post_jmap(&payload).await?;
+        Ok(json!({
+            "email_ids": email_ids,
+            "result": res
+        }))
+    }
+
+    /// Update labels on every email of a thread (backward-compatible affinmail_update_labels)
     pub async fn update_labels(
         &self,
         thread_id: &str,
         add_labels: Option<&[String]>,
         remove_labels: Option<&[String]>,
     ) -> Result<Value, String> {
-        let mut patch = json!({});
-
-        if let Some(adds) = add_labels {
-            for lbl in adds {
-                patch[format!("keywords/{}", lbl)] = json!(true);
-            }
-        }
-        if let Some(removes) = remove_labels {
-            for lbl in removes {
-                patch[format!("keywords/{}", lbl)] = json!(null);
-            }
-        }
-
         let thread_res = self.get_thread(thread_id).await?;
         let email_ids: Vec<String> = thread_res
             .pointer("/methodResponses/0/1/list/0/emailIds")
@@ -459,29 +723,206 @@ impl JmapClient {
             ));
         }
 
-        let mut update = serde_json::Map::new();
-        for id in &email_ids {
-            update.insert(id.clone(), patch.clone());
-        }
+        self.flag_emails(
+            &email_ids,
+            None,
+            None,
+            None,
+            None,
+            add_labels,
+            remove_labels,
+        )
+        .await
+    }
 
-        let payload = json!({
-            "using": [CORE, MAIL],
+    /// List or search contacts across contacts backend or recent email correspondents
+    pub async fn list_contacts(
+        &self,
+        query: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Value, String> {
+        let max_contacts = limit.unwrap_or(50);
+        let q_lower = query.map(|q| q.trim().to_lowercase()).filter(|q| !q.is_empty());
+
+        // Attempt ContactCard/query if JMAP contacts capability is present
+        let cards_payload = json!({
+            "using": [CORE, CONTACTS],
             "methodCalls": [
                 [
-                    "Email/set",
-                    {
-                        "update": Value::Object(update)
-                    },
-                    "update_labels_call"
+                    "ContactCard/query",
+                    { "limit": max_contacts },
+                    "query_contacts"
                 ]
             ]
         });
 
-        let res = self.post_jmap(&payload).await?;
+        if let Ok(res) = self.post_jmap(&cards_payload).await {
+            let ids = res
+                .pointer("/methodResponses/0/1/ids")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            if !ids.is_empty() {
+                let get_cards = json!({
+                    "using": [CORE, CONTACTS],
+                    "methodCalls": [
+                        [
+                            "ContactCard/get",
+                            { "ids": ids, "properties": ["id", "name", "emails"] },
+                            "get_contacts"
+                        ]
+                    ]
+                });
+
+                if let Ok(cards_res) = self.post_jmap(&get_cards).await {
+                    let list = cards_res
+                        .pointer("/methodResponses/0/1/list")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let mut contacts = Vec::new();
+                    for card in list {
+                        let name = card
+                            .pointer("/name/full")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let email = card
+                            .pointer("/emails/0/value")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if !email.is_empty() {
+                            if let Some(ref q) = q_lower {
+                                if !name.to_lowercase().contains(q) && !email.to_lowercase().contains(q) {
+                                    continue;
+                                }
+                            }
+                            contacts.push(json!({ "name": name, "email": email }));
+                        }
+                    }
+                    if !contacts.is_empty() {
+                        return Ok(json!({ "count": contacts.len(), "contacts": contacts }));
+                    }
+                }
+            }
+        }
+
+        // Fallback: extract distinct contacts from recent emails
+        let recent = self.search_emails(None, None, None, Some(50), false, None, None).await?;
+        let emails = recent
+            .get("emails")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut seen = HashSet::new();
+        let mut contacts = Vec::new();
+
+        for em in &emails {
+            let mut extract = |name: &str, email: &str| -> Option<Value> {
+                let email_clean = email.trim().to_lowercase();
+                if !email_clean.is_empty() && email_clean.contains('@') && seen.insert(email_clean.clone()) {
+                    if let Some(ref q) = q_lower {
+                        if !name.to_lowercase().contains(q) && !email_clean.contains(q) {
+                            return None;
+                        }
+                    }
+                    Some(json!({
+                        "name": name.trim(),
+                        "email": email.trim(),
+                    }))
+                } else {
+                    None
+                }
+            };
+
+            if let Some(from_arr) = em.get("from").and_then(|v| v.as_array()) {
+                for f in from_arr {
+                    let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let email = f.get("email").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some(c) = extract(name, email) {
+                        contacts.push(c);
+                    }
+                }
+            }
+            if let Some(to_arr) = em.get("to").and_then(|v| v.as_array()) {
+                for t in to_arr {
+                    let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let email = t.get("email").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some(c) = extract(name, email) {
+                        contacts.push(c);
+                    }
+                }
+            }
+            if contacts.len() >= max_contacts {
+                break;
+            }
+        }
+
+        Ok(json!({ "count": contacts.len(), "contacts": contacts }))
+    }
+
+    /// Return total_emails, unread, storage_used_mb, storage_quota_mb, sent_today
+    pub async fn get_mailbox_stats(&self) -> Result<Value, String> {
+        let quota_summary = self.get_quota().await?;
+
+        let used_bytes = quota_summary.get("used").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let limit_bytes = quota_summary.get("limit").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+        let storage_used_mb = (used_bytes / (1024.0 * 1024.0) * 100.0).round() / 100.0;
+        let storage_quota_mb = (limit_bytes / (1024.0 * 1024.0) * 100.0).round() / 100.0;
+
+        let total_emails = quota_summary
+            .pointer("/mailboxes/totalEmails")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let unread = quota_summary
+            .pointer("/mailboxes/unreadEmails")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        // Count sent today
+        let mut sent_today: i64 = 0;
+        if let Ok(sent_id) = self.mailbox_id("sent").await {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let today_start = start_of_today_iso(now);
+
+            let sent_query = json!({
+                "using": [CORE, MAIL],
+                "methodCalls": [
+                    [
+                        "Email/query",
+                        {
+                            "filter": {
+                                "inMailbox": sent_id,
+                                "after": today_start
+                            },
+                            "limit": 1000
+                        },
+                        "sent_count_query"
+                    ]
+                ]
+            });
+
+            if let Ok(res) = self.post_jmap(&sent_query).await {
+                if let Some(ids) = res.pointer("/methodResponses/0/1/ids").and_then(|v| v.as_array()) {
+                    sent_today = ids.len() as i64;
+                }
+            }
+        }
+
         Ok(json!({
-            "threadId": thread_id,
-            "emailIds": email_ids,
-            "update": res
+            "total_emails": total_emails,
+            "unread": unread,
+            "storage_used_mb": storage_used_mb,
+            "storage_quota_mb": storage_quota_mb,
+            "sent_today": sent_today
         }))
     }
 
@@ -524,7 +965,7 @@ impl JmapClient {
         Ok(build_quota_summary(quota_raw, quota_error, mailbox_raw, mailbox_error))
     }
 
-    async fn post_jmap(&self, payload: &Value) -> Result<Value, String> {
+    pub async fn post_jmap(&self, payload: &Value) -> Result<Value, String> {
         let account_id = self.account_id().await?;
 
         let mut payload = payload.clone();

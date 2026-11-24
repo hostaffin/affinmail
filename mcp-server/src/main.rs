@@ -1,5 +1,8 @@
 use affinmail_mcp_server::admin::AdminClient;
+use affinmail_mcp_server::auth::{AuditLogger, ScopeChecker};
 use affinmail_mcp_server::jmap::JmapClient;
+use affinmail_mcp_server::prompts;
+use affinmail_mcp_server::resources;
 use affinmail_mcp_server::tools;
 use affinmail_mcp_server::types::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::json;
@@ -9,6 +12,9 @@ use std::io::{self, BufRead, Write};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = JmapClient::new();
     let admin = AdminClient::new();
+    let scopes = ScopeChecker::from_env();
+    let audit = AuditLogger::new();
+
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
@@ -45,10 +51,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "capabilities": {
                         "tools": {
                             "listChanged": false
+                        },
+                        "resources": {
+                            "subscribe": false,
+                            "listChanged": false
+                        },
+                        "prompts": {
+                            "listChanged": false
                         }
                     },
                     "serverInfo": {
-                        "name": "affinmail-user-mcp",
+                        "name": "affinmail-mcp-server",
                         "version": env!("CARGO_PKG_VERSION")
                     }
                 });
@@ -58,9 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Client handshake ACK notification - no response required in JSON-RPC
                 None
             }
-            "ping" => {
-                Some(JsonRpcResponse::success(req_id, json!({})))
-            }
+            "ping" => Some(JsonRpcResponse::success(req_id, json!({}))),
             "tools/list" => {
                 let tool_list = tools::list_tools();
                 let result = json!({
@@ -76,16 +87,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default();
                 let tool_args = params.get("arguments").cloned().unwrap_or(json!({}));
 
-                let call_result = tools::handle_tool_call(tool_name, &tool_args, &client, &admin).await;
-                Some(JsonRpcResponse::success(req_id, serde_json::to_value(call_result)?))
-            }
-            unknown_method => {
-                Some(JsonRpcResponse::error(
+                let call_result =
+                    tools::handle_tool_call(tool_name, &tool_args, &client, &admin, &scopes, &audit).await;
+                Some(JsonRpcResponse::success(
                     req_id,
-                    -32601,
-                    format!("Method not found: {}", unknown_method),
+                    serde_json::to_value(call_result)?,
                 ))
             }
+            "resources/list" => {
+                let res_list = resources::list_resources();
+                let result = json!({
+                    "resources": res_list
+                });
+                Some(JsonRpcResponse::success(req_id, result))
+            }
+            "resources/read" => {
+                let params = req.params.unwrap_or(json!({}));
+                let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or_default();
+
+                match resources::handle_read_resource(uri, &client, &scopes).await {
+                    Ok(read_result) => {
+                        Some(JsonRpcResponse::success(req_id, serde_json::to_value(read_result)?))
+                    }
+                    Err(err) => Some(JsonRpcResponse::error(req_id, -32603, err)),
+                }
+            }
+            "prompts/list" => {
+                let prompt_list = prompts::list_prompts();
+                let result = json!({
+                    "prompts": prompt_list
+                });
+                Some(JsonRpcResponse::success(req_id, result))
+            }
+            "prompts/get" => {
+                let params = req.params.unwrap_or(json!({}));
+                let prompt_name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let prompt_args = params.get("arguments").cloned().unwrap_or(json!({}));
+
+                match prompts::handle_get_prompt(prompt_name, &prompt_args, &client, &scopes).await {
+                    Ok(prompt_result) => Some(JsonRpcResponse::success(
+                        req_id,
+                        serde_json::to_value(prompt_result)?,
+                    )),
+                    Err(err) => Some(JsonRpcResponse::error(req_id, -32603, err)),
+                }
+            }
+            unknown_method => Some(JsonRpcResponse::error(
+                req_id,
+                -32601,
+                format!("Method not found: {}", unknown_method),
+            )),
         };
 
         if let Some(res) = response {

@@ -53,7 +53,7 @@ pub struct JsonRpcError {
     pub data: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Tool {
     pub name: String,
     pub description: String,
@@ -95,4 +95,63 @@ impl CallToolResult {
             is_error: true,
         }
     }
+}
+
+// MCP Resources
+#[derive(Debug, Clone, Serialize)]
+pub struct Resource {
+    pub uri: String,
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResourceContent {
+    pub uri: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReadResourceResult {
+    pub contents: Vec<ResourceContent>,
+}
+
+// MCP Prompts
+#[derive(Debug, Clone, Serialize)]
+pub struct Prompt {
+    pub name: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Vec<PromptArgument>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PromptArgument {
+    pub name: String,
+    pub description: String,
+    pub required: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PromptMessage {
+    pub role: &'static str,
+    pub content: PromptMessageContent,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PromptMessageContent {
+    #[serde(rename = "type")]
+    pub content_type: &'static str,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetPromptResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub messages: Vec<PromptMessage>,
 }

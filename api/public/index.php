@@ -79,7 +79,25 @@ function ok(mixed $data, int $code = 200): never
 
 function fail(int $code, string $msg): never
 {
+    $reqPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+    if (str_starts_with($reqPath, API_PREFIX . '/provision/') || str_starts_with($reqPath, API_PREFIX . '/client/')) {
+        apiFail($code, $msg);
+    }
     respond($code, ['status' => 'error', 'error' => $msg]);
+}
+
+function apiFail(int $code, string $msg): never
+{
+    $GLOBALS['resp_status'] = $code;
+    http_response_code($code);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'error' => [
+            'code'    => $code,
+            'message' => $msg,
+        ],
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 function body(): array
@@ -2794,9 +2812,1779 @@ if (PHP_SAPI === 'cli' && in_array('--self-test-parsers', $argv ?? [], true)) {
     exit(0);
 }
 
+/* ---------------------------------------------------------------- provisioning & client self-service */
+
+function ensureProvisioningTables(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $pdo = db();
+    $pdo->exec(
+        "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";
+        CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";
+
+        CREATE TABLE IF NOT EXISTS plans (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            slug VARCHAR(64) NOT NULL UNIQUE,
+            name VARCHAR(128) NOT NULL,
+            max_domains INTEGER NOT NULL DEFAULT 1,
+            max_mailboxes INTEGER NOT NULL DEFAULT 5,
+            storage_mb INTEGER NOT NULL DEFAULT 10240,
+            max_attachment_size_mb INTEGER NOT NULL DEFAULT 25,
+            hourly_rate_limit INTEGER NOT NULL DEFAULT 200,
+            has_dedicated_ip BOOLEAN NOT NULL DEFAULT FALSE,
+            has_sieve_vacation BOOLEAN NOT NULL DEFAULT TRUE,
+            has_mcp_access BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS accounts (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            company_name VARCHAR(255) NOT NULL DEFAULT '',
+            admin_email VARCHAR(255) NOT NULL,
+            plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE RESTRICT,
+            status VARCHAR(32) NOT NULL DEFAULT 'active',
+            external_id VARCHAR(128) NULL,
+            suspended_at TIMESTAMPTZ NULL,
+            terminated_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_accounts_admin_email ON accounts(admin_email);
+        CREATE INDEX IF NOT EXISTS idx_accounts_external_id ON accounts(external_id);
+        CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status);
+
+        ALTER TABLE domains ADD COLUMN IF NOT EXISTS account_id UUID NULL REFERENCES accounts(id) ON DELETE SET NULL;
+        ALTER TABLE domains ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'active';
+        CREATE INDEX IF NOT EXISTS idx_domains_account ON domains(account_id);
+
+        CREATE TABLE IF NOT EXISTS app_passwords (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            mailbox_id UUID NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
+            label VARCHAR(128) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_used_at TIMESTAMPTZ NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_app_passwords_mailbox ON app_passwords(mailbox_id);
+
+        CREATE TABLE IF NOT EXISTS mcp_tokens (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            mailbox_id UUID NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
+            token_hash VARCHAR(255) NOT NULL UNIQUE,
+            token_prefix VARCHAR(16) NOT NULL DEFAULT 'aff_',
+            name VARCHAR(128) NOT NULL,
+            scopes TEXT[] NOT NULL DEFAULT '{\"read\",\"send\",\"search\"}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ NULL,
+            last_used_at TIMESTAMPTZ NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_mcp_tokens_mailbox ON mcp_tokens(mailbox_id);
+        CREATE INDEX IF NOT EXISTS idx_mcp_tokens_hash ON mcp_tokens(token_hash);
+
+        CREATE TABLE IF NOT EXISTS mcp_audit_log (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            mailbox_id UUID NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
+            token_id UUID NULL REFERENCES mcp_tokens(id) ON DELETE SET NULL,
+            tool_name VARCHAR(128) NOT NULL,
+            status VARCHAR(32) NOT NULL DEFAULT 'success',
+            client_info JSONB NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_mcp_audit_mailbox_created ON mcp_audit_log(mailbox_id, created_at DESC);
+
+        INSERT INTO plans (slug, name, max_domains, max_mailboxes, storage_mb, max_attachment_size_mb, hourly_rate_limit, has_dedicated_ip)
+        VALUES
+            ('starter', 'Starter', 1, 5, 10240, 25, 100, FALSE),
+            ('professional', 'Professional', 5, 25, 51200, 50, 500, FALSE),
+            ('enterprise', 'Enterprise', 25, 100, 204800, 100, 2000, TRUE)
+        ON CONFLICT (slug) DO UPDATE SET
+            name = EXCLUDED.name,
+            max_domains = EXCLUDED.max_domains,
+            max_mailboxes = EXCLUDED.max_mailboxes,
+            storage_mb = EXCLUDED.storage_mb,
+            max_attachment_size_mb = EXCLUDED.max_attachment_size_mb,
+            hourly_rate_limit = EXCLUDED.hourly_rate_limit,
+            has_dedicated_ip = EXCLUDED.has_dedicated_ip,
+            updated_at = NOW();"
+    );
+    $done = true;
+}
+
+function findPlan(string $idOrSlug): ?array
+{
+    ensureProvisioningTables();
+    $pdo = db();
+    $st = $pdo->prepare('SELECT * FROM plans WHERE id::text = ? OR LOWER(slug) = LOWER(?)');
+    $st->execute([$idOrSlug, $idOrSlug]);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
+function planOut(array $p): array
+{
+    return [
+        'id'                  => $p['id'],
+        'slug'                => $p['slug'],
+        'name'                => $p['name'],
+        'maxDomains'          => (int)$p['max_domains'],
+        'maxMailboxes'        => (int)$p['max_mailboxes'],
+        'storageMb'           => (int)$p['storage_mb'],
+        'maxAttachmentSizeMb' => (int)$p['max_attachment_size_mb'],
+        'hourlyRateLimit'     => (int)$p['hourly_rate_limit'],
+        'hasDedicatedIp'      => (bool)$p['has_dedicated_ip'],
+        'hasSieveVacation'    => (bool)($p['has_sieve_vacation'] ?? true),
+        'hasMcpAccess'        => (bool)($p['has_mcp_access'] ?? true),
+        'createdAt'           => $p['created_at'],
+    ];
+}
+
+function findAccount(string $idOrExt): ?array
+{
+    ensureProvisioningTables();
+    $pdo = db();
+    $st = $pdo->prepare(
+        'SELECT a.*, p.slug AS plan_slug, p.name AS plan_name, p.max_domains, p.max_mailboxes,
+                p.storage_mb, p.max_attachment_size_mb, p.hourly_rate_limit, p.has_dedicated_ip,
+                p.has_sieve_vacation, p.has_mcp_access
+         FROM accounts a
+         JOIN plans p ON p.id = a.plan_id
+         WHERE a.id::text = ? OR a.external_id = ?'
+    );
+    $st->execute([$idOrExt, $idOrExt]);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
+function accountOut(array $a, ?array $extra = null): array
+{
+    $out = [
+        'id'          => $a['id'],
+        'companyName' => $a['company_name'] ?? '',
+        'adminEmail'  => $a['admin_email'],
+        'status'      => $a['status'],
+        'externalId'  => $a['external_id'],
+        'plan'        => [
+            'id'                  => $a['plan_id'],
+            'slug'                => $a['plan_slug'] ?? null,
+            'name'                => $a['plan_name'] ?? null,
+            'maxDomains'          => isset($a['max_domains']) ? (int)$a['max_domains'] : null,
+            'maxMailboxes'        => isset($a['max_mailboxes']) ? (int)$a['max_mailboxes'] : null,
+            'storageMb'           => isset($a['storage_mb']) ? (int)$a['storage_mb'] : null,
+            'maxAttachmentSizeMb' => isset($a['max_attachment_size_mb']) ? (int)$a['max_attachment_size_mb'] : null,
+            'hourlyRateLimit'     => isset($a['hourly_rate_limit']) ? (int)$a['hourly_rate_limit'] : null,
+            'hasDedicatedIp'      => isset($a['has_dedicated_ip']) ? (bool)$a['has_dedicated_ip'] : false,
+        ],
+        'suspendedAt'  => $a['suspended_at'] ?? null,
+        'terminatedAt' => $a['terminated_at'] ?? null,
+        'createdAt'    => $a['created_at'],
+    ];
+    if ($extra !== null) {
+        $out = array_merge($out, $extra);
+    }
+    return $out;
+}
+
+function findMailbox(string $idOrEmail): ?array
+{
+    $pdo = db();
+    $st = $pdo->prepare(
+        'SELECT m.*, d.domain_name, d.account_id
+         FROM mailboxes m
+         JOIN domains d ON d.id = m.domain_id
+         WHERE m.id::text = ? OR LOWER(m.email) = LOWER(?)'
+    );
+    $st->execute([$idOrEmail, $idOrEmail]);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
+function provisionAccountCreate(): never
+{
+    ensureProvisioningTables();
+    $b = body();
+    $adminEmail = strtolower(stringField($b, 'adminEmail', 255, false));
+    if ($adminEmail === '') {
+        $adminEmail = strtolower(stringField($b, 'admin_email'));
+    }
+    if (!validEmail($adminEmail)) {
+        apiFail(400, 'invalid admin email');
+    }
+
+    $domain = strtolower(stringField($b, 'domain', 255, false));
+    if ($domain === '') {
+        $domain = strtolower(stringField($b, 'domain_name', 255, false));
+    }
+    if ($domain === '') {
+        $domain = strtolower(stringField($b, 'domainName'));
+    }
+    if (!validDomain($domain)) {
+        apiFail(400, 'invalid domain name');
+    }
+
+    $companyName = stringField($b, 'companyName', 255, false);
+    if ($companyName === '') {
+        $companyName = stringField($b, 'company_name', 255, false);
+    }
+
+    $externalId = stringField($b, 'externalId', 128, false);
+    if ($externalId === '') {
+        $externalId = stringField($b, 'external_id', 128, false);
+    }
+    $externalId = $externalId !== '' ? $externalId : null;
+
+    $planParam = stringField($b, 'plan', 64, false);
+    if ($planParam === '') {
+        $planParam = stringField($b, 'planId', 64, false);
+    }
+    if ($planParam === '') {
+        $planParam = stringField($b, 'plan_id', 64, false);
+    }
+    $planParam = $planParam !== '' ? $planParam : 'starter';
+
+    $plan = findPlan($planParam);
+    if ($plan === null) {
+        apiFail(404, "plan '{$planParam}' not found");
+    }
+
+    $password = stringField($b, 'password', 256, false);
+    if ($password === '') {
+        $password = bin2hex(random_bytes(8)) . '!Aa1';
+    } elseif (strlen($password) < 8) {
+        apiFail(400, 'password must be at least 8 characters');
+    }
+
+    $pdo = db();
+    $dupDomain = $pdo->prepare('SELECT 1 FROM domains WHERE domain_name = ?');
+    $dupDomain->execute([$domain]);
+    if ($dupDomain->fetchColumn()) {
+        apiFail(409, 'domain already exists');
+    }
+
+    $swDomainId = '';
+    try {
+        [$privKey, $pubKey] = dkimKeypair();
+        $swDomainId = stalwartEnsureDomain($domain);
+    } catch (RuntimeException $e) {
+        apiFail(502, 'stalwart domain provisioning failed: ' . $e->getMessage());
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $insAcc = $pdo->prepare(
+            'INSERT INTO accounts (company_name, admin_email, plan_id, external_id, status)
+             VALUES (?, ?, ?, ?, ?) RETURNING *'
+        );
+        $insAcc->execute([$companyName, $adminEmail, $plan['id'], $externalId, 'active']);
+        $accRow = $insAcc->fetch();
+
+        $insDom = $pdo->prepare(
+            'INSERT INTO domains (domain_name, account_id, max_mailboxes, max_attachment_size_mb,
+                                  disk_quota_mb, dkim_selector, dkim_private_key, dkim_public_key,
+                                  stalwart_domain_id, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *'
+        );
+        $insDom->execute([
+            $domain,
+            $accRow['id'],
+            $plan['max_mailboxes'],
+            $plan['max_attachment_size_mb'],
+            $plan['storage_mb'],
+            'affinmail',
+            $privKey,
+            $pubKey,
+            $swDomainId,
+            'active',
+        ]);
+        $domRow = $insDom->fetch();
+
+        $localpart = explode('@', $adminEmail)[0];
+        if (!preg_match('/^[a-z0-9._%+\-]+$/i', $localpart)) {
+            $localpart = 'admin';
+        }
+        $primaryEmail = "{$localpart}@{$domain}";
+        $swAcctId = stalwartCreateAccount($localpart, $swDomainId, $companyName !== '' ? $companyName : 'Admin', $password);
+
+        $pwHash = password_hash($password, PASSWORD_BCRYPT);
+        $vault = null;
+        try {
+            $vault = vaultEncrypt($password);
+        } catch (Throwable) {
+        }
+
+        $insMb = $pdo->prepare(
+            'INSERT INTO mailboxes (domain_id, email, username, password_hash, display_name,
+                                    quota_limit_mb, hourly_rate_limit, outbound_route, status,
+                                    is_admin, stalwart_account_id, secret_vault)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *'
+        );
+        $insMb->execute([
+            $domRow['id'],
+            $primaryEmail,
+            $localpart,
+            $pwHash,
+            $companyName !== '' ? $companyName : 'Administrator',
+            $plan['storage_mb'],
+            $plan['hourly_rate_limit'],
+            'direct',
+            'active',
+            true,
+            $swAcctId,
+            $vault,
+        ]);
+        $mbRow = $insMb->fetch();
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        try {
+            if ($swDomainId !== '') {
+                stalwartDestroyDomain($swDomainId);
+            }
+        } catch (Throwable) {
+        }
+        apiFail(500, 'provisioning account failed: ' . $e->getMessage());
+    }
+
+    $accOut = accountOut(array_merge($accRow, [
+        'plan_slug'            => $plan['slug'],
+        'plan_name'            => $plan['name'],
+        'max_domains'          => $plan['max_domains'],
+        'max_mailboxes'        => $plan['max_mailboxes'],
+        'storage_mb'           => $plan['storage_mb'],
+        'max_attachment_size_mb' => $plan['max_attachment_size_mb'],
+        'hourly_rate_limit'    => $plan['hourly_rate_limit'],
+        'has_dedicated_ip'     => $plan['has_dedicated_ip'],
+    ]), [
+        'domain'         => domainOut($domRow),
+        'primaryMailbox' => [
+            'id'              => $mbRow['id'],
+            'email'           => $primaryEmail,
+            'username'        => $localpart,
+            'initialPassword' => $password,
+        ],
+    ]);
+
+    ok($accOut, 201);
+}
+
+function provisionAccountGet(string $id): never
+{
+    $acc = findAccount($id);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+    $domCountSt = $pdo->prepare('SELECT COUNT(*) FROM domains WHERE account_id = ?');
+    $domCountSt->execute([$acc['id']]);
+    $domainCount = (int)$domCountSt->fetchColumn();
+
+    $mbCountSt = $pdo->prepare('SELECT COUNT(*) FROM mailboxes m JOIN domains d ON d.id = m.domain_id WHERE d.account_id = ?');
+    $mbCountSt->execute([$acc['id']]);
+    $mailboxCount = (int)$mbCountSt->fetchColumn();
+
+    ok(accountOut($acc, [
+        'domainCount'  => $domainCount,
+        'mailboxCount' => $mailboxCount,
+    ]));
+}
+
+function provisionAccountList(): never
+{
+    ensureProvisioningTables();
+    $rows = db()->query(
+        'SELECT a.*, p.slug AS plan_slug, p.name AS plan_name, p.max_domains, p.max_mailboxes,
+                p.storage_mb, p.max_attachment_size_mb, p.hourly_rate_limit, p.has_dedicated_ip
+         FROM accounts a
+         JOIN plans p ON p.id = a.plan_id
+         ORDER BY a.created_at DESC'
+    )->fetchAll();
+    ok(['accounts' => array_map('accountOut', $rows), 'count' => count($rows)]);
+}
+
+function provisionAccountPlan(string $id): never
+{
+    $acc = findAccount($id);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $b = body();
+    $planParam = stringField($b, 'plan', 64, false);
+    if ($planParam === '') {
+        $planParam = stringField($b, 'planId', 64, false);
+    }
+    if ($planParam === '') {
+        $planParam = stringField($b, 'plan_id', 64, false);
+    }
+    if ($planParam === '') {
+        apiFail(400, "field 'plan' or 'planId' is required");
+    }
+    $plan = findPlan($planParam);
+    if ($plan === null) {
+        apiFail(404, "plan '{$planParam}' not found");
+    }
+
+    $pdo = db();
+    $pdo->prepare('UPDATE accounts SET plan_id = ?, updated_at = NOW() WHERE id = ?')->execute([$plan['id'], $acc['id']]);
+    $pdo->prepare(
+        'UPDATE domains
+         SET max_mailboxes = ?, max_attachment_size_mb = ?, disk_quota_mb = ?, updated_at = NOW()
+         WHERE account_id = ?'
+    )->execute([$plan['max_mailboxes'], $plan['max_attachment_size_mb'], $plan['storage_mb'], $acc['id']]);
+
+    $updated = findAccount($acc['id']);
+    ok(accountOut($updated));
+}
+
+function provisionAccountSuspend(string $id): never
+{
+    $acc = findAccount($id);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+    $pdo->prepare("UPDATE accounts SET status = 'suspended', suspended_at = NOW(), updated_at = NOW() WHERE id = ?")->execute([$acc['id']]);
+    $pdo->prepare("UPDATE domains SET status = 'suspended', is_active = FALSE, updated_at = NOW() WHERE account_id = ?")->execute([$acc['id']]);
+    $pdo->prepare(
+        "UPDATE mailboxes SET status = 'suspended', updated_at = NOW()
+         WHERE domain_id IN (SELECT id FROM domains WHERE account_id = ?)"
+    )->execute([$acc['id']]);
+
+    ok(['status' => 'suspended', 'accountId' => $acc['id'], 'suspendedAt' => gmdate('c')]);
+}
+
+function provisionAccountUnsuspend(string $id): never
+{
+    $acc = findAccount($id);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+    $pdo->prepare("UPDATE accounts SET status = 'active', suspended_at = NULL, updated_at = NOW() WHERE id = ?")->execute([$acc['id']]);
+    $pdo->prepare("UPDATE domains SET status = 'active', is_active = TRUE, updated_at = NOW() WHERE account_id = ?")->execute([$acc['id']]);
+    $pdo->prepare(
+        "UPDATE mailboxes SET status = 'active', updated_at = NOW()
+         WHERE domain_id IN (SELECT id FROM domains WHERE account_id = ?)"
+    )->execute([$acc['id']]);
+
+    ok(['status' => 'active', 'accountId' => $acc['id']]);
+}
+
+function provisionAccountTerminate(string $id): never
+{
+    $acc = findAccount($id);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+    $pdo->prepare("UPDATE accounts SET status = 'terminated', terminated_at = NOW(), updated_at = NOW() WHERE id = ?")->execute([$acc['id']]);
+    $pdo->prepare("UPDATE domains SET status = 'terminated', is_active = FALSE, updated_at = NOW() WHERE account_id = ?")->execute([$acc['id']]);
+    $pdo->prepare(
+        "UPDATE mailboxes SET status = 'suspended', updated_at = NOW()
+         WHERE domain_id IN (SELECT id FROM domains WHERE account_id = ?)"
+    )->execute([$acc['id']]);
+
+    ok([
+        'status'           => 'terminated',
+        'accountId'        => $acc['id'],
+        'terminatedAt'     => gmdate('c'),
+        'gracePeriodDays'  => 30,
+        'purgeScheduledAt' => gmdate('c', time() + 30 * 86400),
+    ]);
+}
+
+function provisionAccountDelete(string $id): never
+{
+    $acc = findAccount($id);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+    $domSt = $pdo->prepare('SELECT * FROM domains WHERE account_id = ?');
+    $domSt->execute([$acc['id']]);
+    $domains = $domSt->fetchAll();
+    foreach ($domains as $d) {
+        try {
+            $swId = $d['stalwart_domain_id'] ?? null;
+            if (!$swId) {
+                $sw = stalwartFindDomain($d['domain_name']);
+                $swId = $sw['id'] ?? null;
+            }
+            if ($swId) {
+                stalwartDestroyDomain((string)$swId);
+            }
+        } catch (Throwable) {
+        }
+        $pdo->prepare('DELETE FROM domains WHERE id = ?')->execute([$d['id']]);
+    }
+    $pdo->prepare('DELETE FROM accounts WHERE id = ?')->execute([$acc['id']]);
+    ok(['deleted' => true, 'accountId' => $acc['id']]);
+}
+
+function provisionDomainAdd(string $accountId): never
+{
+    $acc = findAccount($accountId);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    if ($acc['status'] === 'terminated') {
+        apiFail(400, 'cannot add domain to terminated account');
+    }
+    $pdo = db();
+    $countSt = $pdo->prepare('SELECT COUNT(*) FROM domains WHERE account_id = ?');
+    $countSt->execute([$acc['id']]);
+    $currentCount = (int)$countSt->fetchColumn();
+    if ($currentCount >= (int)$acc['max_domains']) {
+        apiFail(400, "domain limit ({$acc['max_domains']}) reached for account plan");
+    }
+
+    $b = body();
+    $domain = strtolower(stringField($b, 'domain'));
+    if (!validDomain($domain)) {
+        apiFail(400, 'invalid domain name');
+    }
+
+    $dup = $pdo->prepare('SELECT 1 FROM domains WHERE domain_name = ?');
+    $dup->execute([$domain]);
+    if ($dup->fetchColumn()) {
+        apiFail(409, 'domain already exists');
+    }
+
+    try {
+        [$priv, $pub] = dkimKeypair();
+        $swId = stalwartEnsureDomain($domain);
+    } catch (RuntimeException $e) {
+        apiFail(502, 'stalwart domain provisioning failed: ' . $e->getMessage());
+    }
+
+    $ins = $pdo->prepare(
+        'INSERT INTO domains (domain_name, account_id, max_mailboxes, max_attachment_size_mb,
+                              disk_quota_mb, dkim_selector, dkim_private_key, dkim_public_key,
+                              stalwart_domain_id, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *'
+    );
+    $ins->execute([
+        $domain,
+        $acc['id'],
+        $acc['max_mailboxes'],
+        $acc['max_attachment_size_mb'],
+        $acc['storage_mb'],
+        'affinmail',
+        $priv,
+        $pub,
+        $swId,
+        'active',
+    ]);
+    ok(domainOut($ins->fetch()), 201);
+}
+
+function provisionDomainRemove(string $accountId, string $domain): never
+{
+    $acc = findAccount($accountId);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $domain = strtolower($domain);
+    $pdo = db();
+    $st = $pdo->prepare('SELECT * FROM domains WHERE domain_name = ? AND account_id = ?');
+    $st->execute([$domain, $acc['id']]);
+    $row = $st->fetch();
+    if (!$row) {
+        apiFail(404, 'domain not found for this account');
+    }
+
+    try {
+        $swId = $row['stalwart_domain_id'] ?? null;
+        if (!$swId) {
+            $sw = stalwartFindDomain($domain);
+            $swId = $sw['id'] ?? null;
+        }
+        if ($swId) {
+            stalwartDestroyDomain((string)$swId);
+        }
+    } catch (Throwable) {
+    }
+
+    $pdo->prepare('DELETE FROM domains WHERE id = ?')->execute([$row['id']]);
+    ok(['deleted' => true, 'domain' => $domain]);
+}
+
+function provisionDomainList(string $accountId): never
+{
+    $acc = findAccount($accountId);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+    $st = $pdo->prepare(
+        'SELECT d.*, COUNT(m.id) AS mailbox_count
+         FROM domains d
+         LEFT JOIN mailboxes m ON m.domain_id = d.id
+         WHERE d.account_id = ?
+         GROUP BY d.id
+         ORDER BY d.domain_name'
+    );
+    $st->execute([$acc['id']]);
+    $rows = $st->fetchAll();
+    ok([
+        'accountId' => $acc['id'],
+        'domains'   => array_map('domainOut', $rows),
+        'count'     => count($rows),
+    ]);
+}
+
+function provisionAccountUsage(string $accountId): never
+{
+    $acc = findAccount($accountId);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+
+    $mbSt = $pdo->prepare(
+        'SELECT COUNT(*) AS total_mailboxes, COALESCE(SUM(quota_used_bytes), 0) AS total_storage_used_bytes
+         FROM mailboxes m
+         JOIN domains d ON d.id = m.domain_id
+         WHERE d.account_id = ?'
+    );
+    $mbSt->execute([$acc['id']]);
+    $mbStats = $mbSt->fetch();
+
+    $usageSt = $pdo->prepare(
+        'SELECT COALESCE(SUM(emails_sent_count), 0) AS emails_sent,
+                COALESCE(SUM(emails_received_count), 0) AS emails_received
+         FROM usage_records u
+         JOIN domains d ON d.id = u.domain_id
+         WHERE d.account_id = ?'
+    );
+    $usageSt->execute([$acc['id']]);
+    $uStats = $usageSt->fetch();
+
+    $bytes = (int)($mbStats['total_storage_used_bytes'] ?? 0);
+    ok([
+        'accountId'             => $acc['id'],
+        'mailboxCount'          => (int)($mbStats['total_mailboxes'] ?? 0),
+        'totalStorageUsedBytes' => $bytes,
+        'totalStorageUsedMb'    => round($bytes / 1048576, 2),
+        'emailsSent'            => (int)($uStats['emails_sent'] ?? 0),
+        'emailsReceived'        => (int)($uStats['emails_received'] ?? 0),
+    ]);
+}
+
+function provisionAccountQuota(string $accountId): never
+{
+    $acc = findAccount($accountId);
+    if ($acc === null) {
+        apiFail(404, 'account not found');
+    }
+    $pdo = db();
+
+    $domCountSt = $pdo->prepare('SELECT COUNT(*) FROM domains WHERE account_id = ?');
+    $domCountSt->execute([$acc['id']]);
+    $domCount = (int)$domCountSt->fetchColumn();
+
+    $mbSt = $pdo->prepare(
+        'SELECT COUNT(*) AS mailbox_count, COALESCE(SUM(quota_used_bytes), 0) AS used_bytes
+         FROM mailboxes m
+         JOIN domains d ON d.id = m.domain_id
+         WHERE d.account_id = ?'
+    );
+    $mbSt->execute([$acc['id']]);
+    $mbStats = $mbSt->fetch();
+
+    $usedMb = round(((int)($mbStats['used_bytes'] ?? 0)) / 1048576, 2);
+    $limitMb = (int)$acc['storage_mb'];
+    $storagePct = $limitMb > 0 ? round(($usedMb / $limitMb) * 100, 1) : 0;
+
+    ok([
+        'accountId' => $acc['id'],
+        'plan'      => $acc['plan_slug'],
+        'domains'   => [
+            'used'  => $domCount,
+            'limit' => (int)$acc['max_domains'],
+        ],
+        'mailboxes' => [
+            'used'  => (int)($mbStats['mailbox_count'] ?? 0),
+            'limit' => (int)$acc['max_mailboxes'],
+        ],
+        'storage'   => [
+            'usedMb'     => $usedMb,
+            'limitMb'    => $limitMb,
+            'percentage' => $storagePct,
+        ],
+        'rateLimitPerHour' => (int)$acc['hourly_rate_limit'],
+    ]);
+}
+
+function provisionSsoToken(): never
+{
+    $b = body();
+    $email = strtolower(stringField($b, 'email'));
+    if (!validEmail($email)) {
+        apiFail(400, 'invalid email address');
+    }
+    $ttl = intField($b, 'ttlSeconds', 120, 30, 86400);
+
+    $mb = findMailbox($email);
+    if ($mb === null && stalwartFindAccountByEmail($email) === null) {
+        apiFail(404, 'mailbox not found');
+    }
+
+    $secret = cfg('AFFINMAIL_ADMIN_TOKEN', cfg('VAULT_KEY', 'affinmail-sso-secret'));
+    $payloadData = [
+        'email' => $email,
+        'exp'   => time() + $ttl,
+        'nonce' => bin2hex(random_bytes(16)),
+    ];
+    $payloadJson = json_encode($payloadData, JSON_UNESCAPED_SLASHES);
+    $b64Payload = rtrim(strtr(base64_encode($payloadJson), '+/', '-_'), '=');
+    $sig = rtrim(strtr(base64_encode(hash_hmac('sha256', $b64Payload, $secret, true)), '+/', '-_'), '=');
+    $token = $b64Payload . '.' . $sig;
+
+    try {
+        redis()->setex('auth:sso:token:' . $token, $ttl, $email);
+    } catch (Throwable) {
+    }
+
+    $webmailBase = cfg('WEBMAIL_URL', 'https://mail.hostaffin.com');
+    ok([
+        'token'     => $token,
+        'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() + $ttl),
+        'expiresIn' => $ttl,
+        'ssoUrl'    => rtrim($webmailBase, '/') . '/sso?token=' . $token,
+    ]);
+}
+
+function provisionPlanList(): never
+{
+    ensureProvisioningTables();
+    $rows = db()->query('SELECT * FROM plans ORDER BY storage_mb ASC')->fetchAll();
+    ok(['plans' => array_map('planOut', $rows), 'count' => count($rows)]);
+}
+
+function provisionPlanGet(string $id): never
+{
+    $plan = findPlan($id);
+    if ($plan === null) {
+        apiFail(404, 'plan not found');
+    }
+    ok(planOut($plan));
+}
+
+function clientDashboard(): never
+{
+    $domainName = isset($_GET['domain']) ? strtolower(trim((string)$_GET['domain'])) : '';
+    $mailboxEmail = isset($_GET['mailbox']) ? strtolower(trim((string)$_GET['mailbox'])) : '';
+
+    $pdo = db();
+    if ($domainName !== '') {
+        $domSt = $pdo->prepare('SELECT * FROM domains WHERE domain_name = ?');
+        $domSt->execute([$domainName]);
+        $domain = $domSt->fetch();
+        if (!$domain) {
+            apiFail(404, 'domain not found');
+        }
+
+        $mbCountSt = $pdo->prepare(
+            'SELECT COUNT(*) AS total,
+                    COALESCE(SUM(CASE WHEN status = \'active\' THEN 1 ELSE 0 END), 0) AS active_count,
+                    COALESCE(SUM(quota_used_bytes), 0) AS used_bytes
+             FROM mailboxes WHERE domain_id = ?'
+        );
+        $mbCountSt->execute([$domain['id']]);
+        $mbStats = $mbCountSt->fetch();
+
+        $aliasSt = $pdo->prepare('SELECT COUNT(*) FROM aliases WHERE domain_id = ?');
+        $aliasSt->execute([$domain['id']]);
+        $aliasCount = (int)$aliasSt->fetchColumn();
+
+        $dnsCheck = clientPerformDnsCheck($domainName);
+
+        ok([
+            'domain'       => domainOut($domain),
+            'mailboxes'    => [
+                'total'     => (int)($mbStats['total'] ?? 0),
+                'active'    => (int)($mbStats['active_count'] ?? 0),
+                'limit'     => (int)$domain['max_mailboxes'],
+            ],
+            'aliasesCount' => $aliasCount,
+            'storage'      => [
+                'usedBytes'  => (int)($mbStats['used_bytes'] ?? 0),
+                'usedMb'     => round(((int)($mbStats['used_bytes'] ?? 0)) / 1048576, 2),
+                'limitMb'    => (int)$domain['disk_quota_mb'],
+                'percentage' => (int)$domain['disk_quota_mb'] > 0
+                    ? round((((int)($mbStats['used_bytes'] ?? 0)) / 1048576 / (int)$domain['disk_quota_mb']) * 100, 1)
+                    : 0,
+            ],
+            'dnsHealth'    => [
+                'allValid' => $dnsCheck['allValid'],
+                'summary'  => $dnsCheck['summary'],
+            ],
+        ]);
+    }
+
+    if ($mailboxEmail !== '') {
+        $mb = findMailbox($mailboxEmail);
+        if (!$mb) {
+            apiFail(404, 'mailbox not found');
+        }
+        $usedBytes = (int)$mb['quota_used_bytes'];
+        $limitMb = (int)$mb['quota_limit_mb'];
+        $usedMb = round($usedBytes / 1048576, 2);
+
+        $msgSt = $pdo->prepare(
+            'SELECT COUNT(*) AS total_messages,
+                    COALESCE(SUM(CASE WHEN is_read = FALSE THEN 1 ELSE 0 END), 0) AS unread_messages
+             FROM email_messages WHERE mailbox_id = ?'
+        );
+        $msgSt->execute([$mb['id']]);
+        $mStats = $msgSt->fetch();
+
+        ok([
+            'mailbox' => mailboxOut($mb),
+            'storage' => [
+                'usedBytes'  => $usedBytes,
+                'usedMb'     => $usedMb,
+                'limitMb'    => $limitMb,
+                'percentage' => $limitMb > 0 ? round(($usedMb / $limitMb) * 100, 1) : 0,
+            ],
+            'messages' => [
+                'total'  => (int)($mStats['total_messages'] ?? 0),
+                'unread' => (int)($mStats['unread_messages'] ?? 0),
+            ],
+        ]);
+    }
+
+    $domTotal = (int)$pdo->query('SELECT COUNT(*) FROM domains')->fetchColumn();
+    $mbTotal = (int)$pdo->query('SELECT COUNT(*) FROM mailboxes')->fetchColumn();
+    $usedBytesTotal = (int)$pdo->query('SELECT COALESCE(SUM(quota_used_bytes), 0) FROM mailboxes')->fetchColumn();
+
+    ok([
+        'totalDomains'   => $domTotal,
+        'totalMailboxes' => $mbTotal,
+        'totalStorage'   => [
+            'usedBytes' => $usedBytesTotal,
+            'usedMb'    => round($usedBytesTotal / 1048576, 2),
+        ],
+    ]);
+}
+
+function clientMailboxList(string $domain): never
+{
+    $pdo = db();
+    $st = $pdo->prepare('SELECT id FROM domains WHERE domain_name = ?');
+    $st->execute([strtolower($domain)]);
+    $domId = $st->fetchColumn();
+    if (!$domId) {
+        apiFail(404, 'domain not found');
+    }
+    $mbSt = $pdo->prepare('SELECT m.*, d.domain_name FROM mailboxes m JOIN domains d ON d.id = m.domain_id WHERE m.domain_id = ? ORDER BY m.email');
+    $mbSt->execute([$domId]);
+    $rows = $mbSt->fetchAll();
+    ok(['mailboxes' => array_map('mailboxOut', $rows), 'count' => count($rows)]);
+}
+
+function clientMailboxCreate(string $domain): never
+{
+    $domain = strtolower($domain);
+    $pdo = db();
+    $st = $pdo->prepare('SELECT * FROM domains WHERE domain_name = ?');
+    $st->execute([$domain]);
+    $domRow = $st->fetch();
+    if (!$domRow) {
+        apiFail(404, 'domain not found');
+    }
+
+    $countSt = $pdo->prepare('SELECT COUNT(*) FROM mailboxes WHERE domain_id = ?');
+    $countSt->execute([$domRow['id']]);
+    if ((int)$countSt->fetchColumn() >= (int)$domRow['max_mailboxes']) {
+        apiFail(400, 'domain mailbox limit reached');
+    }
+
+    $b = body();
+    $username = strtolower(stringField($b, 'username', 64, false));
+    $email = strtolower(stringField($b, 'email', 255, false));
+    if ($username === '' && $email !== '') {
+        $username = explode('@', $email)[0];
+    } elseif ($email === '' && $username !== '') {
+        $email = "{$username}@{$domain}";
+    }
+    if ($email === '' || !validEmail($email)) {
+        apiFail(400, 'invalid email or username');
+    }
+    if (!str_ends_with($email, '@' . $domain)) {
+        apiFail(400, "mailbox email must belong to domain '{$domain}'");
+    }
+
+    $password = stringField($b, 'password', 256);
+    if (strlen($password) < 8) {
+        apiFail(400, 'password must be at least 8 characters');
+    }
+    $displayName = stringField($b, 'displayName', 128, false);
+    $quotaMb = intField($b, 'quotaLimitMb', (int)$domRow['disk_quota_mb'], 1, 10000000);
+
+    $dup = $pdo->prepare('SELECT 1 FROM mailboxes WHERE email = ?');
+    $dup->execute([$email]);
+    if ($dup->fetchColumn()) {
+        apiFail(409, 'mailbox already exists');
+    }
+
+    try {
+        $swId = stalwartCreateAccount($username, (string)$domRow['stalwart_domain_id'], $displayName, $password);
+    } catch (RuntimeException $e) {
+        apiFail(502, 'stalwart account create failed: ' . $e->getMessage());
+    }
+
+    $pwHash = password_hash($password, PASSWORD_BCRYPT);
+    $vault = null;
+    try {
+        $vault = vaultEncrypt($password);
+    } catch (Throwable) {
+    }
+
+    $ins = $pdo->prepare(
+        'INSERT INTO mailboxes (domain_id, email, username, password_hash, display_name,
+                                quota_limit_mb, hourly_rate_limit, outbound_route, status,
+                                is_admin, stalwart_account_id, secret_vault)
+         VALUES (?, ?, ?, ?, ?, ?, 200, \'direct\', \'active\', false, ?, ?) RETURNING *'
+    );
+    $ins->execute([$domRow['id'], $email, $username, $pwHash, $displayName, $quotaMb, $swId, $vault]);
+    $created = $ins->fetch();
+    $created['domain_name'] = $domain;
+    ok(mailboxOut($created), 201);
+}
+
+function clientMailboxUpdate(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    $b = body();
+    $displayName = array_key_exists('displayName', $b) ? stringField($b, 'displayName', 128, false) : $mb['display_name'];
+    $quotaLimitMb = array_key_exists('quotaLimitMb', $b) ? intField($b, 'quotaLimitMb', 5120, 1, 10000000) : (int)$mb['quota_limit_mb'];
+    $hourlyRate = array_key_exists('hourlyRateLimit', $b) ? intField($b, 'hourlyRateLimit', 200, 0, 1000000) : (int)$mb['hourly_rate_limit'];
+    $status = array_key_exists('status', $b) ? stringField($b, 'status', 32) : $mb['status'];
+    if (!in_array($status, ['active', 'suspended', 'pending_deletion'], true)) {
+        apiFail(400, 'invalid status');
+    }
+
+    $pdo = db();
+    $upd = $pdo->prepare(
+        'UPDATE mailboxes
+         SET display_name = ?, quota_limit_mb = ?, hourly_rate_limit = ?, status = ?, updated_at = NOW()
+         WHERE id = ? RETURNING *'
+    );
+    $upd->execute([$displayName, $quotaLimitMb, $hourlyRate, $status, $mb['id']]);
+    $updated = $upd->fetch();
+    $updated['domain_name'] = $mb['domain_name'];
+    ok(mailboxOut($updated));
+}
+
+function clientMailboxDelete(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    try {
+        if (!empty($mb['stalwart_account_id'])) {
+            stalwartDestroyAccount((string)$mb['stalwart_account_id']);
+        }
+    } catch (Throwable) {
+    }
+
+    db()->prepare('DELETE FROM mailboxes WHERE id = ?')->execute([$mb['id']]);
+    ok(['deleted' => true, 'mailbox' => $mb['email']]);
+}
+
+function clientMailboxPassword(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    $b = body();
+    $password = stringField($b, 'password', 256);
+    if (strlen($password) < 8) {
+        apiFail(400, 'password must be at least 8 characters');
+    }
+
+    try {
+        if (!empty($mb['stalwart_account_id'])) {
+            stalwartSetPassword((string)$mb['stalwart_account_id'], $password);
+        }
+    } catch (RuntimeException $e) {
+        apiFail(502, 'stalwart password update failed: ' . $e->getMessage());
+    }
+
+    $pwHash = password_hash($password, PASSWORD_BCRYPT);
+    $vault = null;
+    try {
+        $vault = vaultEncrypt($password);
+    } catch (Throwable) {
+    }
+
+    db()->prepare('UPDATE mailboxes SET password_hash = ?, secret_vault = ?, updated_at = NOW() WHERE id = ?')
+        ->execute([$pwHash, $vault, $mb['id']]);
+
+    ok(['updated' => true, 'mailbox' => $mb['email']]);
+}
+
+function clientAliasList(string $domain): never
+{
+    $pdo = db();
+    $domSt = $pdo->prepare('SELECT id FROM domains WHERE domain_name = ?');
+    $domSt->execute([strtolower($domain)]);
+    $domId = $domSt->fetchColumn();
+    if (!$domId) {
+        apiFail(404, 'domain not found');
+    }
+
+    $st = $pdo->prepare('SELECT * FROM aliases WHERE domain_id = ? ORDER BY source_address');
+    $st->execute([$domId]);
+    $rows = $st->fetchAll();
+    ok([
+        'aliases' => array_map(static fn(array $r): array => [
+            'id'          => $r['id'],
+            'source'      => $r['source_address'],
+            'destination' => $r['destination_address'],
+            'isActive'    => (bool)$r['is_active'],
+            'createdAt'   => $r['created_at'],
+        ], $rows),
+        'count'   => count($rows),
+    ]);
+}
+
+function clientAliasCreate(string $domain): never
+{
+    $domain = strtolower($domain);
+    $pdo = db();
+    $domSt = $pdo->prepare('SELECT id FROM domains WHERE domain_name = ?');
+    $domSt->execute([$domain]);
+    $domId = $domSt->fetchColumn();
+    if (!$domId) {
+        apiFail(404, 'domain not found');
+    }
+
+    $b = body();
+    $source = strtolower(stringField($b, 'source'));
+    if (!str_contains($source, '@')) {
+        $source = "{$source}@{$domain}";
+    }
+    if (!validEmail($source) || !str_ends_with($source, '@' . $domain)) {
+        apiFail(400, "source alias must belong to domain '{$domain}'");
+    }
+
+    $dest = strtolower(stringField($b, 'destination'));
+    if (!validEmail($dest)) {
+        apiFail(400, 'invalid destination email address');
+    }
+
+    $ins = $pdo->prepare('INSERT INTO aliases (domain_id, source_address, destination_address, is_active) VALUES (?, ?, ?, TRUE) RETURNING *');
+    $ins->execute([$domId, $source, $dest]);
+    $row = $ins->fetch();
+    ok([
+        'id'          => $row['id'],
+        'source'      => $row['source_address'],
+        'destination' => $row['destination_address'],
+        'isActive'    => (bool)$row['is_active'],
+        'createdAt'   => $row['created_at'],
+    ], 201);
+}
+
+function clientAliasDelete(string $id): never
+{
+    $pdo = db();
+    $st = $pdo->prepare('DELETE FROM aliases WHERE id::text = ?');
+    $st->execute([$id]);
+    if ($st->rowCount() === 0) {
+        apiFail(404, 'alias not found');
+    }
+    ok(['deleted' => true, 'aliasId' => $id]);
+}
+
+function clientForwardingGet(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    $pdo = db();
+    $st = $pdo->prepare('SELECT destination_address FROM aliases WHERE source_address = ? AND is_active = TRUE');
+    $st->execute([$mb['email']]);
+    $destinations = $st->fetchAll(PDO::FETCH_COLUMN);
+
+    ok([
+        'mailbox'           => $mb['email'],
+        'forwardingEnabled' => count($destinations) > 0,
+        'destinations'      => $destinations,
+        'keepCopy'          => true,
+    ]);
+}
+
+function clientForwardingUpdate(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    $b = body();
+    $enabled = (bool)($b['enabled'] ?? true);
+    $destinations = is_array($b['destinations'] ?? null) ? $b['destinations'] : [];
+    $validDests = [];
+    foreach ($destinations as $d) {
+        $d = strtolower(trim((string)$d));
+        if ($d !== '' && validEmail($d)) {
+            $validDests[] = $d;
+        }
+    }
+    if ($enabled && empty($validDests)) {
+        apiFail(400, 'at least one valid destination email is required when forwarding is enabled');
+    }
+
+    $pdo = db();
+    $pdo->prepare('DELETE FROM aliases WHERE source_address = ?')->execute([$mb['email']]);
+    if ($enabled) {
+        $ins = $pdo->prepare('INSERT INTO aliases (domain_id, source_address, destination_address, is_active) VALUES (?, ?, ?, TRUE)');
+        foreach ($validDests as $vd) {
+            $ins->execute([$mb['domain_id'], $mb['email'], $vd]);
+        }
+    }
+
+    ok([
+        'mailbox'           => $mb['email'],
+        'forwardingEnabled' => $enabled,
+        'destinations'      => $validDests,
+        'keepCopy'          => (bool)($b['keepCopy'] ?? true),
+    ]);
+}
+
+function clientAutoresponderGet(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    $pdo = db();
+    $st = $pdo->prepare('SELECT * FROM sieve_scripts WHERE mailbox_id = ? AND script_name = \'vacation\'');
+    $st->execute([$mb['id']]);
+    $row = $st->fetch();
+
+    if (!$row) {
+        ok([
+            'mailbox'   => $mb['email'],
+            'enabled'   => false,
+            'subject'   => '',
+            'body'      => '',
+            'startDate' => null,
+            'endDate'   => null,
+        ]);
+    }
+
+    ok([
+        'mailbox'   => $mb['email'],
+        'enabled'   => (bool)$row['is_vacation_active'],
+        'subject'   => (string)($row['vacation_subject'] ?? ''),
+        'body'      => (string)($row['vacation_body'] ?? ''),
+        'startDate' => $row['vacation_start'],
+        'endDate'   => $row['vacation_end'],
+        'updatedAt' => $row['updated_at'],
+    ]);
+}
+
+function clientAutoresponderUpdate(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    $b = body();
+    $enabled = (bool)($b['enabled'] ?? true);
+    $subject = stringField($b, 'subject', 255, false);
+    $body = is_string($b['body'] ?? null) ? trim($b['body']) : '';
+    $start = !empty($b['startDate']) ? (string)$b['startDate'] : null;
+    $end = !empty($b['endDate']) ? (string)$b['endDate'] : null;
+
+    $sieveScript = 'require ["vacation"]; vacation :days 1 :subject "' . addcslashes($subject, '"\\') . '" "' . addcslashes($body, '"\\') . '";';
+
+    $pdo = db();
+    $check = $pdo->prepare('SELECT id FROM sieve_scripts WHERE mailbox_id = ? AND script_name = \'vacation\'');
+    $check->execute([$mb['id']]);
+    $existingId = $check->fetchColumn();
+
+    if ($existingId) {
+        $upd = $pdo->prepare(
+            'UPDATE sieve_scripts
+             SET script_content = ?, is_active = ?, is_vacation_active = ?, vacation_subject = ?,
+                 vacation_body = ?, vacation_start = ?, vacation_end = ?, updated_at = NOW()
+             WHERE id = ?'
+        );
+        $upd->execute([$sieveScript, $enabled, $enabled, $subject, $body, $start, $end, $existingId]);
+    } else {
+        $ins = $pdo->prepare(
+            'INSERT INTO sieve_scripts (mailbox_id, script_name, script_content, is_active,
+                                        is_vacation_active, vacation_subject, vacation_body,
+                                        vacation_start, vacation_end)
+             VALUES (?, \'vacation\', ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $ins->execute([$mb['id'], $sieveScript, $enabled, $enabled, $subject, $body, $start, $end]);
+    }
+
+    try {
+        if (!empty($mb['stalwart_account_id'])) {
+            jmap('x:SieveScript/set', [
+                'accountId' => (string)$mb['stalwart_account_id'],
+                'create'    => [
+                    'vac1' => [
+                        'name'     => 'vacation',
+                        'content'  => $sieveScript,
+                        'isActive' => $enabled,
+                    ],
+                ],
+            ]);
+        }
+    } catch (Throwable) {
+    }
+
+    ok([
+        'mailbox'   => $mb['email'],
+        'enabled'   => $enabled,
+        'subject'   => $subject,
+        'body'      => $body,
+        'startDate' => $start,
+        'endDate'   => $end,
+    ]);
+}
+
+function clientPerformDnsCheck(string $domain): array
+{
+    $domain = strtolower($domain);
+    $selector = 'affinmail';
+    try {
+        $pdo = db();
+        $st = $pdo->prepare('SELECT * FROM domains WHERE domain_name = ?');
+        $st->execute([$domain]);
+        $domRow = $st->fetch();
+        if ($domRow && !empty($domRow['dkim_selector'])) {
+            $selector = $domRow['dkim_selector'];
+        }
+    } catch (Throwable) {
+    }
+
+    $expectedHost = cfg('MAIL_HOSTNAME', 'affinmail.hostaffin.com');
+
+    $checks = [
+        'mx'    => ['status' => 'missing', 'expected' => $expectedHost, 'records' => []],
+        'spf'   => ['status' => 'missing', 'expected' => 'v=spf1 mx include:_spf.hostaffin.com ~all', 'record' => null],
+        'dkim'  => ['status' => 'missing', 'selector' => $selector, 'record' => null],
+        'dmarc' => ['status' => 'missing', 'expected' => 'v=DMARC1; p=quarantine', 'record' => null],
+        'ptr'   => ['status' => 'valid', 'ip' => $_SERVER['SERVER_ADDR'] ?? '127.0.0.1', 'rdns' => $expectedHost],
+    ];
+
+    try {
+        $mxRecords = @dns_get_record($domain, DNS_MX);
+        if (is_array($mxRecords) && !empty($mxRecords)) {
+            $checks['mx']['records'] = array_map(static fn($r) => $r['target'] ?? '', $mxRecords);
+            foreach ($mxRecords as $mx) {
+                if (strcasecmp((string)($mx['target'] ?? ''), $expectedHost) === 0 || str_contains((string)($mx['target'] ?? ''), 'hostaffin') || str_contains((string)($mx['target'] ?? ''), $domain)) {
+                    $checks['mx']['status'] = 'valid';
+                    break;
+                }
+            }
+            if ($checks['mx']['status'] !== 'valid') {
+                $checks['mx']['status'] = 'invalid';
+            }
+        }
+    } catch (Throwable) {
+    }
+
+    try {
+        $txtRecords = @dns_get_record($domain, DNS_TXT);
+        if (is_array($txtRecords)) {
+            foreach ($txtRecords as $txt) {
+                $val = (string)($txt['txt'] ?? '');
+                if (str_starts_with(strtolower($val), 'v=spf1')) {
+                    $checks['spf']['record'] = $val;
+                    $checks['spf']['status'] = (str_contains($val, 'include:') || str_contains($val, 'mx')) ? 'valid' : 'invalid';
+                    break;
+                }
+            }
+        }
+    } catch (Throwable) {
+    }
+
+    try {
+        $dkimRecords = @dns_get_record("{$selector}._domainkey.{$domain}", DNS_TXT);
+        if (is_array($dkimRecords) && !empty($dkimRecords)) {
+            foreach ($dkimRecords as $d) {
+                $val = (string)($d['txt'] ?? '');
+                if (str_contains($val, 'v=DKIM1') || str_contains($val, 'p=')) {
+                    $checks['dkim']['record'] = $val;
+                    $checks['dkim']['status'] = 'valid';
+                    break;
+                }
+            }
+            if ($checks['dkim']['status'] !== 'valid') {
+                $checks['dkim']['status'] = 'invalid';
+            }
+        }
+    } catch (Throwable) {
+    }
+
+    try {
+        $dmarcRecords = @dns_get_record("_dmarc.{$domain}", DNS_TXT);
+        if (is_array($dmarcRecords) && !empty($dmarcRecords)) {
+            foreach ($dmarcRecords as $dm) {
+                $val = (string)($dm['txt'] ?? '');
+                if (str_starts_with(strtolower($val), 'v=dmarc1')) {
+                    $checks['dmarc']['record'] = $val;
+                    $checks['dmarc']['status'] = 'valid';
+                    break;
+                }
+            }
+            if ($checks['dmarc']['status'] !== 'valid') {
+                $checks['dmarc']['status'] = 'invalid';
+            }
+        }
+    } catch (Throwable) {
+    }
+
+    $allValid = ($checks['mx']['status'] === 'valid' &&
+                 $checks['spf']['status'] === 'valid' &&
+                 $checks['dkim']['status'] === 'valid' &&
+                 $checks['dmarc']['status'] === 'valid');
+
+    return [
+        'domain'   => $domain,
+        'allValid' => $allValid,
+        'summary'  => [
+            'mx'    => $checks['mx']['status'],
+            'spf'   => $checks['spf']['status'],
+            'dkim'  => $checks['dkim']['status'],
+            'dmarc' => $checks['dmarc']['status'],
+            'ptr'   => $checks['ptr']['status'],
+        ],
+        'checks'   => $checks,
+    ];
+}
+
+function clientDnsCheck(string $domain): never
+{
+    $domain = strtolower($domain);
+    $st = db()->prepare('SELECT 1 FROM domains WHERE domain_name = ?');
+    $st->execute([$domain]);
+    if (!$st->fetchColumn()) {
+        apiFail(404, 'domain not found');
+    }
+    ok(clientPerformDnsCheck($domain));
+}
+
+function clientAutoconfig(string $domain): never
+{
+    $domain = strtolower($domain);
+    $host = cfg('MAIL_HOSTNAME', 'mail.' . $domain);
+    header('Content-Type: application/xml; charset=utf-8');
+    echo <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<clientConfig version="1.1">
+  <emailProvider id="{$domain}">
+    <domain>{$domain}</domain>
+    <displayName>{$domain} Mail</displayName>
+    <displayShortName>Mail</displayShortName>
+    <incomingServer type="imap">
+      <hostname>{$host}</hostname>
+      <port>993</port>
+      <socketType>SSL</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </incomingServer>
+    <incomingServer type="pop3">
+      <hostname>{$host}</hostname>
+      <port>995</port>
+      <socketType>SSL</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </incomingServer>
+    <outgoingServer type="smtp">
+      <hostname>{$host}</hostname>
+      <port>465</port>
+      <socketType>SSL</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </outgoingServer>
+    <outgoingServer type="smtp">
+      <hostname>{$host}</hostname>
+      <port>587</port>
+      <socketType>STARTTLS</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </outgoingServer>
+  </emailProvider>
+</clientConfig>
+XML;
+    exit;
+}
+
+function clientAutodiscover(string $domain): never
+{
+    $domain = strtolower($domain);
+    $host = cfg('MAIL_HOSTNAME', 'mail.' . $domain);
+    header('Content-Type: application/xml; charset=utf-8');
+    echo <<<XML
+<?xml version="1.0" encoding="utf-8"?>
+<Autodiscover xmlns="http://schemas.microsoft.com/exchange/autodiscover/responseschema/2006">
+  <Response xmlns="http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a">
+    <Account>
+      <AccountType>email</AccountType>
+      <Action>settings</Action>
+      <Protocol>
+        <Type>IMAP</Type>
+        <Server>{$host}</Server>
+        <Port>993</Port>
+        <SSL>on</SSL>
+        <AuthRequired>on</AuthRequired>
+      </Protocol>
+      <Protocol>
+        <Type>SMTP</Type>
+        <Server>{$host}</Server>
+        <Port>465</Port>
+        <SSL>on</SSL>
+        <AuthRequired>on</AuthRequired>
+      </Protocol>
+    </Account>
+  </Response>
+</Autodiscover>
+XML;
+    exit;
+}
+
+function clientMobileconfig(string $domain): never
+{
+    $domain = strtolower($domain);
+    $host = cfg('MAIL_HOSTNAME', 'mail.' . $domain);
+    $uuid1 = bin2hex(random_bytes(16));
+    $uuid2 = bin2hex(random_bytes(16));
+    header('Content-Type: application/x-apple-aspen-config; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $domain . '.mobileconfig"');
+    echo <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadDescription</key>
+  <string>AffinMail configuration for {$domain}</string>
+  <key>PayloadDisplayName</key>
+  <string>{$domain} Mail</string>
+  <key>PayloadIdentifier</key>
+  <string>com.affinmail.profile.{$domain}</string>
+  <key>PayloadOrganization</key>
+  <string>AffinMail</string>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>{$uuid1}</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>EmailAccountDescription</key>
+      <string>{$domain} Mail</string>
+      <key>EmailAccountType</key>
+      <string>EmailTypeIMAP</string>
+      <key>IncomingMailServerHostName</key>
+      <string>{$host}</string>
+      <key>IncomingMailServerPortNumber</key>
+      <integer>993</integer>
+      <key>IncomingMailServerUseSSL</key>
+      <true/>
+      <key>OutgoingMailServerHostName</key>
+      <string>{$host}</string>
+      <key>OutgoingMailServerPortNumber</key>
+      <integer>465</integer>
+      <key>OutgoingMailServerUseSSL</key>
+      <true/>
+      <key>PayloadIdentifier</key>
+      <string>com.apple.mail.managed.{$uuid2}</string>
+      <key>PayloadType</key>
+      <string>com.apple.mail.managed</string>
+      <key>PayloadUUID</key>
+      <string>{$uuid2}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+    </dict>
+  </array>
+</dict>
+</plist>
+XML;
+    exit;
+}
+
+function clientMcpTokenList(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    ensureProvisioningTables();
+    $st = db()->prepare(
+        'SELECT id, token_prefix, name, scopes, created_at, expires_at, last_used_at
+         FROM mcp_tokens
+         WHERE mailbox_id = ?
+         ORDER BY created_at DESC'
+    );
+    $st->execute([$mb['id']]);
+    $rows = $st->fetchAll();
+    ok([
+        'mailbox' => $mb['email'],
+        'tokens'  => array_map(static fn(array $r): array => [
+            'id'         => $r['id'],
+            'name'       => $r['name'],
+            'prefix'     => $r['token_prefix'],
+            'scopes'     => is_array($r['scopes'] ?? null) ? $r['scopes'] : (json_decode((string)($r['scopes'] ?? '[]'), true) ?: ['read', 'send', 'search']),
+            'createdAt'  => $r['created_at'],
+            'expiresAt'  => $r['expires_at'],
+            'lastUsedAt' => $r['last_used_at'],
+        ], $rows),
+        'count'   => count($rows),
+    ]);
+}
+
+function clientMcpTokenCreate(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    ensureProvisioningTables();
+    $b = body();
+    $name = stringField($b, 'name', 128);
+    $scopes = is_array($b['scopes'] ?? null) && !empty($b['scopes']) ? $b['scopes'] : ['read', 'send', 'search'];
+    $validScopes = array_values(array_filter($scopes, 'is_string'));
+    $days = intField($b, 'expiresInDays', 90, 1, 3650);
+
+    $rawToken = 'aff_mcp_' . bin2hex(random_bytes(20));
+    $tokenHash = hash('sha256', $rawToken);
+    $expiresAt = gmdate('Y-m-d\TH:i:s\Z', time() + $days * 86400);
+
+    $scopesPg = '{' . implode(',', array_map(static fn($s) => '"' . addcslashes($s, '"\\') . '"', $validScopes)) . '}';
+
+    $ins = db()->prepare(
+        'INSERT INTO mcp_tokens (mailbox_id, token_hash, token_prefix, name, scopes, expires_at)
+         VALUES (?, ?, \'aff_\', ?, ?::text[], ?) RETURNING *'
+    );
+    $ins->execute([$mb['id'], $tokenHash, $name, $scopesPg, $expiresAt]);
+    $row = $ins->fetch();
+
+    ok([
+        'id'        => $row['id'],
+        'name'      => $name,
+        'scopes'    => $validScopes,
+        'token'     => $rawToken,
+        'prefix'    => 'aff_',
+        'expiresAt' => $expiresAt,
+        'createdAt' => $row['created_at'],
+    ], 201);
+}
+
+function clientMcpTokenDelete(string $id, string $tid): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    ensureProvisioningTables();
+    $st = db()->prepare('DELETE FROM mcp_tokens WHERE id::text = ? AND mailbox_id = ?');
+    $st->execute([$tid, $mb['id']]);
+    if ($st->rowCount() === 0) {
+        apiFail(404, 'token not found');
+    }
+    ok(['deleted' => true, 'tokenId' => $tid]);
+}
+
+function clientMcpActivity(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    ensureProvisioningTables();
+    $limit = isset($_GET['limit']) ? max(1, min(200, (int)$_GET['limit'])) : 50;
+    $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+
+    $st = db()->prepare(
+        'SELECT a.*, t.name AS token_name
+         FROM mcp_audit_log a
+         LEFT JOIN mcp_tokens t ON t.id = a.token_id
+         WHERE a.mailbox_id = ?
+         ORDER BY a.created_at DESC
+         LIMIT ? OFFSET ?'
+    );
+    $st->execute([$mb['id'], $limit, $offset]);
+    $rows = $st->fetchAll();
+
+    ok([
+        'mailbox'  => $mb['email'],
+        'activity' => array_map(static fn(array $r): array => [
+            'id'         => $r['id'],
+            'toolName'   => $r['tool_name'],
+            'status'     => $r['status'],
+            'tokenName'  => $r['token_name'] ?? null,
+            'clientInfo' => is_array($r['client_info'] ?? null) ? $r['client_info'] : json_decode((string)($r['client_info'] ?? '{}'), true),
+            'createdAt'  => $r['created_at'],
+        ], $rows),
+        'count'    => count($rows),
+    ]);
+}
+
+function clientAppPasswordCreate(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    ensureProvisioningTables();
+    $b = body();
+    $label = stringField($b, 'label', 128);
+
+    $raw = implode('-', str_split(bin2hex(random_bytes(8)), 4));
+    $hash = password_hash($raw, PASSWORD_BCRYPT);
+
+    $ins = db()->prepare('INSERT INTO app_passwords (mailbox_id, label, password_hash) VALUES (?, ?, ?) RETURNING *');
+    $ins->execute([$mb['id'], $label, $hash]);
+    $row = $ins->fetch();
+
+    ok([
+        'id'          => $row['id'],
+        'label'       => $label,
+        'appPassword' => $raw,
+        'createdAt'   => $row['created_at'],
+    ], 201);
+}
+
+function clientAppPasswordList(string $id): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    ensureProvisioningTables();
+    $st = db()->prepare('SELECT id, label, created_at, last_used_at FROM app_passwords WHERE mailbox_id = ? ORDER BY created_at DESC');
+    $st->execute([$mb['id']]);
+    $rows = $st->fetchAll();
+
+    ok([
+        'mailbox'      => $mb['email'],
+        'appPasswords' => array_map(static fn(array $r): array => [
+            'id'         => $r['id'],
+            'label'      => $r['label'],
+            'createdAt'  => $r['created_at'],
+            'lastUsedAt' => $r['last_used_at'],
+        ], $rows),
+        'count'        => count($rows),
+    ]);
+}
+
+function clientAppPasswordDelete(string $id, ?string $pid = null): never
+{
+    $mb = findMailbox($id);
+    if (!$mb) {
+        apiFail(404, 'mailbox not found');
+    }
+    ensureProvisioningTables();
+    if ($pid === null || $pid === '') {
+        $b = body();
+        $pid = is_string($b['id'] ?? null) ? $b['id'] : (is_string($_GET['id'] ?? null) ? $_GET['id'] : '');
+    }
+    if ($pid === '') {
+        apiFail(400, 'password id is required');
+    }
+
+    $st = db()->prepare('DELETE FROM app_passwords WHERE id::text = ? AND mailbox_id = ?');
+    $st->execute([$pid, $mb['id']]);
+    if ($st->rowCount() === 0) {
+        apiFail(404, 'app password not found');
+    }
+    ok(['deleted' => true, 'passwordId' => $pid]);
+}
+
+function authenticateClient(): array
+{
+    $reqPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+    if (preg_match('#/(autoconfig|autodiscover|mobileconfig)$#', $reqPath) === 1) {
+        return ['kind' => 'public', 'identifier' => $_SERVER['REMOTE_ADDR'] ?? 'guest'];
+    }
+
+    $given = bearer();
+    $expected = cfg('AFFINMAIL_ADMIN_TOKEN');
+    if ($expected !== '' && $given !== '' && hash_equals($expected, $given)) {
+        return ['kind' => 'admin', 'identifier' => 'admin'];
+    }
+    if ($given !== '') {
+        try {
+            $sessUser = redis()->get('auth:session:' . hash('sha256', $given));
+            if (is_string($sessUser) && $sessUser !== '') {
+                return ['kind' => 'admin', 'identifier' => $sessUser];
+            }
+        } catch (Throwable) {
+        }
+        if (str_starts_with($given, 'aff_')) {
+            try {
+                $hash = hash('sha256', $given);
+                $st = db()->prepare(
+                    'SELECT m.id, m.email FROM mcp_tokens t
+                     JOIN mailboxes m ON m.id = t.mailbox_id
+                     WHERE t.token_hash = ? AND (t.expires_at IS NULL OR t.expires_at > NOW())'
+                );
+                $st->execute([$hash]);
+                $row = $st->fetch();
+                if ($row) {
+                    db()->prepare('UPDATE mcp_tokens SET last_used_at = NOW() WHERE token_hash = ?')->execute([$hash]);
+                    return ['kind' => 'mcp', 'identifier' => $row['email'], 'mailbox_id' => $row['id']];
+                }
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    $basic = basicCredentials();
+    if ($basic !== null && validEmail($basic['email'])) {
+        try {
+            $st = db()->prepare('SELECT * FROM mailboxes WHERE email = ?');
+            $st->execute([strtolower($basic['email'])]);
+            $mb = $st->fetch();
+            if ($mb) {
+                if (password_verify($basic['password'], $mb['password_hash'])) {
+                    return ['kind' => 'mailbox', 'identifier' => $mb['email'], 'mailbox_id' => $mb['id']];
+                }
+                $appPwSt = db()->prepare('SELECT * FROM app_passwords WHERE mailbox_id = ?');
+                $appPwSt->execute([$mb['id']]);
+                foreach ($appPwSt->fetchAll() as $ap) {
+                    if (password_verify($basic['password'], $ap['password_hash'])) {
+                        db()->prepare('UPDATE app_passwords SET last_used_at = NOW() WHERE id = ?')->execute([$ap['id']]);
+                        return ['kind' => 'mailbox', 'identifier' => $mb['email'], 'mailbox_id' => $mb['id']];
+                    }
+                }
+            }
+        } catch (Throwable) {
+        }
+    }
+
+    apiFail(401, 'unauthorized');
+}
+
 /* ---------------------------------------------------------------- dispatch */
 
-$method = $_SERVER['REQUEST_METHOD'];
+if (PHP_SAPI === 'cli' && !isset($_SERVER['REQUEST_METHOD']) && !in_array('--self-test-parsers', $argv ?? [], true)) {
+    return;
+}
+
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $path = rtrim($path, '/');
 
@@ -2817,10 +4605,15 @@ if ($path === API_PREFIX . '/auth/sso-exchange' && $method === 'POST') {
 }
 
 $isImport = str_starts_with($path, API_PREFIX . '/import/');
+$isProvision = str_starts_with($path, API_PREFIX . '/provision/');
+$isClient = str_starts_with($path, API_PREFIX . '/client/');
 
 if ($isImport) {
     $GLOBALS['import_identity'] = authenticateImport();
     rateLimit((string)($GLOBALS['import_identity']['username'] ?? bearer()));
+} elseif ($isClient) {
+    $GLOBALS['client_identity'] = authenticateClient();
+    rateLimit((string)($GLOBALS['client_identity']['identifier'] ?? bearer()));
 } else {
     $token = authenticate();
     rateLimit($token);
@@ -2937,6 +4730,92 @@ try {
             importJobList();
         case $n === 3 && $seg[0] === 'import' && $seg[1] === 'jobs' && $method === 'GET':
             importJobGet($seg[2]);
+
+        // ---------------------------------------------------------------- provision api
+        case $n === 2 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $method === 'POST':
+            provisionAccountCreate();
+        case $n === 2 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $method === 'GET':
+            provisionAccountList();
+        case $n === 3 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $method === 'GET':
+            provisionAccountGet($seg[2]);
+        case $n === 3 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $method === 'DELETE':
+            provisionAccountDelete($seg[2]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'plan' && $method === 'PUT':
+            provisionAccountPlan($seg[2]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'suspend' && $method === 'POST':
+            provisionAccountSuspend($seg[2]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'unsuspend' && $method === 'POST':
+            provisionAccountUnsuspend($seg[2]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'terminate' && $method === 'POST':
+            provisionAccountTerminate($seg[2]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'domains' && $method === 'POST':
+            provisionDomainAdd($seg[2]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'domains' && $method === 'GET':
+            provisionDomainList($seg[2]);
+        case $n === 5 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'domains' && $method === 'DELETE':
+            provisionDomainRemove($seg[2], $seg[4]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'usage' && $method === 'GET':
+            provisionAccountUsage($seg[2]);
+        case $n === 4 && $seg[0] === 'provision' && $seg[1] === 'accounts' && $seg[3] === 'quota' && $method === 'GET':
+            provisionAccountQuota($seg[2]);
+        case $n === 3 && $seg[0] === 'provision' && $seg[1] === 'sso' && $seg[2] === 'token' && $method === 'POST':
+            provisionSsoToken();
+        case $n === 2 && $seg[0] === 'provision' && $seg[1] === 'plans' && $method === 'GET':
+            provisionPlanList();
+        case $n === 3 && $seg[0] === 'provision' && $seg[1] === 'plans' && $method === 'GET':
+            provisionPlanGet($seg[2]);
+
+        // ---------------------------------------------------------------- client self-service api
+        case $n === 2 && $seg[0] === 'client' && $seg[1] === 'dashboard' && $method === 'GET':
+            clientDashboard();
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'mailboxes' && $method === 'GET':
+            clientMailboxList($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'mailboxes' && $method === 'POST':
+            clientMailboxCreate($seg[2]);
+        case $n === 3 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $method === 'PUT':
+            clientMailboxUpdate($seg[2]);
+        case $n === 3 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $method === 'DELETE':
+            clientMailboxDelete($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'password' && ($method === 'PUT' || $method === 'POST'):
+            clientMailboxPassword($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'aliases' && $method === 'GET':
+            clientAliasList($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'aliases' && $method === 'POST':
+            clientAliasCreate($seg[2]);
+        case $n === 3 && $seg[0] === 'client' && $seg[1] === 'aliases' && $method === 'DELETE':
+            clientAliasDelete($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'forwarding' && $method === 'GET':
+            clientForwardingGet($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'forwarding' && $method === 'PUT':
+            clientForwardingUpdate($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'autoresponder' && $method === 'GET':
+            clientAutoresponderGet($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'autoresponder' && $method === 'PUT':
+            clientAutoresponderUpdate($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'dns-check' && $method === 'GET':
+            clientDnsCheck($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'autoconfig' && $method === 'GET':
+            clientAutoconfig($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'autodiscover' && $method === 'GET':
+            clientAutodiscover($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'domains' && $seg[3] === 'mobileconfig' && $method === 'GET':
+            clientMobileconfig($seg[2]);
+        case $n === 5 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'mcp' && $seg[4] === 'tokens' && $method === 'GET':
+            clientMcpTokenList($seg[2]);
+        case $n === 5 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'mcp' && $seg[4] === 'tokens' && $method === 'POST':
+            clientMcpTokenCreate($seg[2]);
+        case $n === 6 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'mcp' && $seg[4] === 'tokens' && $method === 'DELETE':
+            clientMcpTokenDelete($seg[2], $seg[5]);
+        case $n === 5 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'mcp' && $seg[4] === 'activity' && $method === 'GET':
+            clientMcpActivity($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'app-passwords' && $method === 'POST':
+            clientAppPasswordCreate($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'app-passwords' && $method === 'GET':
+            clientAppPasswordList($seg[2]);
+        case $n === 4 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'app-passwords' && $method === 'DELETE':
+            clientAppPasswordDelete($seg[2], null);
+        case $n === 5 && $seg[0] === 'client' && $seg[1] === 'mailboxes' && $seg[3] === 'app-passwords' && $method === 'DELETE':
+            clientAppPasswordDelete($seg[2], $seg[4]);
 
         default:
             fail(404, 'not found');
