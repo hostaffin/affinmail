@@ -726,9 +726,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <h1 className="text-sm font-medium">Admin sign in</h1>
             </div>
             <p className="text-xs text-base-content/60">
-              Sign in with the mail server's administrator (root) credentials —
-              the same username and password as the mail server itself. No
-              separate panel account is needed.
+              Sign in as root with the server's root password — the same root
+              as SSH and WHM. There is no separate panel password.
             </p>
 
             <div className="space-y-1">

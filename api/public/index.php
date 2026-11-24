@@ -1174,17 +1174,41 @@ function adminLogin(): never
         fail(400, 'username and password are required');
     }
 
+    // WHM-style root sign-in: "root" is the operating system's root user.
+    // The password is verified against /etc/shadow itself, so the panel
+    // root password is always the server root password - there is no
+    // separate panel credential to remember or drift. (This API service
+    // runs as root, so it can read the shadow file; the password is used
+    // only inside this check and is never stored or logged.)
+    if (strcasecmp($username, 'root') === 0) {
+        $hash = '';
+        foreach (file('/etc/shadow', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+            $parts = explode(':', $line);
+            if (($parts[0] ?? '') === 'root') {
+                $hash = (string)($parts[1] ?? '');
+                break;
+            }
+        }
+        $okPw = $hash !== '' && !str_starts_with($hash, '!') && !str_starts_with($hash, '*')
+            && hash_equals($hash, crypt($password, $hash));
+        if (!$okPw) {
+            adminLoginBump();
+            fail(401, 'invalid credentials');
+        }
+        $token = bin2hex(random_bytes(32));
+        try {
+            redis()->setex('auth:session:' . hash('sha256', $token), 43200, 'root');
+        } catch (Throwable) {
+            fail(500, 'session store unavailable');
+        }
+        ok(['token' => $token, 'username' => 'root', 'expiresInSeconds' => 43200]);
+    }
+
     // Stalwart accounts sign in with their full email address; the server
     // administrator may type the bare name ("admin") - resolve it to the
     // matching account's email address first.
     $loginId = $username;
     if (!str_contains($loginId, '@')) {
-        // WHM-style: the panel's master login is "root" - it maps to the mail
-        // server's own administrator account. This root is the mail
-        // platform's root, isolated from the operating system's root user.
-        if (strcasecmp($loginId, 'root') === 0) {
-            $loginId = (string)cfg('STALWART_ADMIN_USER', 'admin');
-        }
         foreach (stalwartAccounts() as $a) {
             if (strcasecmp((string)($a['name'] ?? ''), $loginId) === 0 && ($a['emailAddress'] ?? '') !== '') {
                 $loginId = (string)$a['emailAddress'];
