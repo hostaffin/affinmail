@@ -216,61 +216,64 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-[#1E1F20]">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-3 border-b border-[#F2F4F7] dark:border-[#2D2F31]">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="w-5 h-5 text-gmail-blue" />
-          <h2 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Calendar</h2>
-          <div className="flex items-center gap-1 ml-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 sm:py-3 border-b border-[#F2F4F7] dark:border-[#333538] shrink-0">
+        <div className="flex flex-wrap items-center gap-1 sm:gap-2 min-w-0">
+          <CalendarDays className="w-5 h-5 stroke-[1.5] shrink-0 text-[#444746] dark:text-[#C4C7C5]" />
+          <h2 className="text-base font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Calendar</h2>
+          <div className="flex items-center gap-0.5 sm:gap-1 sm:ml-2">
             <button
               onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
-              className="p-1.5 rounded-full text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10"
+              className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center rounded-md text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
               title="Previous month"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-4 h-4 stroke-[1.5]" />
             </button>
-            <span className="text-sm font-medium min-w-[140px] text-center text-[#1F1F1F] dark:text-[#E3E3E3]">
+            <span className="text-xs sm:text-sm font-medium min-w-[7.5rem] text-center tabular-nums text-[#1F1F1F] dark:text-[#E3E3E3]">
               {monthLabel}
             </span>
             <button
               onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
-              className="p-1.5 rounded-full text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10"
+              className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center rounded-md text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
               title="Next month"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4 stroke-[1.5]" />
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-full bg-[#F2F6FC] dark:bg-[#282A2C] p-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg bg-[#F2F6FC] dark:bg-[#282A2C] p-0.5">
             <button
               onClick={() => setMode('month')}
-              className={`px-3 py-1 rounded-full text-xs font-medium ${mode === 'month' ? 'bg-white dark:bg-[#1E1F20] text-gmail-blue shadow-sm' : 'text-[#444746] dark:text-[#C4C7C5]'}`}
+              className={`px-3 h-9 sm:h-8 rounded-md text-xs font-medium transition-colors ${mode === 'month' ? 'bg-white dark:bg-[#1E1F20] text-[#1F1F1F] dark:text-[#E3E3E3] border border-[#E0E2E7] dark:border-[#333538]' : 'text-[#444746] dark:text-[#C4C7C5] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3]'}`}
             >
               Month
             </button>
             <button
               onClick={() => setMode('list')}
-              className={`px-3 py-1 rounded-full text-xs font-medium ${mode === 'list' ? 'bg-white dark:bg-[#1E1F20] text-gmail-blue shadow-sm' : 'text-[#444746] dark:text-[#C4C7C5]'}`}
+              className={`px-3 h-9 sm:h-8 rounded-md text-xs font-medium transition-colors ${mode === 'list' ? 'bg-white dark:bg-[#1E1F20] text-[#1F1F1F] dark:text-[#E3E3E3] border border-[#E0E2E7] dark:border-[#333538]' : 'text-[#444746] dark:text-[#C4C7C5] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3]'}`}
             >
               Agenda
             </button>
           </div>
           <button
             onClick={() => openCreate()}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-gmail-blue hover:bg-blue-700 text-white text-xs font-semibold"
+            className="flex items-center gap-1.5 h-9 sm:h-8 px-3 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover text-white text-xs font-medium"
           >
-            <Plus className="w-4 h-4" />
-            <span>Create</span>
+            <Plus className="w-4 h-4 stroke-[1.5]" />
+            <span>New event</span>
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 sm:p-5">
         {mode === 'month' ? (
-          <div className="rounded-2xl border border-[#E0E2E7] dark:border-[#333538] overflow-hidden">
-            <div className="grid grid-cols-7 bg-[#F6F8FC] dark:bg-[#131314] text-[11px] font-semibold text-[#444746] dark:text-[#C4C7C5]">
+          <div className="rounded-xl border border-[#E0E2E7] dark:border-[#333538] overflow-hidden">
+            <div className="grid grid-cols-7 bg-[#F6F8FC] dark:bg-[#131314] text-xs font-medium text-[#444746] dark:text-[#C4C7C5]">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-                <div key={d} className="px-2 py-1.5 text-center">{d}</div>
+                <div key={d} className="px-0.5 sm:px-2 py-1.5 text-center">
+                  <span className="sm:hidden">{d.charAt(0)}</span>
+                  <span className="hidden sm:inline">{d}</span>
+                </div>
               ))}
             </div>
             <div className="grid grid-cols-7">
@@ -280,15 +283,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
                 return (
                   <div
                     key={day.toISOString()}
-                    className={`min-h-[92px] border-t border-r border-[#F2F4F7] dark:border-[#2D2F31] p-1.5 text-xs ${
-                      inMonth ? 'bg-white dark:bg-[#1E1F20]' : 'bg-[#FAFBFC] dark:bg-[#18191A]'
+                    className={`min-h-[64px] sm:min-h-[92px] min-w-0 border-t border-r border-[#F2F4F7] dark:border-[#333538] p-0.5 sm:p-1.5 text-xs overflow-hidden ${
+                      inMonth ? 'bg-white dark:bg-[#1E1F20]' : 'bg-[#F6F8FC] dark:bg-[#131314]'
                     }`}
                     onDoubleClick={() => openCreate(day)}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span
-                        className={`w-6 h-6 flex items-center justify-center rounded-full text-[11px] ${
-                          isToday ? 'bg-gmail-blue text-white font-semibold' : inMonth ? 'text-[#1F1F1F] dark:text-[#E3E3E3]' : 'text-[#8E918F]'
+                        className={`w-6 h-6 flex items-center justify-center rounded-full text-xs ${
+                          isToday ? 'bg-gmail-blue dark:bg-[#A8C7FA] text-white dark:text-[#042B5C] font-medium' : inMonth ? 'text-[#1F1F1F] dark:text-[#E3E3E3]' : 'text-[#8E918F]'
                         }`}
                       >
                         {day.getDate()}
@@ -299,15 +302,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
                         <button
                           key={event.id}
                           onClick={() => openEdit(event)}
-                          className="w-full text-left px-1.5 py-0.5 rounded bg-[#E8F0FE] dark:bg-[#004A77]/40 text-gmail-blue text-[10px] truncate hover:bg-[#D2E3FC] dark:hover:bg-[#004A77]/70"
+                          className="w-full text-left pl-1 sm:pl-1.5 pr-0.5 sm:pr-1 py-0.5 rounded border-l-2 border-l-gmail-blue dark:border-l-gmail-dark-blue-text bg-[#F2F6FC] dark:bg-[#282A2C] text-[#1F1F1F] dark:text-[#E3E3E3] text-xs truncate hover:bg-[#E0E2E7] dark:hover:bg-[#333538] transition-colors"
                           title={event.title}
                         >
-                          {event.allDay ? '' : `${pad(eventDate(event).getHours())}:${pad(eventDate(event).getMinutes())} `}
+                          <span className="hidden sm:inline">
+                            {event.allDay ? '' : `${pad(eventDate(event).getHours())}:${pad(eventDate(event).getMinutes())} `}
+                          </span>
                           {event.title}
                         </button>
                       ))}
                       {eventsForDay(day).length > 3 && (
-                        <div className="text-[10px] text-[#5E5E5E] dark:text-[#8E918F] px-1">
+                        <div className="text-xs text-[#5E5E5E] dark:text-[#8E918F] px-1">
                           +{eventsForDay(day).length - 3} more
                         </div>
                       )}
@@ -325,20 +330,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
             {upcoming.map((event) => (
               <div
                 key={event.id}
-                className="rounded-2xl border border-[#E0E2E7] dark:border-[#333538] p-3 flex items-start justify-between gap-3"
+                className="rounded-xl border border-[#E0E2E7] dark:border-[#333538] p-4 flex items-start justify-between gap-3"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{event.title}</span>
+                    <span className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{event.title}</span>
                     {event.recurrence && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#F2F6FC] dark:bg-[#282A2C] text-[#444746] dark:text-[#C4C7C5]">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-[#444746] dark:text-[#C4C7C5]">
                         {event.recurrence.frequency}
                       </span>
                     )}
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#5E5E5E] dark:text-[#8E918F]">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
                     <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
+                      <Clock className="w-3.5 h-3.5 stroke-[1.5]" />
                       {event.allDay
                         ? eventDate(event).toLocaleDateString()
                         : `${eventDate(event).toLocaleDateString()} ${pad(eventDate(event).getHours())}:${pad(eventDate(event).getMinutes())}`}
@@ -347,13 +352,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
                     </span>
                     {event.location && (
                       <span className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
+                        <MapPin className="w-3.5 h-3.5 stroke-[1.5]" />
                         {event.location}
                       </span>
                     )}
                     {event.participants.length > 0 && (
                       <span className="flex items-center gap-1">
-                        <Users className="w-3 h-3" />
+                        <Users className="w-3.5 h-3.5 stroke-[1.5]" />
                         {event.participants.map((p) => p.email).join(', ')}
                       </span>
                     )}
@@ -365,16 +370,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => openEdit(event)}
-                    className="p-1.5 rounded-full text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 text-xs"
+                    className="h-8 px-3 rounded-lg text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 text-xs font-medium transition-colors"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => remove(event)}
-                    className="p-1.5 rounded-full text-[#444746] dark:text-[#C4C7C5] hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600"
+                    className="p-1.5 rounded-md text-[#444746] dark:text-[#C4C7C5] hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                     title="Delete event"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4 stroke-[1.5]" />
                   </button>
                 </div>
               </div>
@@ -387,14 +392,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
           <form
             onSubmit={submit}
-            className="w-full max-w-lg bg-white dark:bg-[#1E1F20] rounded-2xl border border-[#E0E2E7] dark:border-[#333538] shadow-gmail-modal p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg bg-white dark:bg-[#1E1F20] rounded-xl border border-[#E0E2E7] dark:border-[#333538] shadow-gmail-modal p-5 space-y-3 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">
+              <h3 className="text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
                 {form.id ? 'Edit event' : 'New event'}
               </h3>
-              <button type="button" onClick={() => setForm(null)} className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10" aria-label="Close">
-                <X className="w-4 h-4 text-[#444746] dark:text-[#C4C7C5]" />
+              <button type="button" onClick={() => setForm(null)} className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10" aria-label="Close">
+                <X className="w-4 h-4 stroke-[1.5] text-[#444746] dark:text-[#C4C7C5]" />
               </button>
             </div>
 
@@ -408,7 +413,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
               />
             </label>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="block text-xs text-[#444746] dark:text-[#C4C7C5]">
                 Date
                 <input
@@ -516,16 +521,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onNotify }) => {
                 <button
                   type="button"
                   onClick={() => setForm(null)}
-                  className="h-9 px-4 rounded-full border border-[#E0E2E7] dark:border-[#333538] text-xs font-medium text-[#444746] dark:text-[#C4C7C5]"
+                  className="h-9 px-4 rounded-lg border border-[#E0E2E7] dark:border-[#333538] text-xs font-medium text-[#444746] dark:text-[#C4C7C5]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={busy}
-                  className="h-9 px-4 rounded-full bg-gmail-blue text-white text-xs font-semibold disabled:opacity-60"
+                  className="h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60"
                 >
-                  {busy ? 'Saving…' : form.id ? 'Save' : 'Create'}
+                  {busy ? 'Saving…' : form.id ? 'Save' : 'Create event'}
                 </button>
               </div>
             </div>

@@ -209,22 +209,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
   const labelClass = 'block text-xs text-[#444746] dark:text-[#C4C7C5]';
 
   return (
-    <div className="flex-1 flex min-h-0 bg-white dark:bg-[#1E1F20]">
-      <nav className="w-44 sm:w-56 shrink-0 border-r border-[#F2F4F7] dark:border-[#2D2F31] p-2 space-y-0.5">
-        <h2 className="px-3 py-2 text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Settings</h2>
+    <div className="flex-1 flex flex-col md:flex-row min-h-0 min-w-0 bg-white dark:bg-[#1E1F20]">
+      <nav className="shrink-0 border-b md:border-b-0 md:border-r border-[#F2F4F7] dark:border-[#333538] p-2 md:w-56 flex md:flex-col gap-0.5 overflow-x-auto md:overflow-visible">
+        <h2 className="px-3 py-2 text-base font-medium shrink-0 text-[#1F1F1F] dark:text-[#E3E3E3]">Settings</h2>
         {sections.map((s) => {
           const Icon = s.icon;
           return (
             <button
               key={s.id}
               onClick={() => setSection(s.id)}
-              className={`w-full flex items-center gap-2.5 px-3 h-9 rounded-r-full text-xs font-medium transition-colors ${
+              className={`shrink-0 flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-full md:rounded-r-full text-xs font-medium transition-colors whitespace-nowrap ${
                 section === s.id
                   ? 'bg-[#D3E3FD] dark:bg-[#004A77] text-[#001D35] dark:text-[#C2E7FF]'
                   : 'text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="w-4 h-4 stroke-[1.5] shrink-0" />
               <span className="truncate">{s.label}</span>
             </button>
           );
@@ -232,18 +232,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
         {onOpenImport && (
           <button
             onClick={onOpenImport}
-            className="w-full flex items-center gap-2.5 px-3 h-9 rounded-r-full text-xs font-medium transition-colors text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5"
+            className="shrink-0 flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-full md:rounded-r-full text-xs font-medium transition-colors text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5 whitespace-nowrap"
           >
-            <Upload className="w-4 h-4" />
+            <Upload className="w-4 h-4 stroke-[1.5] shrink-0" />
             <span className="truncate">Import mail</span>
           </button>
         )}
       </nav>
 
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-5">
         {section === 'profile' && (
-          <form onSubmit={saveName} className="max-w-md space-y-3">
-            <h3 className="text-sm font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Profile</h3>
+          <form onSubmit={saveName} className="max-w-md w-full space-y-3">
+            <h3 className="text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Profile</h3>
             <label className={labelClass}>
               Display name
               <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={inputClass} />
@@ -255,7 +255,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
             <button
               type="submit"
               disabled={savingName}
-              className="h-9 px-4 rounded-full bg-gmail-blue text-white text-xs font-semibold disabled:opacity-60"
+              className="h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60"
             >
               {savingName ? 'Saving…' : 'Save changes'}
             </button>
@@ -263,8 +263,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
         )}
 
         {section === 'password' && (
-          <form onSubmit={savePassword} className="max-w-md space-y-3">
-            <h3 className="text-sm font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Change password</h3>
+          <form onSubmit={savePassword} className="max-w-md w-full space-y-3">
+            <h3 className="text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Change password</h3>
             <label className={labelClass}>
               Current password
               <input
@@ -295,13 +295,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
                 className={inputClass}
               />
             </label>
-            <p className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F]">
+            <p className="text-xs text-[#5E5E5E] dark:text-[#8E918F]">
               The server must allow password changes over JMAP; the exact server error is shown if not.
             </p>
             <button
               type="submit"
               disabled={savingPassword}
-              className="h-9 px-4 rounded-full bg-gmail-blue text-white text-xs font-semibold disabled:opacity-60"
+              className="h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60"
             >
               {savingPassword ? 'Updating…' : 'Update password'}
             </button>
@@ -309,31 +309,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
         )}
 
         {section === 'filters' && (
-          <div className="max-w-2xl space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Sieve filters</h3>
+          <div className="max-w-2xl w-full space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Sieve filters</h3>
               <button
                 onClick={() => {
                   setScriptId(null);
                   setScriptName('filter');
                   setScriptBody(NEW_SCRIPT);
                 }}
-                className="flex items-center gap-1 h-8 px-3 rounded-full border border-[#E0E2E7] dark:border-[#333538] text-xs font-medium text-[#444746] dark:text-[#C4C7C5]"
+                className="flex items-center gap-1 h-8 px-3 rounded-lg border border-[#E0E2E7] dark:border-[#333538] text-xs font-medium text-[#444746] dark:text-[#C4C7C5]"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-4 h-4 stroke-[1.5]" />
                 New filter
               </button>
             </div>
 
             {scripts.length > 0 && (
-              <div className="rounded-2xl border border-[#E0E2E7] dark:border-[#333538] divide-y divide-[#F2F4F7] dark:divide-[#2D2F31]">
+              <div className="rounded-xl border border-[#E0E2E7] dark:border-[#333538] divide-y divide-[#F2F4F7] dark:divide-[#333538]">
                 {scripts.map((script) => (
                   <div key={script.id} className="flex items-center justify-between gap-2 px-3 py-2">
                     <button onClick={() => openScript(script.id)} className="flex items-center gap-2 min-w-0 text-left">
-                      <Filter className="w-3.5 h-3.5 text-[#5E5E5E] dark:text-[#8E918F] shrink-0" />
+                      <Filter className="w-3.5 h-3.5 stroke-[1.5] text-[#5E5E5E] dark:text-[#8E918F] shrink-0" />
                       <span className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{script.name}</span>
                       {script.isActive && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                        <span className="text-xs text-[#137333] dark:text-[#81C995] flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#137333] dark:bg-[#81C995]" />
                           Active
                         </span>
                       )}
@@ -342,18 +343,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
                       {!script.isActive && (
                         <button
                           onClick={() => activateScript(script.id)}
-                          className="p-1.5 rounded-full text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10"
+                          className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center rounded-md text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
                           title="Activate"
                         >
-                          <Zap className="w-3.5 h-3.5" />
+                          <Zap className="w-3.5 h-3.5 stroke-[1.5]" />
                         </button>
                       )}
                       <button
                         onClick={() => removeScript(script.id)}
-                        className="p-1.5 rounded-full text-[#444746] dark:text-[#C4C7C5] hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600"
+                        className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center rounded-md text-[#444746] dark:text-[#C4C7C5] hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                         title="Delete"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5 stroke-[1.5]" />
                       </button>
                     </div>
                   </div>
@@ -372,23 +373,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
                 onChange={(e) => setScriptBody(e.target.value)}
                 rows={12}
                 spellCheck={false}
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E0E2E7] dark:border-[#333538] bg-[#FAFBFC] dark:bg-[#131314] font-mono text-[11px] leading-relaxed text-[#1F1F1F] dark:text-[#E3E3E3] outline-none focus:border-gmail-blue resize-y"
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E0E2E7] dark:border-[#333538] bg-[#F6F8FC] dark:bg-[#131314] font-mono text-xs leading-relaxed text-[#1F1F1F] dark:text-[#E3E3E3] outline-none focus:border-gmail-blue resize-y"
               />
             </label>
             <button
               onClick={saveScript}
               disabled={savingScript}
-              className="flex items-center gap-1.5 h-9 px-4 rounded-full bg-gmail-blue text-white text-xs font-semibold disabled:opacity-60"
+              className="flex items-center gap-1.5 h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60"
             >
-              {savingScript ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {savingScript ? <Loader2 className="w-3.5 h-3.5 stroke-[1.5] animate-spin" /> : <Save className="w-3.5 h-3.5 stroke-[1.5]" />}
               {scriptId ? 'Save filter' : 'Create filter'}
             </button>
           </div>
         )}
 
         {section === 'vacation' && (
-          <form onSubmit={saveVacation} className="max-w-md space-y-3">
-            <h3 className="text-sm font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Vacation responder</h3>
+          <form onSubmit={saveVacation} className="max-w-md w-full space-y-3">
+            <h3 className="text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Vacation responder</h3>
             <label className="flex items-center gap-2 text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
               <input
                 type="checkbox"
@@ -415,7 +416,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
                 className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E0E2E7] dark:border-[#333538] bg-transparent text-sm text-[#1F1F1F] dark:text-[#E3E3E3] outline-none focus:border-gmail-blue resize-none"
               />
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className={labelClass}>
                 From (optional)
                 <input
@@ -438,7 +439,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, userEmail,
             <button
               type="submit"
               disabled={savingVacation}
-              className="h-9 px-4 rounded-full bg-gmail-blue text-white text-xs font-semibold disabled:opacity-60"
+              className="h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60"
             >
               {savingVacation ? 'Saving…' : 'Save responder'}
             </button>

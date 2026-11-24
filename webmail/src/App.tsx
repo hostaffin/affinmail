@@ -436,7 +436,7 @@ export const App: React.FC = () => {
       return;
     }
     Promise.all(ids.map((id) => moveThread(id, target)))
-      .then(() => addToast(`${ids.length} conversation(s) archived`, 'info'))
+      .then(() => addToast(`${ids.length} conversation${ids.length === 1 ? '' : 's'} archived`, 'info'))
       .catch((err) => {
         addToast(err instanceof Error ? err.message : 'Archive failed', 'error');
         refreshThreads();
@@ -455,7 +455,7 @@ export const App: React.FC = () => {
       return;
     }
     Promise.all(ids.map((id) => moveThread(id, target)))
-      .then(() => addToast(`${ids.length} conversation(s) moved to trash`, 'info'))
+      .then(() => addToast(`${ids.length} conversation${ids.length === 1 ? '' : 's'} moved to trash`, 'info'))
       .catch((err) => {
         addToast(err instanceof Error ? err.message : 'Delete failed', 'error');
         refreshThreads();
@@ -765,7 +765,7 @@ export const App: React.FC = () => {
         />
 
         {/* Central Content Area (Gmail Rounded Card) */}
-        <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#1E1F20] rounded-2xl overflow-hidden shadow-sm mr-2 sm:mr-4 mb-2 sm:mb-4 border border-[#E0E2E7] dark:border-[#333538]">
+        <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#1E1F20] rounded-xl overflow-hidden shadow-sm mr-2 sm:mr-4 mb-2 sm:mb-4 border border-[#E0E2E7] dark:border-[#333538]">
           {view === 'calendar' ? (
             <CalendarView onNotify={addToast} />
           ) : view === 'contacts' ? (

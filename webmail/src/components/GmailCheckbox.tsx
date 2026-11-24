@@ -34,14 +34,14 @@ export const GmailCheckbox: React.FC<GmailCheckboxProps> = ({
         e.stopPropagation();
         onChange();
       }}
-      className={`w-[18px] h-[18px] rounded-[3px] border transition-all flex items-center justify-center cursor-pointer select-none shrink-0 ${
+      className={`w-4 h-4 rounded border transition-colors flex items-center justify-center cursor-pointer select-none shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gmail-blue ${
         checked || indeterminate
-          ? 'bg-[#0B57D0] border-[#0B57D0] text-white shadow-xs'
-          : 'border-[#747775] dark:border-[#8E918F] bg-transparent hover:border-[#1F1F1F] dark:hover:border-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5'
+          ? 'bg-[#0B57D0] border-[#0B57D0] dark:bg-[#A8C7FA] dark:border-[#A8C7FA] text-white dark:text-[#042B5C]'
+          : 'border-[#8E918F] bg-transparent hover:border-[#1F1F1F] dark:hover:border-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5'
       }`}
     >
-      {checked && <Check className="w-3.5 h-3.5 stroke-[3] text-white" />}
-      {indeterminate && !checked && <Minus className="w-3.5 h-3.5 stroke-[3] text-white" />}
+      {checked && <Check className="w-3 h-3 stroke-[2]" />}
+      {indeterminate && !checked && <Minus className="w-3 h-3 stroke-[2]" />}
     </div>
   );
 };

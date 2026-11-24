@@ -95,16 +95,16 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-white dark:bg-[#1E1F20] p-5">
+    <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-white dark:bg-[#1E1F20] p-4 sm:p-5">
       <div className="max-w-2xl w-full space-y-4">
         <div>
-          <h2 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Import mail</h2>
+          <h2 className="text-base font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Import mail</h2>
           <p className="text-xs text-[#5E5E5E] dark:text-[#8E918F] mt-1">
             Copy messages from another mailbox into {userEmail}. Dates, folders and read/flag states are preserved.
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {sourceOptions.map((s) => {
             const Icon = s.icon;
             return (
@@ -112,9 +112,9 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
                 key={s.id}
                 type="button"
                 onClick={() => setSource(s.id)}
-                className={`flex items-center gap-2 h-9 px-3 rounded-full text-xs font-medium transition-colors ${
+                className={`flex items-center gap-2 h-9 px-3 rounded-lg text-xs font-medium transition-colors ${
                   source === s.id
-                    ? 'bg-[#D3E3FD] dark:bg-[#004A77] text-[#001D35] dark:text-[#C2E7FF]'
+                    ? 'bg-[#D3E3FD] dark:bg-[#004A77] text-[#001D35] dark:text-[#C2E7FF] border border-transparent'
                     : 'text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5 border border-[#E0E2E7] dark:border-[#333538]'
                 }`}
               >
@@ -127,12 +127,12 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
 
         <form onSubmit={submit} className="space-y-4">
           <fieldset className={fieldsetClass}>
-            <legend className="px-1 text-xs font-semibold text-[#444746] dark:text-[#C4C7C5]">Source</legend>
+            <legend className="px-1 text-xs font-medium text-[#444746] dark:text-[#C4C7C5]">Source</legend>
 
             {source === 'imap' ? (
               <>
-                <div className="grid grid-cols-3 gap-3">
-                  <label className={`${labelClass} col-span-2`}>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label className={`${labelClass} sm:col-span-2`}>
                     IMAP host
                     <input value={host} onChange={(e) => setHost(e.target.value)} required placeholder="imap.example.com" className={inputClass} />
                   </label>
@@ -145,7 +145,7 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
                   <input type="checkbox" className="checkbox checkbox-xs" checked={ssl} onChange={(e) => setSsl(e.target.checked)} />
                   Use SSL/TLS
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className={labelClass}>
                     Username
                     <input value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="off" className={inputClass} />
@@ -167,16 +167,16 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
                   type="file"
                   accept={source === 'eml' ? '.eml,message/rfc822' : '.mbox,application/mbox,text/plain,*/*'}
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="mt-1 block w-full text-xs text-[#444746] dark:text-[#C4C7C5] file:mr-3 file:h-8 file:px-3 file:rounded-full file:border-0 file:bg-gmail-blue file:text-white file:text-xs file:font-semibold"
+                  className="mt-1 block w-full text-xs text-[#444746] dark:text-[#C4C7C5] file:mr-3 file:h-8 file:px-3 file:rounded-lg file:border-0 file:bg-gmail-blue file:text-white file:text-xs file:font-medium"
                 />
-                {file && <span className="mt-1 block text-[11px] text-[#5E5E5E] dark:text-[#8E918F]">{file.name} · {(file.size / 1024).toFixed(1)} KB</span>}
+                {file && <span className="mt-1 block text-xs text-[#5E5E5E] dark:text-[#8E918F]">{file.name} · {(file.size / 1024).toFixed(1)} KB</span>}
               </label>
             )}
           </fieldset>
 
           <fieldset className={fieldsetClass}>
-            <legend className="px-1 text-xs font-semibold text-[#444746] dark:text-[#C4C7C5]">Destination</legend>
-            <div className="grid grid-cols-2 gap-3">
+            <legend className="px-1 text-xs font-medium text-[#444746] dark:text-[#C4C7C5]">Destination</legend>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className={labelClass}>
                 Target email
                 <input value={targetEmail} onChange={(e) => setTargetEmail(e.target.value)} required className={inputClass} />
@@ -201,20 +201,20 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
           <button
             type="submit"
             disabled={running}
-            className="h-9 px-4 rounded-full bg-gmail-blue text-white text-xs font-semibold disabled:opacity-60 flex items-center gap-2"
+            className="h-9 px-4 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover transition-colors text-white text-xs font-medium disabled:opacity-60 flex items-center gap-2"
           >
-            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {running ? <Loader2 className="w-4 h-4 stroke-[1.5] animate-spin" /> : <Upload className="w-4 h-4 stroke-[1.5]" />}
             {running ? 'Importing…' : 'Start import'}
           </button>
         </form>
 
         {job && (
           <div className={`rounded-xl border p-4 space-y-2 ${job.status === 'failed' ? 'border-red-300 dark:border-red-800' : 'border-[#E0E2E7] dark:border-[#333538]'}`}>
-            <div className="flex items-center gap-2 text-sm font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">
-              {job.status === 'failed' ? <AlertTriangle className="w-4 h-4 text-red-500" /> : <CheckCircle2 className="w-4 h-4 text-green-600" />}
+            <div className="flex items-center gap-2 text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
+              {job.status === 'failed' ? <AlertTriangle className="w-4 h-4 stroke-[1.5] text-red-600 dark:text-red-400" /> : <CheckCircle2 className="w-4 h-4 stroke-[1.5] text-[#137333] dark:text-[#81C995]" />}
               {job.status === 'completed' ? 'Import complete' : job.status}
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs text-[#444746] dark:text-[#C4C7C5]">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-[#444746] dark:text-[#C4C7C5]">
               <span>
                 Imported <strong className="text-[#1F1F1F] dark:text-[#E3E3E3]">{job.imported}</strong>
               </span>
@@ -226,7 +226,7 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
               </span>
             </div>
             {job.errors.length > 0 && (
-              <ul className="max-h-40 overflow-y-auto text-[11px] space-y-1 text-red-600 dark:text-red-400">
+              <ul className="max-h-40 overflow-y-auto text-xs space-y-1 text-red-600 dark:text-red-400">
                 {job.errors.map((err, i) => (
                   <li key={`${err.messageId}-${i}`} className="break-all">
                     <span className="font-mono">{err.messageId || '(no message-id)'}</span>: {err.error}
@@ -234,7 +234,7 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
                 ))}
               </ul>
             )}
-            <p className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F]">
+            <p className="text-xs text-[#5E5E5E] dark:text-[#8E918F]">
               Job {job.id} · {job.total} message{job.total === 1 ? '' : 's'} scanned
             </p>
           </div>
@@ -242,12 +242,12 @@ export const ImportView: React.FC<ImportViewProps> = ({ onNotify, userEmail }) =
 
         {history.length > 0 && (
           <div className="space-y-1">
-            <h3 className="text-xs font-semibold text-[#444746] dark:text-[#C4C7C5]">Recent imports</h3>
-            <ul className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F] space-y-1">
+            <h3 className="text-xs font-medium text-[#444746] dark:text-[#C4C7C5]">Recent imports</h3>
+            <ul className="text-xs text-[#5E5E5E] dark:text-[#8E918F] space-y-1">
               {history.map((h) => (
-                <li key={h.id} className="flex items-center justify-between gap-2">
+                <li key={h.id} className="flex flex-wrap items-center justify-between gap-2">
                   <span className="truncate">
-                    {h.type} → {h.targetFolder || 'Inbox'} ({h.status})
+                    {h.type} to {h.targetFolder || 'Inbox'} ({h.status})
                   </span>
                   <span className="tabular-nums shrink-0">
                     {h.imported} imported · {h.skippedDuplicates} skipped · {h.errors.length} errors

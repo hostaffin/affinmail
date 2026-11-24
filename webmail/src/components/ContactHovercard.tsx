@@ -60,17 +60,6 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
 
   const derivedDomain = domain || senderEmail.split('@')[1] || 'domain.com';
 
-  // Deterministic color based on sender name
-  const avatarBgColors = [
-    'bg-[#0B57D0]',
-    'bg-[#7B1FA2]',
-    'bg-[#C2185B]',
-    'bg-[#00796B]',
-    'bg-[#D84315]',
-    'bg-[#303F9F]',
-  ];
-  const charCode = senderName.charCodeAt(0) || 0;
-  const avatarColor = avatarBgColors[charCode % avatarBgColors.length];
 
   return (
     <div
@@ -81,50 +70,50 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
       {/* Trigger element (e.g. sender name or avatar) */}
       <div className="cursor-pointer">{children}</div>
 
-      {/* Floating Gmail Contact Profile Card */}
+      {/* Floating Gmail Contact Profile Card: hover-only chrome, so phones skip it */}
       {isOpen && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className={`absolute left-0 z-50 w-72 sm:w-80 bg-white dark:bg-[#1E1F20] rounded-2xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] p-4 text-[#1F1F1F] dark:text-[#E3E3E3] animate-in fade-in zoom-in-95 duration-150 select-text ${
+          className={`hidden md:block absolute left-0 z-50 w-72 sm:w-80 bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] p-4 text-[#1F1F1F] dark:text-[#E3E3E3] select-text ${
             position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
           }`}
         >
           {/* Top Section: Avatar & Name */}
-          <div className="flex items-start gap-3.5 pb-3 border-b border-[#F2F4F7] dark:border-[#2D2F31]">
+          <div className="flex items-start gap-3 pb-3 border-b border-[#F2F4F7] dark:border-[#333538]">
             <div
-              className={`w-12 h-12 rounded-full ${avatarColor} text-white font-medium flex items-center justify-center text-lg shrink-0 shadow-sm`}
+              className="w-12 h-12 rounded-full bg-[#0B57D0] dark:bg-[#A8C7FA] text-white dark:text-[#042B5C] font-medium flex items-center justify-center text-lg shrink-0"
             >
               {senderName.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <h4 className="font-semibold text-sm text-[#1F1F1F] dark:text-[#E3E3E3] truncate leading-tight">
+              <h4 className="font-medium text-sm text-[#1F1F1F] dark:text-[#E3E3E3] truncate leading-tight">
                 {senderName}
               </h4>
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1.5">
                 <span className="text-xs text-[#5E5E5E] dark:text-[#8E918F] truncate font-normal">
                   {senderEmail}
                 </span>
                 <button
                   onClick={handleCopyEmail}
-                  className="p-1 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors shrink-0"
+                  className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full text-[#8E918F] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] transition-colors shrink-0"
                   title="Copy email address"
                 >
                   {copied ? (
-                    <Check className="w-3 h-3 text-emerald-600" />
+                    <Check className="w-3.5 h-3.5 stroke-[1.5] text-[#137333] dark:text-[#81C995]" />
                   ) : (
-                    <Copy className="w-3 h-3" />
+                    <Copy className="w-3.5 h-3.5 stroke-[1.5]" />
                   )}
                 </button>
               </div>
 
               {/* Organization / Domain Badge */}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#F2F6FC] dark:bg-[#282A2C] text-[#444746] dark:text-[#C4C7C5] border border-[#E0E2E7] dark:border-[#333538] font-mono">
+                <span className="text-xs px-2 py-0.5 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-[#444746] dark:text-[#C4C7C5] border border-[#E0E2E7] dark:border-[#333538] font-mono">
                   {contact?.organization || derivedDomain}
                 </span>
                 {contact && (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-                    <BadgeCheck className="w-3 h-3" />
+                  <span className="text-xs text-[#137333] dark:text-[#81C995] flex items-center gap-1">
+                    <BadgeCheck className="w-3.5 h-3.5 stroke-[1.5]" />
                     Saved contact
                   </span>
                 )}
@@ -134,7 +123,7 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
 
           {/* Saved contact details: only what the address book actually holds */}
           {contact && (contact.title || contact.phones.length > 0) && (
-            <div className="py-2.5 px-1 border-b border-[#F2F4F7] dark:border-[#2D2F31] space-y-1 text-[11px] text-[#444746] dark:text-[#C4C7C5]">
+            <div className="py-2.5 px-1 border-b border-[#F2F4F7] dark:border-[#333538] space-y-1 text-xs text-[#444746] dark:text-[#C4C7C5]">
               {contact.title && (
                 <div className="flex items-center gap-1.5">
                   <Building2 className="w-3.5 h-3.5" />
@@ -157,10 +146,10 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
                 onComposeTo?.(senderEmail);
                 setIsOpen(false);
               }}
-              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-full bg-[#E8F0FE] dark:bg-[#004A77]/40 hover:bg-[#D2E3FC] dark:hover:bg-[#004A77]/70 text-gmail-blue text-xs font-semibold transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg bg-gmail-blue hover:bg-gmail-blue-hover text-white text-xs font-medium transition-colors"
               title="Send email"
             >
-              <Mail className="w-3.5 h-3.5 stroke-[2]" />
+              <Mail className="w-3.5 h-3.5 stroke-[1.5]" />
               <span>Send message</span>
             </button>
 
@@ -170,10 +159,10 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
                   alert(`Starting audio/video call with ${senderName}...`);
                   setIsOpen(false);
                 }}
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
                 title="Start video meeting"
               >
-                <Video className="w-4 h-4 stroke-[2]" />
+                <Video className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               <button
@@ -181,10 +170,10 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
                   alert(`Scheduling calendar event with ${senderName}...`);
                   setIsOpen(false);
                 }}
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
                 title="Schedule event"
               >
-                <Calendar className="w-4 h-4 stroke-[2]" />
+                <Calendar className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               <button
@@ -192,10 +181,10 @@ export const ContactHovercard: React.FC<ContactHovercardProps> = ({
                   alert(`Opening chat with ${senderName}...`);
                   setIsOpen(false);
                 }}
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
                 title="Open chat"
               >
-                <MessageSquare className="w-4 h-4 stroke-[2]" />
+                <MessageSquare className="w-4 h-4 stroke-[1.5]" />
               </button>
             </div>
           </div>

@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
+  X as XIcon,
   Minus,
   Maximize2,
   Minimize2,
-  X,
   Paperclip,
   Trash2,
   Send,
@@ -119,16 +119,20 @@ const RecipientRow: React.FC<RecipientRowProps> = ({
 
   return (
     <div className="flex flex-wrap items-center px-4 py-2 gap-1.5 min-h-[40px]">
-      <span className="text-[#5E5E5E] dark:text-[#8E918F] w-8 font-medium">{label}</span>
+      <span className="text-[#5E5E5E] dark:text-[#8E918F] w-8 font-normal">{label}</span>
       <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-[120px] relative">
         {chips.map((chip, idx) => (
           <span
             key={`${chip}-${idx}`}
-            className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F0FE] dark:bg-[#004A77]/40 text-gmail-blue text-xs font-medium border border-[#D2E3FC] dark:border-[#004A77]"
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-[#1F1F1F] dark:text-[#E3E3E3] text-xs font-normal border border-[#E0E2E7] dark:border-[#333538]"
           >
             <span>{chip}</span>
-            <button onClick={() => onRemoveChip(idx)} className="text-gmail-blue hover:text-red-600 ml-0.5">
-              ×
+            <button
+              onClick={() => onRemoveChip(idx)}
+              className="text-gmail-blue dark:text-gmail-dark-blue-text hover:text-red-600 ml-0.5"
+              aria-label={`Remove ${chip}`}
+            >
+              <XIcon className="w-3 h-3 stroke-[1.5]" />
             </button>
           </span>
         ))}
@@ -155,7 +159,7 @@ const RecipientRow: React.FC<RecipientRowProps> = ({
           data-field={field}
         />
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute left-0 top-full mt-1 z-50 w-72 max-h-56 overflow-y-auto bg-white dark:bg-[#1E1F20] rounded-xl border border-[#E0E2E7] dark:border-[#333538] shadow-gmail-modal py-1">
+          <div className="absolute left-0 top-full mt-1 z-50 w-full max-w-72 max-h-56 overflow-y-auto bg-white dark:bg-[#1E1F20] rounded-xl border border-[#E0E2E7] dark:border-[#333538] shadow-gmail-modal py-1">
             {suggestions.map((contact) => (
               <button
                 key={contact.id}
@@ -167,7 +171,7 @@ const RecipientRow: React.FC<RecipientRowProps> = ({
                 className="w-full text-left px-3 py-1.5 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] flex flex-col"
               >
                 <span className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{contact.fullName}</span>
-                <span className="text-[11px] text-[#5E5E5E] dark:text-[#8E918F] truncate">{contact.emails[0]}</span>
+                <span className="text-xs text-[#5E5E5E] dark:text-[#8E918F] truncate">{contact.emails[0]}</span>
               </button>
             ))}
           </div>
@@ -222,7 +226,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
     editorProps: {
       attributes: {
         class:
-          'tiptap outline-none w-full h-full min-h-[140px] text-xs leading-relaxed text-[#1F1F1F] dark:text-[#E3E3E3]',
+          'tiptap outline-none w-full h-full min-h-[140px] text-sm leading-relaxed text-[#1F1F1F] dark:text-[#E3E3E3]',
       },
     },
     onUpdate: ({ editor: instance }) => {
@@ -377,47 +381,47 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
 
   return (
     <div
-      className={`fixed z-50 transition-all duration-150 border border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] flex flex-col shadow-gmail-modal select-none ${
+      className={`fixed z-50 transition-[transform,opacity] duration-150 border border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] flex flex-col shadow-gmail-modal select-none ${
         isMaximized
-          ? 'inset-0 sm:inset-4 rounded-none sm:rounded-2xl'
+          ? 'inset-0 sm:inset-4 rounded-none sm:rounded-xl'
           : isMinimized
-          ? 'bottom-0 right-6 w-72 h-10 rounded-t-xl'
-          : 'bottom-0 right-0 sm:right-6 w-full sm:w-[580px] h-full sm:h-[540px] rounded-t-2xl'
+          ? 'bottom-0 right-2 w-[min(18rem,calc(100vw-1rem))] h-10 rounded-t-xl'
+          : 'bottom-0 right-0 sm:bottom-4 sm:right-4 w-full sm:w-[min(560px,calc(100vw-2rem))] h-dvh sm:h-[540px] sm:max-h-[calc(100dvh-2rem)] rounded-none sm:rounded-xl'
       }`}
     >
       {/* 1. Modal Top Bar */}
-      <div className="bg-[#F2F6FC] dark:bg-[#282A2C] px-4 h-10 flex items-center justify-between select-none shrink-0 rounded-t-2xl border-b border-[#E0E2E7] dark:border-[#333538]">
-        <span className="font-semibold text-xs text-[#1F1F1F] dark:text-[#E3E3E3] truncate">
-          {subject ? subject : 'New Message'}
+      <div className="bg-[#F2F6FC] dark:bg-[#282A2C] px-2 sm:px-4 h-12 sm:h-10 flex items-center justify-between select-none shrink-0 rounded-t-xl border-b border-[#E0E2E7] dark:border-[#333538] pt-[env(safe-area-inset-top)] sm:pt-0 gap-2">
+        <span className="font-medium text-xs text-[#1F1F1F] dark:text-[#E3E3E3] truncate min-w-0">
+          {subject ? subject : 'New message'}
         </span>
-        <div className="flex items-center gap-1 text-[#444746] dark:text-[#C4C7C5]">
+        <div className="flex items-center gap-1 shrink-0 text-[#444746] dark:text-[#C4C7C5]">
           <button
             onClick={() => setIsMinimized(!isMinimized)}
-            className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#E0E2E7] dark:hover:bg-[#333538] p-1.5 rounded-full transition-colors"
+            className="p-1.5 h-10 w-10 min-h-10 sm:h-8 sm:w-8 sm:min-h-8 flex items-center justify-center hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#E0E2E7] dark:hover:bg-[#333538] rounded-full transition-colors"
             title={isMinimized ? 'Expand' : 'Minimize'}
           >
-            <Minus className="w-3.5 h-3.5 stroke-[2]" />
+            <Minus className="w-3.5 h-3.5 stroke-[1.5]" />
           </button>
           <button
             onClick={() => {
               setIsMaximized(!isMaximized);
               setIsMinimized(false);
             }}
-            className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#E0E2E7] dark:hover:bg-[#333538] p-1.5 rounded-full transition-colors hidden sm:block"
+            className="p-1.5 h-10 w-10 min-h-10 sm:h-8 sm:w-8 sm:min-h-8 flex items-center justify-center hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#E0E2E7] dark:hover:bg-[#333538] rounded-full transition-colors hidden sm:flex"
             title={isMaximized ? 'Restore' : 'Maximize'}
           >
             {isMaximized ? (
-              <Minimize2 className="w-3.5 h-3.5 stroke-[2]" />
+              <Minimize2 className="w-3.5 h-3.5 stroke-[1.5]" />
             ) : (
-              <Maximize2 className="w-3.5 h-3.5 stroke-[2]" />
+              <Maximize2 className="w-3.5 h-3.5 stroke-[1.5]" />
             )}
           </button>
           <button
             onClick={handleClose}
-            className="hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#E0E2E7] dark:hover:bg-[#333538] p-1.5 rounded-full transition-colors"
+            className="p-1.5 h-10 w-10 min-h-10 sm:h-8 sm:w-8 sm:min-h-8 flex items-center justify-center hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] hover:bg-[#E0E2E7] dark:hover:bg-[#333538] rounded-full transition-colors"
             title="Save & close"
           >
-            <X className="w-3.5 h-3.5 stroke-[2]" />
+            <XIcon className="w-4 h-4 stroke-[1.5]" />
           </button>
         </div>
       </div>
@@ -425,7 +429,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
       {!isMinimized && (
         <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-[#1E1F20]">
           {/* 2. Recipients & Subject Inputs */}
-          <div className="divide-y divide-[#F2F4F7] dark:divide-[#2D2F31] text-xs">
+          <div className="divide-y divide-[#F2F4F7] dark:divide-[#333538] text-xs">
             <RecipientRow
               label="To"
               field="to"
@@ -494,56 +498,56 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().toggleBold().run()}
-                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bold') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bold') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Bold"
               >
-                <Bold className="w-3.5 h-3.5 stroke-[2]" />
+                <Bold className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().toggleItalic().run()}
-                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('italic') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('italic') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Italic"
               >
-                <Italic className="w-3.5 h-3.5 stroke-[2]" />
+                <Italic className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().toggleUnderline().run()}
-                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('underline') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('underline') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Underline"
               >
-                <Underline className="w-3.5 h-3.5 stroke-[2]" />
+                <Underline className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
-              <div className="h-4 w-px bg-gray-300 dark:bg-gray-600 mx-1 shrink-0"></div>
+              <div className="h-4 w-px bg-[#E0E2E7] dark:bg-[#333538] mx-1 shrink-0"></div>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().toggleBulletList().run()}
-                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bulletList') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bulletList') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Bulleted list"
               >
-                <List className="w-3.5 h-3.5 stroke-[2]" />
+                <List className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('orderedList') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('orderedList') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Numbered list"
               >
-                <ListOrdered className="w-3.5 h-3.5 stroke-[2]" />
+                <ListOrdered className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().toggleCode().run()}
-                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('code') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue' : ''}`}
+                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('code') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Code"
               >
-                <Code className="w-3.5 h-3.5 stroke-[2]" />
+                <Code className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
             </div>
           )}
@@ -554,22 +558,23 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
 
             {/* Attached Files Chips */}
             {attachments.length > 0 && (
-              <div className="pt-2 border-t border-[#F2F4F7] dark:border-[#2D2F31] flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+              <div className="pt-2 border-t border-[#F2F4F7] dark:border-[#333538] flex flex-wrap gap-2 max-h-24 overflow-y-auto">
                 {attachments.map((file, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-[#F2F6FC] dark:bg-[#282A2C] rounded-lg text-xs border border-[#E0E2E7] dark:border-[#333538] font-mono tabular-nums text-[#1F1F1F] dark:text-[#E3E3E3]"
+                    className="flex items-center gap-1.5 px-3 py-1 bg-[#F2F6FC] dark:bg-[#282A2C] rounded-lg text-xs border border-[#E0E2E7] dark:border-[#333538] text-[#1F1F1F] dark:text-[#E3E3E3]"
                   >
-                    <Paperclip className="w-3.5 h-3.5 stroke-[2] text-gmail-blue" />
-                    <span className="truncate max-w-[140px] font-sans font-medium">{file.name}</span>
-                    <span className="text-[10px] text-[#5E5E5E] dark:text-[#8E918F]">
+                    <Paperclip className="w-3.5 h-3.5 stroke-[1.5] text-gmail-blue" />
+                    <span className="truncate max-w-[140px] font-medium">{file.name}</span>
+                    <span className="text-xs text-[#5E5E5E] dark:text-[#8E918F] tabular-nums">
                       ({formatFileSize(file.size)})
                     </span>
                     <button
                       onClick={() => removeAttachment(idx)}
-                      className="text-[#5E5E5E] hover:text-red-600 ml-1 font-bold"
+                      className="text-[#5E5E5E] dark:text-[#8E918F] hover:text-red-600 ml-1"
+                      aria-label={`Remove ${file.name}`}
                     >
-                      ×
+                      <XIcon className="w-3 h-3 stroke-[1.5]" />
                     </button>
                   </div>
                 ))}
@@ -581,15 +586,15 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
 
           {/* 5. Authentic Gmail Bottom Action Bar */}
-          <div className="px-4 py-3 border-t border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] flex items-center justify-between gap-3 shrink-0">
+          <div className="px-2 sm:px-4 py-2 sm:py-3 border-t border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] flex flex-wrap items-center justify-between gap-2 sm:gap-3 shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3">
             {/* Left: Split Send Button & Toolbar Icons */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-0.5 sm:gap-1.5 min-w-0">
               {/* Split Send Pill Button */}
-              <div className="relative flex items-center mr-2" ref={scheduleMenuRef}>
+              <div className="relative flex items-center mr-1 sm:mr-2 shrink-0" ref={scheduleMenuRef}>
                 <button
                   onClick={handleSend}
                   disabled={isSending}
-                  className="bg-gmail-blue hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold px-4 h-9 rounded-l-full flex items-center gap-1.5 transition-colors shadow-sm"
+                  className="bg-gmail-blue hover:bg-gmail-blue-hover disabled:opacity-60 text-white text-xs font-medium px-3 sm:px-4 h-10 sm:h-9 rounded-l-lg flex items-center gap-1.5 transition-colors"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>{isSending ? 'Sending…' : 'Send'}</span>
@@ -597,16 +602,16 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowScheduleMenu((prev) => !prev)}
-                  className="bg-gmail-blue hover:bg-blue-700 text-white h-9 px-2 rounded-r-full border-l border-blue-400 flex items-center justify-center transition-colors shadow-sm"
+                  className="bg-gmail-blue hover:bg-gmail-blue-hover text-white h-10 sm:h-9 px-2 rounded-r-lg border-l border-white/20 flex items-center justify-center transition-colors"
                   title="Schedule send"
                 >
-                  <ChevronDown className="w-3.5 h-3.5 stroke-[2]" />
+                  <ChevronDown className="w-3.5 h-3.5 stroke-[1.5]" />
                 </button>
 
                 {/* Schedule Send Popup Menu */}
                 {showScheduleMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-[#1E1F20] rounded-2xl shadow-xl border border-[#E0E2E7] dark:border-[#333538] py-2 z-50 text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">
-                    <div className="px-4 py-1.5 text-[11px] font-semibold text-[#5E5E5E] dark:text-[#8E918F] uppercase tracking-wider">
+                  <div className="absolute bottom-full left-0 mb-2 w-[min(16rem,calc(100vw-1rem))] bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] py-2 z-50 text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">
+                    <div className="px-4 py-1.5 text-xs font-medium text-[#5E5E5E] dark:text-[#8E918F]">
                       Schedule send
                     </div>
                     <button
@@ -614,21 +619,21 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                       className="w-full text-left px-4 py-2 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] flex items-center justify-between"
                     >
                       <span>Tomorrow morning</span>
-                      <span className="text-[#5E5E5E] font-mono text-[11px]">8:00 AM</span>
+                      <span className="text-[#5E5E5E] dark:text-[#8E918F] font-mono text-xs">8:00 AM</span>
                     </button>
                     <button
                       onClick={() => handleScheduleSend('Tomorrow afternoon (1:00 PM)')}
                       className="w-full text-left px-4 py-2 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] flex items-center justify-between"
                     >
                       <span>Tomorrow afternoon</span>
-                      <span className="text-[#5E5E5E] font-mono text-[11px]">1:00 PM</span>
+                      <span className="text-[#5E5E5E] dark:text-[#8E918F] font-mono text-xs">1:00 PM</span>
                     </button>
                     <button
                       onClick={() => handleScheduleSend('Monday morning (8:00 AM)')}
                       className="w-full text-left px-4 py-2 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] flex items-center justify-between"
                     >
                       <span>Monday morning</span>
-                      <span className="text-[#5E5E5E] font-mono text-[11px]">8:00 AM</span>
+                      <span className="text-[#5E5E5E] dark:text-[#8E918F] font-mono text-xs">8:00 AM</span>
                     </button>
                   </div>
                 )}
@@ -639,61 +644,61 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                 onClick={() => setShowFormatting(!showFormatting)}
                 className={`p-2 rounded-full transition-colors ${
                   showFormatting
-                    ? 'bg-[#C2E7FF] text-gmail-blue'
+                    ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text'
                     : 'text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]'
                 }`}
                 title="Formatting options"
               >
-                <Underline className="w-4 h-4 stroke-[2]" />
+                <Underline className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               {/* Attach File */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
                 title={`Attach files (Max ${planLimitMb}MB)`}
               >
-                <Paperclip className="w-4 h-4 stroke-[2]" />
+                <Paperclip className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               {/* Insert Link */}
               <button
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden sm:inline-flex"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden sm:flex"
                 title="Insert link"
               >
-                <Link2 className="w-4 h-4 stroke-[2]" />
+                <Link2 className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               {/* Insert Emoji */}
               <button
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden sm:inline-flex"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden sm:flex"
                 title="Insert emoji"
               >
-                <Smile className="w-4 h-4 stroke-[2]" />
+                <Smile className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               {/* Insert Files using Drive */}
               <button
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden sm:inline-flex"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden sm:flex"
                 title="Insert files from Storage Box"
               >
-                <HardDrive className="w-4 h-4 stroke-[2]" />
+                <HardDrive className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               {/* Insert Photo */}
               <button
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden md:inline-flex"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden md:flex"
                 title="Insert photo"
               >
-                <Image className="w-4 h-4 stroke-[2]" />
+                <Image className="w-4 h-4 stroke-[1.5]" />
               </button>
 
               {/* Confidential Mode */}
               <button
-                className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden md:inline-flex"
+                className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors hidden md:flex"
                 title="Toggle confidential mode"
               >
-                <Lock className="w-4 h-4 stroke-[2]" />
+                <Lock className="w-4 h-4 stroke-[1.5]" />
               </button>
             </div>
 
@@ -706,10 +711,10 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                   onClose();
                 }
               }}
-              className="p-2 text-[#444746] dark:text-[#C4C7C5] hover:text-red-600 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
+              className="h-10 w-10 min-h-10 md:h-8 md:w-8 md:min-h-8 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5] hover:text-red-600 dark:hover:text-red-400 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] rounded-full transition-colors"
               title="Discard draft"
             >
-              <Trash2 className="w-4 h-4 stroke-[2]" />
+              <Trash2 className="w-4 h-4 stroke-[1.5]" />
             </button>
           </div>
         </div>

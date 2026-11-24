@@ -411,11 +411,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="flex items-center justify-between pb-3 mb-2 border-b border-base-300">
             <div className="flex items-center gap-2">
               <Server className="w-4 h-4 stroke-[1.5] text-primary" />
-              <span className="font-semibold text-xs text-base-content">Administration</span>
+              <span className="font-medium text-xs text-base-content">Administration</span>
             </div>
             <button
               onClick={() => setIsMobileNavOpen(false)}
-              className="btn btn-ghost btn-circle btn-xs text-base-content/60"
+              className="btn btn-ghost btn-circle btn-sm h-10 w-10 min-h-10 text-base-content/60"
               aria-label="Close navigation"
             >
               <X className="w-4 h-4 stroke-[1.5]" />
@@ -432,7 +432,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setActiveTab('dashboard');
             if (isMobile) setIsMobileNavOpen(false);
           }}
-          className={`w-full flex items-center gap-2.5 px-2.5 h-8 rounded-md text-xs font-normal transition-colors ${
+          className={`w-full flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
             activeTab === 'dashboard'
               ? 'bg-base-200 text-base-content font-medium'
               : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
@@ -447,17 +447,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setActiveTab('domains');
             if (isMobile) setIsMobileNavOpen(false);
           }}
-          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-md text-xs font-normal transition-colors ${
+          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
             activeTab === 'domains'
               ? 'bg-base-200 text-base-content font-medium'
               : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 stroke-[1.5] text-base-content/60" />
             <span>Virtual domains</span>
           </div>
-          <span className="font-mono text-[11px] tabular-nums text-base-content/60">
+          <span className="font-mono text-xs tabular-nums text-base-content/60">
             {domains.length}
           </span>
         </button>
@@ -467,17 +467,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setActiveTab('mailboxes');
             if (isMobile) setIsMobileNavOpen(false);
           }}
-          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-md text-xs font-normal transition-colors ${
+          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
             activeTab === 'mailboxes'
               ? 'bg-base-200 text-base-content font-medium'
               : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Users className="w-4 h-4 stroke-[1.5] text-base-content/60" />
             <span>Mailboxes and quotas</span>
           </div>
-          <span className="font-mono text-[11px] tabular-nums text-base-content/60">
+          <span className="font-mono text-xs tabular-nums text-base-content/60">
             {mailboxes.length}
           </span>
         </button>
@@ -487,17 +487,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setActiveTab('ippools');
             if (isMobile) setIsMobileNavOpen(false);
           }}
-          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-md text-xs font-normal transition-colors ${
+          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
             activeTab === 'ippools'
               ? 'bg-base-200 text-base-content font-medium'
               : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 stroke-[1.5] text-base-content/60" />
             <span>IP pools and warm-up</span>
           </div>
-          <span className="font-mono text-[11px] text-success">Clean</span>
+          <span className="font-mono text-xs text-success">Clean</span>
         </button>
 
         <button
@@ -505,7 +505,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setActiveTab('storage');
             if (isMobile) setIsMobileNavOpen(false);
           }}
-          className={`w-full flex items-center gap-2.5 px-2.5 h-8 rounded-md text-xs font-normal transition-colors ${
+          className={`w-full flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
             activeTab === 'storage'
               ? 'bg-base-200 text-base-content font-medium'
               : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
@@ -520,7 +520,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setActiveTab('system');
             if (isMobile) setIsMobileNavOpen(false);
           }}
-          className={`w-full flex items-center gap-2.5 px-2.5 h-8 rounded-md text-xs font-normal transition-colors ${
+          className={`w-full flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
             activeTab === 'system'
               ? 'bg-base-200 text-base-content font-medium'
               : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
@@ -532,19 +532,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       </div>
 
       {/* Node License & Version */}
-      <div className="p-3 bg-base-200 border border-base-300 rounded-lg text-xs space-y-1 text-base-content/70 mt-4 font-mono tabular-nums">
+      <div className="p-3 bg-base-200 border border-base-300 rounded-xl text-xs space-y-1 text-base-content/70 mt-4 font-mono tabular-nums">
         <div className="flex justify-between font-medium text-base-content">
           <span>AffinMail core</span>
           <span>{healthData?.version ?? '—'}</span>
         </div>
-        <p className="text-[11px] text-base-content/50">Rust Stalwart • PG16 • Redis7</p>
-        <p className={`text-[11px] flex items-center gap-1 ${healthData?.checks.stalwart ? 'text-success' : 'text-error'}`}>
-          <CheckCircle className="w-3 h-3 stroke-[1.5]" />
+        <p className="text-xs text-base-content/50">Rust Stalwart • PG16 • Redis7</p>
+        <p className={`text-xs flex items-center gap-1 ${healthData?.checks.stalwart ? 'text-success' : 'text-error'}`}>
+          <CheckCircle className="w-3.5 h-3.5 stroke-[1.5]" />
           {healthData?.checks.stalwart ? 'Active' : 'Unreachable'}
         </p>
         <button
           onClick={() => logout()}
-          className="btn btn-ghost btn-xs h-7 w-full mt-2 border border-base-300 rounded font-medium"
+          className="btn btn-ghost btn-xs h-8 w-full mt-2 border border-base-300 rounded-lg font-medium"
         >
           Sign out
         </button>
@@ -556,17 +556,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   if (!authed) {
     return (
-      <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content">
+      <div className="flex flex-col h-dvh w-full overflow-hidden bg-base-100 text-base-content">
         <header className="h-14 border-b border-base-300 bg-base-100 px-3 sm:px-4 flex items-center justify-between shrink-0">
           <AffinMailLogo
             variant="admin"
             size="sm"
             tagline="Administration console"
-            withGlow
           />
           <button
             onClick={onToggleTheme}
-            className="btn btn-ghost btn-circle btn-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
+            className="btn btn-ghost btn-circle btn-sm h-10 w-10 min-h-10 text-base-content/70 hover:text-base-content hover:bg-base-200"
             title="Toggle theme"
           >
             {theme === 'light' ? (
@@ -579,7 +578,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         <main className="flex-1 flex items-center justify-center p-4">
           <form
-            className="w-full max-w-sm bg-base-100 border border-base-300 rounded-lg p-5 space-y-4 shadow-sm"
+            className="w-full max-w-sm bg-base-100 border border-base-300 rounded-xl p-5 space-y-4 shadow-sm"
             onSubmit={(e) => {
               e.preventDefault();
               void handleLogin();
@@ -587,7 +586,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           >
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 stroke-[1.5] text-primary" />
-              <h1 className="text-sm font-semibold">Admin sign in</h1>
+              <h1 className="text-sm font-medium">Admin sign in</h1>
             </div>
             <p className="text-xs text-base-content/60">
               Enter the AffinMail admin API token to manage this server.
@@ -603,7 +602,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 autoComplete="off"
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
-                className="input input-bordered input-sm w-full font-mono rounded"
+                className="input input-bordered input-sm w-full font-mono rounded-lg"
                 autoFocus
               />
             </div>
@@ -618,7 +617,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <button
               type="submit"
               disabled={authBusy}
-              className="btn btn-primary btn-sm w-full rounded font-medium"
+              className="btn btn-primary btn-sm w-full rounded-lg font-medium"
             >
               {authBusy ? 'Signing in…' : 'Sign in'}
             </button>
@@ -626,7 +625,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <button
               type="button"
               onClick={onSwitchToWebmail}
-              className="btn btn-ghost btn-xs w-full text-base-content/60"
+              className="btn btn-ghost btn-xs w-full rounded-lg text-base-content/60"
             >
               Back to webmail
             </button>
@@ -643,13 +642,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const healthyCount = checks ? [checks.postgres, checks.redis, checks.stalwart].filter(Boolean).length : 0;
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content select-none">
+    <div className="flex flex-col h-dvh w-full overflow-hidden bg-base-100 text-base-content select-none">
       {/* 1. Admin Panel Master Header */}
-      <header className="h-14 border-b border-base-300 bg-base-100 px-3 sm:px-4 flex items-center justify-between shrink-0 gap-2">
-        <div className="flex items-center gap-2.5 shrink-0">
+      <header className="h-14 border-b border-base-300 bg-base-100 px-2 sm:px-4 flex items-center justify-between shrink-0 gap-1 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink min-w-0 overflow-hidden">
           <button
             onClick={() => setIsMobileNavOpen((prev) => !prev)}
-            className="btn btn-ghost btn-circle btn-sm md:hidden text-base-content/70 hover:bg-base-200"
+            className="btn btn-ghost btn-circle btn-sm h-10 w-10 min-h-10 md:hidden text-base-content/70 hover:bg-base-200"
             title="Toggle admin menu"
             aria-label="Toggle navigation menu"
           >
@@ -658,8 +657,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <AffinMailLogo
             variant="admin"
             size="sm"
-            tagline="mail.hostaffin.com (Rust Stalwart)"
-            withGlow
+            tagline="mail.hostaffin.com"
           />
         </div>
 
@@ -671,13 +669,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
           <div className="flex items-center gap-1.5">
             <Activity className="w-3.5 h-3.5 stroke-[1.5] text-base-content/40" />
-            <span>Services {healthyCount} / 3</span>
+            <span>{healthyCount} of 3 services up</span>
           </div>
           <div className="flex items-center gap-1.5">
             <ShieldCheck
               className={`w-3.5 h-3.5 stroke-[1.5] ${healthyCount === 3 ? 'text-success' : 'text-warning'}`}
             />
-            <span>{healthyCount === 3 ? 'All systems nominal' : 'Degraded'}</span>
+            <span>{healthyCount === 3 ? 'Healthy' : 'Degraded'}</span>
           </div>
         </div>
 
@@ -685,14 +683,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => void loadData()}
-            className="btn btn-ghost btn-circle btn-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
+            className="btn btn-ghost btn-circle btn-sm h-10 w-10 min-h-10 hidden sm:inline-flex text-base-content/70 hover:text-base-content hover:bg-base-200"
             title="Refresh"
           >
             <RotateCw className={`w-4 h-4 stroke-[1.5] ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={onToggleTheme}
-            className="btn btn-ghost btn-circle btn-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
+            className="btn btn-ghost btn-circle btn-sm h-10 w-10 min-h-10 text-base-content/70 hover:text-base-content hover:bg-base-200"
             title="Toggle theme"
           >
             {theme === 'light' ? (
@@ -705,17 +703,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* Switcher to Port 2083 Client Webmail */}
           <button
             onClick={onSwitchToWebmail}
-            className="btn btn-ghost btn-xs h-8 px-2.5 gap-1.5 font-medium text-xs border border-base-300 rounded-md hover:bg-base-200"
+            className="btn btn-ghost btn-xs h-8 px-2.5 gap-1.5 font-medium text-xs border border-base-300 rounded-lg hover:bg-base-200"
           >
-            <span>Webmail</span>
-            <span className="hidden md:inline font-mono text-[10px] text-base-content/50">:2083</span>
+            <span className="hidden sm:inline">Webmail</span>
+            <span className="hidden lg:inline font-mono text-xs text-base-content/50">:2083</span>
             <ArrowRight className="w-3.5 h-3.5 stroke-[1.5]" />
           </button>
         </div>
       </header>
 
       {/* 2. Main Admin Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Desktop Left Navigation Sidebar */}
         <aside className="hidden md:flex w-60 border-r border-base-300 bg-base-100 flex-col justify-between p-3 shrink-0">
           {renderSidebarContent(false)}
@@ -725,17 +723,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {isMobileNavOpen && (
           <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true">
             <div
-              className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+              className="fixed inset-0 bg-black/40 transition-opacity"
               onClick={() => setIsMobileNavOpen(false)}
             />
-            <aside className="relative w-64 max-w-[85vw] bg-base-100 h-full shadow-xl p-3 z-10 flex flex-col justify-between overflow-y-auto">
+            <aside className="relative w-[min(320px,85vw)] bg-base-100 h-full max-h-dvh shadow-gmail-modal p-3 z-10 flex flex-col justify-between overflow-y-auto">
               {renderSidebarContent(true)}
             </aside>
           </div>
         )}
 
         {/* Central Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-base-100">
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 space-y-6 bg-base-100">
           {loading && (
             <div className="flex items-center gap-2 text-xs text-base-content/60 font-mono">
               <RotateCw className="w-3.5 h-3.5 animate-spin" />
@@ -747,7 +745,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {activeTab === 'dashboard' && (
             <div className="space-y-6 max-w-6xl">
               <div>
-                <h1 className="text-lg font-semibold tracking-tight text-base-content">Cluster overview</h1>
+                <h1 className="text-lg font-medium text-base-content">Cluster overview</h1>
                 <p className="text-xs text-base-content/60 mt-0.5">
                   Virtual domains, multi-IP routing, storage, and mailboxes.
                 </p>
@@ -755,75 +753,75 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* Stat Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-base-200 border border-base-300 p-3.5 rounded-lg space-y-1">
+                <div className="bg-base-200 border border-base-300 p-4 rounded-xl space-y-1">
                   <div className="flex justify-between items-center text-xs font-normal text-base-content/60">
                     <span>Virtual domains</span>
                     <Globe className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
                   <div className="text-xl font-medium font-mono tabular-nums text-base-content">{domains.length}</div>
-                  <span className="text-[11px] text-base-content/50 font-mono">
+                  <span className="text-xs text-base-content/50 font-mono">
                     {domains.filter((d) => d.dkimStatus === 'active').length} DKIM signed
                   </span>
                 </div>
 
-                <div className="bg-base-200 border border-base-300 p-3.5 rounded-lg space-y-1">
+                <div className="bg-base-200 border border-base-300 p-4 rounded-xl space-y-1">
                   <div className="flex justify-between items-center text-xs font-normal text-base-content/60">
                     <span>Mailboxes</span>
                     <Users className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
                   <div className="text-xl font-medium font-mono tabular-nums text-base-content">{mailboxes.length}</div>
-                  <span className="text-[11px] text-base-content/50 font-mono">
+                  <span className="text-xs text-base-content/50 font-mono">
                     {mailboxes.filter((m) => m.status === 'active').length} active
                   </span>
                 </div>
 
-                <div className="bg-base-200 border border-base-300 p-3.5 rounded-lg space-y-1">
+                <div className="bg-base-200 border border-base-300 p-4 rounded-xl space-y-1">
                   <div className="flex justify-between items-center text-xs font-normal text-base-content/60">
                     <span>Cluster storage</span>
                     <HardDrive className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
                   <div className="text-xl font-medium font-mono tabular-nums text-base-content">{storageUsed}</div>
-                  <span className="text-[11px] text-base-content/50 font-mono">
-                    Engine: {(storage?.storage_type ?? '—').toUpperCase()}
+                  <span className="text-xs text-base-content/50 font-mono">
+                    Engine: {storage?.storage_type ?? '—'}
                   </span>
                 </div>
 
-                <div className="bg-base-200 border border-base-300 p-3.5 rounded-lg space-y-1">
+                <div className="bg-base-200 border border-base-300 p-4 rounded-xl space-y-1">
                   <div className="flex justify-between items-center text-xs font-normal text-base-content/60">
                     <span>Service health</span>
                     <ShieldCheck className="w-4 h-4 stroke-[1.5] text-base-content/40" />
                   </div>
                   <div className="text-xl font-medium font-mono tabular-nums text-base-content">{healthyCount} / 3</div>
-                  <span className={`text-[11px] font-mono ${healthyCount === 3 ? 'text-success' : 'text-error'}`}>
+                  <span className={`text-xs font-mono ${healthyCount === 3 ? 'text-success' : 'text-error'}`}>
                     {healthyCount === 3 ? 'All services up' : 'Service degraded'}
                   </span>
                 </div>
               </div>
 
               {/* Quick Actions Bar */}
-              <div className="bg-base-200 border border-base-300 p-4 rounded-lg flex flex-wrap items-center justify-between gap-3">
+              <div className="bg-base-200 border border-base-300 p-4 rounded-xl flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-0.5">
-                  <h3 className="text-xs font-semibold text-base-content">Management actions</h3>
+                  <h3 className="text-xs font-medium text-base-content">Management actions</h3>
                   <p className="text-xs text-base-content/50">Provisioning and cluster commands</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setShowAddDomainModal(true)}
-                    className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded"
+                    className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded-lg"
                   >
                     <Plus className="w-3.5 h-3.5 stroke-[1.5]" />
                     <span>Add virtual domain</span>
                   </button>
                   <button
                     onClick={() => setShowAddMailboxModal(true)}
-                    className="btn btn-ghost btn-xs px-3 h-8 border border-base-300 gap-1.5 font-medium rounded hover:bg-base-100"
+                    className="btn btn-ghost btn-xs px-3 h-8 border border-base-300 gap-1.5 font-medium rounded-lg hover:bg-base-100"
                   >
                     <Plus className="w-3.5 h-3.5 stroke-[1.5]" />
                     <span>Create mailbox</span>
                   </button>
                   <button
                     onClick={() => void loadData()}
-                    className="btn btn-ghost btn-xs px-3 h-8 border border-base-300 gap-1.5 font-medium rounded hover:bg-base-100"
+                    className="btn btn-ghost btn-xs px-3 h-8 border border-base-300 gap-1.5 font-medium rounded-lg hover:bg-base-100"
                   >
                     <RotateCw className="w-3.5 h-3.5 stroke-[1.5]" />
                     <span>Refresh stats</span>
@@ -832,24 +830,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {/* Cluster Ports Reference */}
-              <div className="bg-base-200 border border-base-300 p-4 rounded-lg space-y-3">
-                <h3 className="text-xs font-semibold text-base-content">Cluster protocols and ports</h3>
-                <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono tabular-nums">
-                  <div className="p-3 bg-base-100 rounded-md border border-base-300">
+              <div className="bg-base-200 border border-base-300 p-4 rounded-xl space-y-3">
+                <h3 className="text-xs font-medium text-base-content">Cluster protocols and ports</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono tabular-nums">
+                  <div className="p-3 bg-base-100 rounded-lg border border-base-300">
                     <span className="text-base-content font-medium block">Port 2087</span>
-                    <span className="text-[11px] text-base-content/60">Admin console</span>
+                    <span className="text-xs text-base-content/60">Admin console</span>
                   </div>
-                  <div className="p-3 bg-base-100 rounded-md border border-base-300">
+                  <div className="p-3 bg-base-100 rounded-lg border border-base-300">
                     <span className="text-base-content font-medium block">Port 2083 / 443</span>
-                    <span className="text-[11px] text-base-content/60">Client webmail</span>
+                    <span className="text-xs text-base-content/60">Client webmail</span>
                   </div>
-                  <div className="p-3 bg-base-100 rounded-md border border-base-300">
+                  <div className="p-3 bg-base-100 rounded-lg border border-base-300">
                     <span className="text-base-content font-medium block">Port 25, 465, 587</span>
-                    <span className="text-[11px] text-base-content/60">SMTP submission</span>
+                    <span className="text-xs text-base-content/60">SMTP submission</span>
                   </div>
-                  <div className="p-3 bg-base-100 rounded-md border border-base-300">
+                  <div className="p-3 bg-base-100 rounded-lg border border-base-300">
                     <span className="text-base-content font-medium block">Port 993, 4190</span>
-                    <span className="text-[11px] text-base-content/60">IMAP and Sieve</span>
+                    <span className="text-xs text-base-content/60">IMAP and Sieve</span>
                   </div>
                 </div>
               </div>
@@ -861,19 +859,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="space-y-6 max-w-6xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold tracking-tight text-base-content">Virtual domains</h2>
+                  <h2 className="text-base font-medium text-base-content">Virtual domains</h2>
                   <p className="text-xs text-base-content/60">DKIM keys, quotas, and dedicated egress IPs</p>
                 </div>
                 <button
                   onClick={() => setShowAddDomainModal(true)}
-                  className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded self-start sm:self-auto"
+                  className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded-lg self-start sm:self-auto"
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[1.5]" />
                   <span>Add virtual domain</span>
                 </button>
               </div>
 
-              <div className="bg-base-100 border border-base-300 rounded-lg overflow-hidden">
+              <div className="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
                 <div className="overflow-x-auto w-full">
                   <table className="table table-sm w-full text-xs min-w-[600px]">
                     <thead className="bg-base-200/60 text-base-content/60 font-medium">
@@ -896,7 +894,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </td>
                           <td>
                             <span
-                              className="px-1.5 py-0.5 rounded text-[11px] font-mono tabular-nums bg-base-200 border border-base-300 text-base-content/80"
+                              className="px-1.5 py-0.5 rounded bg-base-200 border border-base-300 text-xs font-mono tabular-nums text-base-content/80"
                             >
                               {dom.assignedIp
                                 ? `${dom.ipType === 'dedicated' ? 'Dedicated' : 'Shared'} (${dom.assignedIp})`
@@ -911,19 +909,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <td className="text-right space-x-1">
                             <button
                               onClick={() => setSelectedDnsDomain(dom.name)}
-                              className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded"
+                              className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded-lg"
                             >
                               View DNS
                             </button>
                             <button
                               onClick={() => void handleAssignIp(dom.name)}
-                              className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded"
+                              className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded-lg"
                             >
                               Assign IP
                             </button>
                             <button
                               onClick={() => void handleDeleteDomain(dom.name)}
-                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded"
+                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded-lg"
                             >
                               Delete
                             </button>
@@ -949,19 +947,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="space-y-6 max-w-6xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold tracking-tight text-base-content">Mailbox accounts</h2>
+                  <h2 className="text-base font-medium text-base-content">Mailbox accounts</h2>
                   <p className="text-xs text-base-content/60">Accounts, storage quotas, and outbound routing</p>
                 </div>
                 <button
                   onClick={() => setShowAddMailboxModal(true)}
-                  className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded self-start sm:self-auto"
+                  className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded-lg self-start sm:self-auto"
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[1.5]" />
                   <span>Create mailbox</span>
                 </button>
               </div>
 
-              <div className="bg-base-100 border border-base-300 rounded-lg overflow-hidden">
+              <div className="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
                 <div className="overflow-x-auto w-full">
                   <table className="table table-sm w-full text-xs min-w-[620px]">
                     <thead className="bg-base-200/60 text-base-content/60 font-medium">
@@ -983,7 +981,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <span>{mb.used}</span> / {mb.quota}
                           </td>
                           <td>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase bg-base-200 border border-base-300 text-base-content/70">
+                            <span className="px-1.5 py-0.5 rounded text-xs font-mono bg-base-200 border border-base-300 text-base-content/70">
                               {mb.route}
                             </span>
                           </td>
@@ -996,13 +994,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <td className="text-right space-x-1">
                             <button
                               onClick={() => void handleToggleMailboxStatus(mb)}
-                              className="btn btn-ghost btn-xs font-medium text-base-content/70 hover:text-base-content rounded"
+                              className="btn btn-ghost btn-xs font-medium text-base-content/70 hover:text-base-content rounded-lg-lg"
                             >
                               {mb.status === 'active' ? 'Suspend' : 'Unsuspend'}
                             </button>
                             <button
                               onClick={() => void handleDeleteMailbox(mb)}
-                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded"
+                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded-lg"
                             >
                               Delete
                             </button>
@@ -1028,12 +1026,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="space-y-6 max-w-6xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold tracking-tight text-base-content">IP pools and egress routing</h2>
+                  <h2 className="text-base font-medium text-base-content">IP pools and egress routing</h2>
                   <p className="text-xs text-base-content/60">Dedicated and shared outbound IP addresses</p>
                 </div>
                 <button
                   onClick={() => setShowAddIpModal(true)}
-                  className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded self-start sm:self-auto"
+                  className="btn btn-primary btn-xs px-3 h-8 gap-1.5 font-medium rounded-lg self-start sm:self-auto"
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[1.5]" />
                   <span>Bind new outbound IP</span>
@@ -1042,13 +1040,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {ipPools.map((pool) => (
-                  <div key={pool.id} className="bg-base-200 border border-base-300 p-4 rounded-lg space-y-3">
+                  <div key={pool.id} className="bg-base-200 border border-base-300 p-4 rounded-xl space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="font-mono text-sm font-medium text-base-content tabular-nums">{pool.ip}</span>
                         <p className="text-xs text-base-content/50 font-mono mt-0.5">rDNS: {pool.rdns}</p>
                       </div>
-                      <span className="px-1.5 py-0.5 rounded text-[11px] font-mono capitalize bg-base-100 border border-base-300 text-base-content/80">
+                      <span className="px-1.5 py-0.5 rounded bg-base-100 border border-base-300 text-xs font-mono text-base-content/80">
                         {pool.type}
                       </span>
                     </div>
@@ -1084,14 +1082,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {activeTab === 'storage' && (
             <div className="space-y-6 max-w-4xl">
               <div>
-                <h2 className="text-base font-semibold tracking-tight text-base-content">Storage engine</h2>
+                <h2 className="text-base font-medium text-base-content">Storage engine</h2>
                 <p className="text-xs text-base-content/60">Live blob storage status reported by the admin API.</p>
               </div>
 
-              <div className="bg-base-100 border border-base-300 p-4 rounded-lg space-y-3 text-xs">
+              <div className="bg-base-100 border border-base-300 p-4 rounded-xl space-y-3 text-xs">
                 <div className="flex justify-between items-center border-b border-base-300 pb-2">
                   <span className="text-base-content/60">Backend</span>
-                  <span className="font-mono uppercase text-base-content">
+                  <span className="font-mono text-base-content">
                     {storage?.storage_type ?? '—'}
                   </span>
                 </div>
@@ -1134,16 +1132,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {activeTab === 'system' && (
             <div className="space-y-6 max-w-4xl">
               <div>
-                <h2 className="text-base font-semibold tracking-tight text-base-content">System controls and backup</h2>
+                <h2 className="text-base font-medium text-base-content">System controls and backup</h2>
                 <p className="text-xs text-base-content/60">Cluster service orchestration and maintenance</p>
               </div>
 
-              <div className="bg-base-100 border border-base-300 p-4 rounded-lg space-y-3">
-                <h3 className="text-xs font-semibold text-base-content">Cluster operations</h3>
+              <div className="bg-base-100 border border-base-300 p-4 rounded-xl space-y-3">
+                <h3 className="text-xs font-medium text-base-content">Cluster operations</h3>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => void handleBackup()}
-                    className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded font-medium gap-1.5"
+                    className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded-lg font-medium gap-1.5"
                   >
                     <Database className="w-3.5 h-3.5 stroke-[1.5] text-base-content/60" />
                     <span>Create database backup</span>
@@ -1151,7 +1149,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                   <button
                     onClick={() => void handleRestart()}
-                    className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded font-medium gap-1.5"
+                    className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded-lg font-medium gap-1.5"
                   >
                     <RotateCw className="w-3.5 h-3.5 stroke-[1.5] text-base-content/60" />
                     <span>Restart mail service</span>
@@ -1159,7 +1157,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
-              <div className="bg-base-200 border border-base-300 p-4 rounded-lg font-mono text-xs space-y-2 tabular-nums">
+              <div className="bg-base-200 border border-base-300 p-4 rounded-xl font-mono text-xs space-y-2 tabular-nums">
                 <div className="flex justify-between items-center text-base-content/50 border-b border-base-300 pb-2">
                   <span>Service checks</span>
                   <span>{healthyCount} / 3 healthy</span>
@@ -1174,7 +1172,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 ))}
               </div>
 
-              <div className="bg-base-200 border border-base-300 p-4 rounded-lg font-mono text-xs space-y-2 tabular-nums">
+              <div className="bg-base-200 border border-base-300 p-4 rounded-xl font-mono text-xs space-y-2 tabular-nums">
                 <div className="flex justify-between items-center text-base-content/50 border-b border-base-300 pb-2">
                   <span>CLI management</span>
                   <span>/usr/local/bin/affinmail</span>
@@ -1193,8 +1191,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* ===================== MODAL: ADD VIRTUAL DOMAIN ===================== */}
       {showAddDomainModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-5 rounded-lg shadow-xl space-y-4">
-            <h3 className="text-sm font-semibold text-base-content">Add virtual domain</h3>
+          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">
+            <h3 className="text-sm font-medium text-base-content">Add virtual domain</h3>
             <div className="space-y-3 text-xs">
               <div>
                 <label className="text-xs text-base-content/70 mb-1 block">Domain name</label>
@@ -1203,7 +1201,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   placeholder="e.g. acme-corp.com"
                   value={newDomainName}
                   onChange={(e) => setNewDomainName(e.target.value)}
-                  className="input input-bordered input-xs h-8 w-full font-mono rounded"
+                  className="input input-bordered input-xs h-8 w-full font-mono rounded-lg"
                   autoFocus
                 />
               </div>
@@ -1213,7 +1211,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <select
                   value={newDomainIp}
                   onChange={(e) => setNewDomainIp(e.target.value)}
-                  className="select select-bordered select-xs h-8 w-full font-mono rounded"
+                  className="select select-bordered select-xs h-8 w-full font-mono rounded-lg"
                 >
                   <option value="">No assignment</option>
                   {ipPools.map((p) => (
@@ -1226,7 +1224,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
-              <button onClick={() => setShowAddDomainModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded font-medium">
+              <button onClick={() => setShowAddDomainModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded-lg font-medium">
                 Cancel
               </button>
               <button onClick={() => void handleCreateDomain()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
@@ -1240,8 +1238,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* ===================== MODAL: CREATE MAILBOX ===================== */}
       {showAddMailboxModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-5 rounded-lg shadow-xl space-y-4">
-            <h3 className="text-sm font-semibold text-base-content">Create mailbox</h3>
+          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">
+            <h3 className="text-sm font-medium text-base-content">Create mailbox</h3>
             <div className="space-y-3 text-xs">
               <div>
                 <label className="text-xs text-base-content/70 mb-1 block">Username</label>
@@ -1250,7 +1248,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   placeholder="e.g. john"
                   value={newMailboxUser}
                   onChange={(e) => setNewMailboxUser(e.target.value)}
-                  className="input input-bordered input-xs h-8 w-full font-mono rounded"
+                  className="input input-bordered input-xs h-8 w-full font-mono rounded-lg"
                   autoFocus
                 />
               </div>
@@ -1260,7 +1258,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <select
                   value={newMailboxDomain}
                   onChange={(e) => setNewMailboxDomain(e.target.value)}
-                  className="select select-bordered select-xs h-8 w-full font-mono rounded"
+                  className="select select-bordered select-xs h-8 w-full font-mono rounded-lg"
                 >
                   {domains.map((d) => (
                     <option key={d.id} value={d.name}>
@@ -1277,7 +1275,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   placeholder="Password"
                   value={newMailboxPass}
                   onChange={(e) => setNewMailboxPass(e.target.value)}
-                  className="input input-bordered input-xs h-8 w-full rounded"
+                  className="input input-bordered input-xs h-8 w-full rounded-lg"
                 />
               </div>
 
@@ -1293,7 +1291,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
-              <button onClick={() => setShowAddMailboxModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded font-medium">
+              <button onClick={() => setShowAddMailboxModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded-lg font-medium">
                 Cancel
               </button>
               <button onClick={() => void handleCreateMailbox()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
@@ -1307,8 +1305,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* ===================== MODAL: BIND OUTBOUND IP ===================== */}
       {showAddIpModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-5 rounded-lg shadow-xl space-y-4">
-            <h3 className="text-sm font-semibold text-base-content">Bind new outbound IP</h3>
+          <div className="bg-base-100 border border-base-300 w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">
+            <h3 className="text-sm font-medium text-base-content">Bind new outbound IP</h3>
             <div className="space-y-3 text-xs">
               <div>
                 <label className="text-xs text-base-content/70 mb-1 block">IP address</label>
@@ -1317,7 +1315,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   placeholder="e.g. 195.201.10.103"
                   value={newIpAddress}
                   onChange={(e) => setNewIpAddress(e.target.value)}
-                  className="input input-bordered input-xs h-8 w-full font-mono rounded"
+                  className="input input-bordered input-xs h-8 w-full font-mono rounded-lg"
                   autoFocus
                 />
               </div>
@@ -1328,7 +1326,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   placeholder="e.g. mail3.hostaffin.com"
                   value={newIpRdns}
                   onChange={(e) => setNewIpRdns(e.target.value)}
-                  className="input input-bordered input-xs h-8 w-full font-mono rounded"
+                  className="input input-bordered input-xs h-8 w-full font-mono rounded-lg"
                 />
               </div>
               <div>
@@ -1336,7 +1334,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <select
                   value={newIpType}
                   onChange={(e) => setNewIpType(e.target.value as 'shared' | 'dedicated')}
-                  className="select select-bordered select-xs h-8 w-full font-mono rounded"
+                  className="select select-bordered select-xs h-8 w-full font-mono rounded-lg"
                 >
                   <option value="shared">Shared</option>
                   <option value="dedicated">Dedicated</option>
@@ -1345,7 +1343,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
-              <button onClick={() => setShowAddIpModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded font-medium">
+              <button onClick={() => setShowAddIpModal(false)} className="btn btn-ghost btn-xs h-8 px-3 rounded-lg font-medium">
                 Cancel
               </button>
               <button onClick={() => void handleCreateIpPool()} className="btn btn-primary btn-xs h-8 px-3 rounded font-medium">
@@ -1359,11 +1357,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* ===================== MODAL: DNS RECORDS & DKIM ===================== */}
       {selectedDnsDomain && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-base-100 border border-base-300 w-full max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-5 rounded-lg shadow-xl space-y-4">
+          <div className="bg-base-100 border border-base-300 w-full max-w-2xl max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-semibold text-base-content">DNS records for {selectedDnsDomain}</h3>
-              <button onClick={() => setSelectedDnsDomain(null)} className="btn btn-ghost btn-circle btn-xs text-base-content/60">
-                ✕
+              <h3 className="text-sm font-medium text-base-content">DNS records for {selectedDnsDomain}</h3>
+              <button
+                onClick={() => setSelectedDnsDomain(null)}
+                className="btn btn-ghost btn-circle btn-sm h-10 w-10 min-h-10 text-base-content/60"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4 stroke-[1.5]" />
               </button>
             </div>
 
@@ -1388,7 +1390,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     dnsRecords.map((rec, i) => (
                       <tr key={`${rec.type}-${rec.name}-${i}`}>
                         <td>
-                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-base-200 border border-base-300">
+                          <span className="px-1.5 py-0.5 rounded bg-base-200 border border-base-300 text-xs">
                             {rec.type}
                           </span>
                         </td>
@@ -1410,7 +1412,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <div className="flex justify-end">
-              <button onClick={() => setSelectedDnsDomain(null)} className="btn btn-ghost btn-xs h-8 px-4 border border-base-300 rounded font-medium">
+              <button onClick={() => setSelectedDnsDomain(null)} className="btn btn-ghost btn-xs h-8 px-4 border border-base-300 rounded-lg font-medium">
                 Close
               </button>
             </div>
