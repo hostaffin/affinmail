@@ -38,6 +38,33 @@ export const AffinMailIcon: React.FC<{
   const idClipA = `clipA-${uniqueId}`;
   const idClipFlap = `clipFlap-${uniqueId}`;
 
+  // Small sizes (<=40px: header, lists): simplified mark — solid fills, no dark
+  // cavity, no filters or hairlines — so the envelope flap stays legible.
+  if (size <= 40 && !withTile) {
+    return (
+      <div
+        className={`relative inline-flex items-center justify-center shrink-0 dark:rounded-[22%] dark:bg-white/95 dark:shadow-sm ${className}`}
+        style={{ width: size, height: size }}
+      >
+        <svg
+          viewBox="147 124 960 960"
+          width={size}
+          height={size}
+          role="img"
+          aria-label="AffinMail Logo"
+          className="w-full h-full select-none"
+        >
+          <path d="M743 352 Q723 318 688 318 H600 V422 L694 578 H880 Z" fill="#0553E8" />
+          <path d="M513 352 Q533 318 568 318 H690 Q719 318 706 339 L562 578 H376 Z" fill="#0A78FF" />
+          <rect x="400" y="578" width="456" height="238" fill="#0B57D0" />
+          <path d="M376 578 L188 890 H330 C378 890 400 862 412 826 L562 578 Z" fill="#0653F2" />
+          <path d="M880 578 L1068 890 H926 C878 890 856 862 844 826 L694 578 Z" fill="#0A78FF" />
+          <path d="M376 578 H880 L670 714 Q628 742 586 714 Z" fill="#FFFFFF" />
+        </svg>
+      </div>
+    );
+  }
+
   // One accent, two neutral steps. No gradients, no filters, no glow.
   const accent = 'fill-[#0B57D0] dark:fill-[#A8C7FA]';
   const accentDeep = 'fill-[#0842A0] dark:fill-[#0B57D0]';
