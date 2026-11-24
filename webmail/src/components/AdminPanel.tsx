@@ -161,51 +161,60 @@ function isAuthError(e: unknown): boolean {
 }
 
 /* ---------------------------------------------------------- shared bits */
-/* WHM visual system: flat bordered panels, 1px gray rules, small radii,
-   13px data text, compact 28-32px controls. No shadows, no pastel fills. */
+/* AffinMail Console — fully custom visual system (Lily, 2026-11-24).
+   Ink sidebar, paper content, hairline borders, tinted status pills,
+   9-10px radii, soft single-layer shadows on surfaces only. No DaisyUI
+   component classes, no WHM chrome. */
 
-const PANEL = 'border border-gray-300 bg-white dark:border-[#374151] dark:bg-[#111827]';
+const PANEL =
+  'rounded-2xl border border-[#E4E7EC] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] dark:border-[#22304A] dark:bg-[#101828]';
 const PANEL_HD =
-  'flex flex-wrap items-center justify-between gap-2 border-b border-gray-300 bg-gray-100 px-3 py-1.5 min-h-9 dark:border-[#374151] dark:bg-[#0f172a]';
+  'flex flex-wrap items-center justify-between gap-2 border-b border-[#EEF1F5] px-5 py-3.5 dark:border-[#1B2740]';
 const INPUT =
-  'h-8 w-full rounded border border-gray-300 bg-white px-2 text-[13px] text-gray-900 placeholder:text-gray-400 focus:border-[#0B57D0] focus:outline-none focus:ring-1 focus:ring-[#0B57D0] dark:border-[#4b5563] dark:bg-[#0f172a] dark:text-gray-100 dark:placeholder:text-gray-500';
-const LABEL = 'block text-[12px] font-semibold text-gray-700 dark:text-gray-300 mb-1';
-const MUTED = 'text-gray-500 dark:text-gray-400';
+  'h-10 w-full rounded-[10px] border border-[#D0D5DD] bg-white px-3 text-[13.5px] text-[#101828] placeholder:text-[#98A2B3] transition focus:border-[#0B57D0] focus:outline-none focus:ring-4 focus:ring-[#0B57D0]/10 dark:border-[#2A3A57] dark:bg-[#0D1526] dark:text-[#E6EAF2] dark:placeholder:text-[#5B6B82]';
+const LABEL = 'block text-[12.5px] font-medium text-[#344054] dark:text-[#C4CEDD] mb-1.5';
+const MUTED = 'text-[#667085] dark:text-[#8A94A6]';
 
 type BtnVariant = 'primary' | 'outline' | 'ghost' | 'danger';
 const BTN: Record<BtnVariant, string> = {
-  primary: 'bg-[#0B57D0] hover:bg-[#0842A0] text-white border-[#0B57D0]',
+  primary:
+    'bg-[#0B57D0] hover:bg-[#0A4DB8] text-white border-transparent shadow-[0_1px_2px_rgba(11,87,208,0.35)]',
   outline:
-    'bg-white hover:bg-gray-50 text-gray-700 border-gray-300 dark:bg-[#111827] dark:hover:bg-[#1f2937] dark:text-gray-200 dark:border-[#4b5563]',
+    'bg-white hover:bg-[#F8FAFC] text-[#344054] border-[#D0D5DD] dark:bg-[#101828] dark:hover:bg-[#16223C] dark:text-[#D7DEE9] dark:border-[#2A3A57]',
   ghost:
-    'bg-transparent hover:bg-gray-100 text-gray-600 border-transparent dark:hover:bg-[#1f2937] dark:text-gray-300',
+    'bg-transparent hover:bg-[#F2F4F7] text-[#475467] border-transparent dark:hover:bg-white/5 dark:text-[#A7B2C5]',
   danger:
-    'bg-transparent hover:bg-red-50 text-red-700 border-transparent dark:hover:bg-red-950/40 dark:text-red-400',
+    'bg-transparent hover:bg-[#FEF3F2] text-[#D92D20] border-transparent dark:hover:bg-[#D92D20]/10 dark:text-[#F97066]',
 };
 const btn = (variant: BtnVariant = 'outline', size: 'sm' | 'xs' = 'sm'): string =>
-  `inline-flex items-center justify-center gap-1.5 rounded border font-medium whitespace-nowrap disabled:opacity-50 disabled:pointer-events-none ${
-    size === 'sm' ? 'h-7 px-2.5 text-[12px]' : 'h-6 px-2 text-[12px]'
+  `inline-flex items-center justify-center gap-1.5 rounded-[9px] border font-medium whitespace-nowrap transition disabled:opacity-50 disabled:pointer-events-none ${
+    size === 'sm' ? 'h-9 px-3.5 text-[13px]' : 'h-7 px-2.5 text-[12px] rounded-[7px]'
   } ${BTN[variant]}`;
 const btnIcon = (variant: BtnVariant = 'ghost'): string =>
-  `inline-flex items-center justify-center h-6 w-6 rounded border shrink-0 disabled:opacity-50 ${BTN[variant]}`;
+  `inline-flex items-center justify-center h-8 w-8 rounded-[8px] border shrink-0 transition disabled:opacity-50 ${BTN[variant]}`;
 
-const BADGE = 'inline-flex items-center gap-1 rounded-sm border px-1.5 h-5 text-[11px] font-medium';
-const BADGE_OK = `${BADGE} border-green-300 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300`;
-const BADGE_WARN = `${BADGE} border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300`;
-const BADGE_BAD = `${BADGE} border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300`;
-const BADGE_NEUTRAL = `${BADGE} border-gray-300 bg-gray-100 text-gray-700 dark:border-[#4b5563] dark:bg-[#1f2937] dark:text-gray-300`;
+const BADGE =
+  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold leading-none whitespace-nowrap';
+const BADGE_OK = `${BADGE} bg-[#ECFDF3] text-[#067647] dark:bg-[#067647]/15 dark:text-[#32D583]`;
+const BADGE_WARN = `${BADGE} bg-[#FFFAEB] text-[#B54708] dark:bg-[#B54708]/15 dark:text-[#FDB022]`;
+const BADGE_BAD = `${BADGE} bg-[#FEF3F2] text-[#B42318] dark:bg-[#B42318]/15 dark:text-[#F97066]`;
+const BADGE_NEUTRAL = `${BADGE} bg-[#F2F4F7] text-[#475467] dark:bg-white/5 dark:text-[#A7B2C5]`;
+const NAVCOUNT =
+  'inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-white/10 px-1.5 text-[11px] font-semibold text-[#C4CEDD] tabular-nums';
+const NAVCOUNT_WARN =
+  'inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-[#FDB022]/20 px-1.5 text-[11px] font-semibold text-[#FDB022] tabular-nums';
 
 const PageHeader: React.FC<{
   title: string;
   description?: string;
   actions?: React.ReactNode;
 }> = ({ title, description, actions }) => (
-  <div className="flex flex-col gap-2 border-b border-gray-300 pb-2 sm:flex-row sm:items-end sm:justify-between dark:border-[#374151]">
+  <div className="flex flex-col gap-3 pb-1 sm:flex-row sm:items-center sm:justify-between">
     <div className="min-w-0">
-      <h1 className="text-[20px] font-semibold leading-tight text-gray-900 dark:text-gray-100">{title}</h1>
-      {description && <p className={`text-[12px] mt-0.5 ${MUTED}`}>{description}</p>}
+      <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.01em] text-[#101828] dark:text-white">{title}</h1>
+      {description && <p className={`text-[13px] mt-1 ${MUTED}`}>{description}</p>}
     </div>
-    {actions && <div className="flex flex-wrap items-center gap-1.5 shrink-0">{actions}</div>}
+    {actions && <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
   </div>
 );
 
@@ -214,9 +223,7 @@ const SectionTitle: React.FC<{ children: React.ReactNode; actions?: React.ReactN
   actions,
 }) => (
   <div className={PANEL_HD}>
-    <h2 className="text-[12px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
-      {children}
-    </h2>
+    <h2 className="text-[13px] font-semibold text-[#101828] dark:text-[#E6EAF2]">{children}</h2>
     {actions}
   </div>
 );
@@ -226,19 +233,21 @@ const EmptyState: React.FC<{
   title: string;
   description?: string;
 }> = ({ icon, title, description }) => (
-  <div className={`flex flex-col items-center justify-center gap-1.5 px-4 py-8 text-center ${MUTED}`}>
-    <span className="text-gray-400 dark:text-gray-500">{icon}</span>
-    <p className="text-[13px] font-medium text-gray-700 dark:text-gray-200">{title}</p>
-    {description && <p className="text-[12px] max-w-sm">{description}</p>}
+  <div className={`flex flex-col items-center justify-center gap-2 px-4 py-12 text-center ${MUTED}`}>
+    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F2F4F7] text-[#98A2B3] dark:bg-white/5 dark:text-[#5B6B82]">
+      {icon}
+    </span>
+    <p className="text-[13.5px] font-medium text-[#344054] dark:text-[#D7DEE9]">{title}</p>
+    {description && <p className="text-[12.5px] max-w-sm">{description}</p>}
   </div>
 );
 
 const SkeletonRows: React.FC<{ cols: number; rows?: number }> = ({ cols, rows = 6 }) => (
   <>
     {Array.from({ length: rows }).map((_, r) => (
-      <tr key={r} className="border-t border-gray-200 dark:border-[#374151]">
-        <td colSpan={cols} className="px-3 py-2">
-          <div className="h-3 w-full animate-pulse rounded-sm bg-gray-200 dark:bg-[#1f2937]" />
+      <tr key={r} className="border-t border-[#EEF1F5] dark:border-[#1B2740]">
+        <td colSpan={cols} className="px-4 py-3">
+          <div className="h-3 w-full animate-pulse rounded-md bg-[#EEF1F5] dark:bg-white/5" />
         </td>
       </tr>
     ))}
@@ -253,18 +262,18 @@ const AdminModal: React.FC<{
   wide?: boolean;
 }> = ({ title, description, onClose, children, wide = false }) => (
   <div
-    className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+    className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0A0F1A]/50 p-4 backdrop-blur-[3px] sm:items-center"
     role="dialog"
     aria-modal="true"
     aria-label={title}
   >
     <div
-      className={`my-auto w-full ${wide ? 'max-w-3xl' : 'max-w-md'} rounded border border-gray-300 bg-white shadow-sm dark:border-[#374151] dark:bg-[#111827]`}
+      className={`my-auto w-full ${wide ? 'max-w-3xl' : 'max-w-md'} rounded-[18px] border border-[#E4E7EC] bg-white shadow-[0_24px_64px_-16px_rgba(16,24,40,0.35)] dark:border-[#22304A] dark:bg-[#101828]`}
     >
-      <div className="flex items-start justify-between gap-3 border-b border-gray-300 px-3 py-2 dark:border-[#374151]">
+      <div className="flex items-start justify-between gap-3 px-6 pt-5">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
-          {description && <p className={`text-[12px] mt-0.5 ${MUTED}`}>{description}</p>}
+          <h3 className="text-[16px] font-semibold tracking-[-0.01em] text-[#101828] dark:text-white">{title}</h3>
+          {description && <p className={`text-[12.5px] mt-1 ${MUTED}`}>{description}</p>}
         </div>
         <button
           type="button"
@@ -275,7 +284,7 @@ const AdminModal: React.FC<{
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="max-h-[80dvh] overflow-y-auto p-3">{children}</div>
+      <div className="max-h-[80dvh] overflow-y-auto p-6 pt-4">{children}</div>
     </div>
   </div>
 );
@@ -284,18 +293,22 @@ const StatusBadge: React.FC<{ active: boolean }> = ({ active }) => (
   <span className={active ? BADGE_OK : BADGE_BAD}>{active ? 'Active' : 'Suspended'}</span>
 );
 
-/* Dense table: rows stay rows at every width; narrow screens scroll the panel. */
+/* Custom table: hairline row rules, no zebra, generous cells; narrow
+   screens scroll the panel horizontally. */
 const T = {
-  row: 'border-t border-gray-200 even:bg-gray-50 hover:bg-[#eef3fb] dark:border-[#374151] dark:even:bg-[#0f172a] dark:hover:bg-[#1f2937]',
+  row: 'border-t border-[#EEF1F5] transition-colors hover:bg-[#F8FAFF] dark:border-[#1B2740] dark:hover:bg-white/[0.03]',
   primary: '',
   cell: '',
   actions: 'text-right',
 };
 const TABLE =
-  'w-full min-w-[640px] border-collapse text-left text-[13px] text-gray-800 dark:text-gray-200';
-const TH = 'whitespace-nowrap bg-gray-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-[#0f172a] dark:text-gray-400';
-const TD = 'px-3 py-1.5 align-middle';
-const CODE = 'font-mono text-[12px] tabular-nums';
+  'w-full min-w-[640px] border-collapse text-left text-[13.5px] text-[#1D2939] dark:text-[#D7DEE9]';
+/* For small tables inside half-width panels: fit the panel, never clip. */
+const TABLE_FIT =
+  'w-full border-collapse text-left text-[13.5px] text-[#1D2939] dark:text-[#D7DEE9]';
+const TH = 'whitespace-nowrap border-b border-[#E4E7EC] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#98A2B3] dark:border-[#22304A] dark:text-[#5B6B82]';
+const TD = 'px-4 py-3 align-middle';
+const CODE = 'font-mono text-[12.5px] tabular-nums';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   theme,
@@ -833,35 +846,90 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   if (!authed) {
     return (
-      <div className="flex min-h-dvh h-dvh w-full flex-col overflow-y-auto bg-[#111827] text-gray-100">
-        <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#374151] bg-[#1f2937] px-3">
-          <div className="flex items-center gap-2">
-            <AffinMailLogo variant="icon" size="xs" withTile />
-            <span className="text-[12px] font-semibold uppercase tracking-wide text-gray-300">
-              AffinMail server administration
-            </span>
+      <div className="adm-root flex min-h-dvh h-dvh w-full bg-white text-[#101828] dark:bg-[#0A0F1A] dark:text-[#E6EAF2]">
+        {/* Brand panel — custom ink panel with the product story, desktop only */}
+        <aside className="adm-login-brand relative hidden w-[44%] max-w-[540px] shrink-0 flex-col justify-between overflow-hidden p-10 text-white md:flex">
+          <div className="relative flex items-center gap-3">
+            <AffinMailLogo variant="icon" size="md" withTile />
+            <div>
+              <p className="text-[16px] font-semibold leading-tight tracking-[-0.01em]">AffinMail</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#8A94A6]">
+                Admin console
+              </p>
+            </div>
           </div>
+
+          <div className="relative">
+            <h1 className="max-w-md text-[34px] font-semibold leading-[1.15] tracking-[-0.02em]">
+              The control room for your mail infrastructure.
+            </h1>
+            <p className="mt-3 max-w-md text-[14px] leading-relaxed text-[#A7B2C5]">
+              Domains, mailboxes, delivery and storage — every part of the
+              server, in one console.
+            </p>
+            <ul className="mt-9 space-y-5">
+              <li className="flex items-start gap-3.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.07] text-[#7FB0FF] ring-1 ring-white/10">
+                  <Globe className="w-4 h-4" />
+                </span>
+                <span>
+                  <span className="block text-[13.5px] font-medium text-white">Domains &amp; deliverability</span>
+                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-[#8A94A6]">
+                    DKIM, SPF and DMARC checked live against DNS.
+                  </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-3.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.07] text-[#7FB0FF] ring-1 ring-white/10">
+                  <Users className="w-4 h-4" />
+                </span>
+                <span>
+                  <span className="block text-[13.5px] font-medium text-white">Mailboxes &amp; quotas</span>
+                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-[#8A94A6]">
+                    Provision accounts, set quotas, open any mailbox in one click.
+                  </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-3.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.07] text-[#7FB0FF] ring-1 ring-white/10">
+                  <Route className="w-4 h-4" />
+                </span>
+                <span>
+                  <span className="block text-[13.5px] font-medium text-white">Queue &amp; tracking</span>
+                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-[#8A94A6]">
+                    Watch the mail queue and trace any message in the log.
+                  </span>
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <p className="relative text-[11.5px] text-[#5B6B82]">
+            AffinMail core · Stalwart · PostgreSQL · Redis
+          </p>
+        </aside>
+
+        <main className="relative flex flex-1 items-center justify-center overflow-y-auto p-6">
           <button
             onClick={onToggleTheme}
-            className="inline-flex h-6 w-6 items-center justify-center rounded border border-[#374151] text-gray-300 hover:bg-[#374151]"
+            className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-[9px] text-[#475467] transition hover:bg-[#F2F4F7] dark:text-[#A7B2C5] dark:hover:bg-white/5"
             title="Toggle theme"
             aria-label="Toggle theme"
           >
-            {theme === 'light' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
-        </div>
 
-        <main className="flex flex-1 items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-md border border-gray-300 bg-white shadow-sm dark:border-[#374151] dark:bg-[#111827]">
-            <div className="flex items-center gap-2 border-b border-gray-300 bg-gray-100 px-3 py-2 dark:border-[#374151] dark:bg-[#0f172a]">
-              <ShieldCheck className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-              <h1 className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">
-                Administrator sign in
-              </h1>
+          <div className="w-full max-w-[380px]">
+            <div className="mb-8">
+              <span className="mb-6 block md:hidden">
+                <AffinMailLogo variant="icon" size="md" withTile />
+              </span>
+              <h1 className="text-[24px] font-semibold tracking-[-0.01em]">Welcome back</h1>
+              <p className={`mt-1 text-[13.5px] ${MUTED}`}>Sign in to the admin console to continue.</p>
             </div>
 
             <form
-              className="space-y-3 p-3"
+              className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleLogin();
@@ -900,42 +968,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {authError && (
                 <div
-                  className="flex items-start gap-1.5 rounded-sm border border-red-300 bg-red-50 px-2 py-1.5 text-[12px] text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+                  className="flex items-start gap-2 rounded-[10px] bg-[#FEF3F2] px-3.5 py-3 text-[13px] text-[#B42318] dark:bg-[#B42318]/10 dark:text-[#F97066]"
                   role="alert"
                 >
-                  <AlertTriangle className="mt-0.5 w-3.5 h-3.5 shrink-0" />
+                  <AlertTriangle className="mt-0.5 w-4 h-4 shrink-0" />
                   <span className="min-w-0 break-words">{authError}</span>
                 </div>
               )}
 
-              <button type="submit" disabled={authBusy} className={`${btn('primary')} w-full h-8`}>
+              <button
+                type="submit"
+                disabled={authBusy}
+                className={`${btn('primary')} h-11 w-full rounded-[10px] text-[14px]`}
+              >
                 {authBusy ? (
                   <>
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                     Signing in…
                   </>
                 ) : (
                   <>
-                    <LogIn className="w-3.5 h-3.5" />
+                    <LogIn className="w-4 h-4" />
                     Sign in
                   </>
                 )}
               </button>
-
-              <button
-                type="button"
-                onClick={onSwitchToWebmail}
-                className="w-full border-t border-gray-200 pt-2 text-center text-[12px] text-gray-500 hover:text-[#0B57D0] dark:border-[#374151] dark:text-gray-400"
-              >
-                Back to webmail
-              </button>
             </form>
+
+            <div className="mt-7 flex items-center gap-3 text-[10.5px] font-medium uppercase tracking-[0.1em] text-[#98A2B3]">
+              <span className="h-px flex-1 bg-[#EEF1F5] dark:bg-[#1B2740]" />
+              or
+              <span className="h-px flex-1 bg-[#EEF1F5] dark:bg-[#1B2740]" />
+            </div>
+            <button
+              type="button"
+              onClick={onSwitchToWebmail}
+              className={`${btn('outline')} mt-5 h-11 w-full rounded-[10px] text-[13.5px]`}
+            >
+              Back to webmail
+            </button>
+            <p className="mt-9 text-center text-[11.5px] text-[#98A2B3]">
+              Secure administrator session · AffinMail core
+            </p>
           </div>
         </main>
-
-        <footer className="shrink-0 px-3 py-2 text-center text-[11px] text-gray-500">
-          AffinMail core · Secure administrator session
-        </footer>
       </div>
     );
   }
@@ -967,26 +1043,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           id: 'domains',
           label: 'Virtual domains',
           icon: <Globe className="w-4 h-4" />,
-          trailing: <span className={`${BADGE_NEUTRAL} tabular-nums`}>{domains.length}</span>,
+          trailing: <span className={`${NAVCOUNT} tabular-nums`}>{domains.length}</span>,
         },
         {
           id: 'mailboxes',
           label: 'Mailboxes',
           icon: <Users className="w-4 h-4" />,
-          trailing: <span className={`${BADGE_NEUTRAL} tabular-nums`}>{mailboxes.length}</span>,
+          trailing: <span className={`${NAVCOUNT} tabular-nums`}>{mailboxes.length}</span>,
         },
         {
           id: 'aliases',
           label: 'Aliases',
           icon: <Forward className="w-4 h-4" />,
-          trailing: <span className={`${BADGE_NEUTRAL} tabular-nums`}>{aliases.length}</span>,
+          trailing: <span className={`${NAVCOUNT} tabular-nums`}>{aliases.length}</span>,
         },
         {
           id: 'queue',
           label: 'Mail queue',
           icon: <ListOrdered className="w-4 h-4" />,
           trailing: (
-            <span className={`${queueItems.length > 0 ? BADGE_WARN : BADGE_NEUTRAL} tabular-nums`}>
+            <span className={queueItems.length > 0 ? NAVCOUNT_WARN : NAVCOUNT}>
               {queueItems.length}
             </span>
           ),
@@ -1008,25 +1084,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const sidebar = (
     <>
-      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-[#374151] bg-[#1f2937] px-3 lg:hidden">
-        <span className="text-[12px] font-semibold uppercase tracking-wide text-gray-300">Navigation</span>
+      <div className="flex h-[60px] shrink-0 items-center gap-2.5 px-4">
+        <AffinMailLogo variant="icon" size="sm" withTile />
+        <div className="min-w-0">
+          <p className="truncate text-[13.5px] font-semibold leading-tight text-white">AffinMail</p>
+          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[#5B6B82]">
+            Admin console
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => setIsMobileNavOpen(false)}
-          className="inline-flex h-6 w-6 items-center justify-center rounded border border-[#374151] text-gray-300 hover:bg-[#374151]"
+          className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#A7B2C5] hover:bg-white/5 lg:hidden"
           aria-label="Close navigation"
         >
-          <X className="w-3.5 h-3.5" />
+          <X className="w-4 h-4" />
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2" aria-label="Admin sections">
+      <nav className="flex-1 overflow-y-auto px-2.5 pb-3" aria-label="Admin sections">
         {navGroups.map((group) => (
-          <div key={group.label} className="mb-3">
-            <p className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${MUTED}`}>
+          <div key={group.label} className="mb-2">
+            <p className="px-2.5 pb-1.5 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[#5B6B82]">
               {group.label}
             </p>
-            <ul>
+            <ul className="space-y-0.5">
               {group.items.map((item) => {
                 const active = activeTab === item.id;
                 return (
@@ -1037,14 +1119,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         setActiveTab(item.id);
                         if (window.innerWidth < 1024) setIsMobileNavOpen(false);
                       }}
-                      className={`flex h-8 w-full items-center gap-2 border-l-2 px-3 text-[13px] ${
+                      className={`flex h-9 w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13px] transition ${
                         active
-                          ? 'border-l-[#0B57D0] bg-[#e8eefb] font-semibold text-[#0B57D0] dark:border-l-[#A8C7FA] dark:bg-[#1f2b3f] dark:text-[#A8C7FA]'
-                          : 'border-l-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-[#1f2937]'
+                          ? 'bg-white/[0.09] font-medium text-white shadow-[inset_2.5px_0_0_0_#4C8DFF]'
+                          : 'text-[#A7B2C5] hover:bg-white/[0.05] hover:text-white'
                       }`}
                       aria-current={active ? 'page' : undefined}
                     >
-                      <span className={active ? '' : 'text-gray-400 dark:text-gray-500'}>{item.icon}</span>
+                      <span className={active ? 'text-[#7FB0FF]' : 'text-[#5B6B82]'}>{item.icon}</span>
                       <span className="truncate">{item.label}</span>
                       {item.trailing && <span className="ml-auto">{item.trailing}</span>}
                     </button>
@@ -1056,18 +1138,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         ))}
       </nav>
 
-      <div className="shrink-0 space-y-1.5 border-t border-gray-300 p-2 dark:border-[#374151]">
-        <div className="space-y-1 border border-gray-300 bg-gray-50 px-2 py-1.5 text-[11px] dark:border-[#374151] dark:bg-[#0f172a]">
-          <div className="flex items-center justify-between gap-2 font-semibold text-gray-700 dark:text-gray-200">
+      <div className="shrink-0 space-y-1.5 p-3">
+        <div className="space-y-1.5 rounded-xl bg-white/[0.06] p-3 text-[11.5px] ring-1 ring-white/[0.06]">
+          <div className="flex items-center justify-between gap-2 font-semibold text-white">
             <span>AffinMail core</span>
-            <span className={`${CODE} text-gray-500 dark:text-gray-400`}>{healthData?.version ?? '—'}</span>
+            <span className="font-mono text-[11px] tabular-nums text-[#8A94A6]">
+              {healthData?.version ?? '—'}
+            </span>
           </div>
-          <p className={MUTED}>Stalwart · PostgreSQL 16 · Redis 7</p>
+          <p className="text-[#8A94A6]">Stalwart · PostgreSQL 16 · Redis 7</p>
           <div
             className={`flex items-center gap-1.5 font-medium ${
-              healthyCount === 3
-                ? 'text-green-700 dark:text-green-400'
-                : 'text-amber-700 dark:text-amber-400'
+              healthyCount === 3 ? 'text-[#32D583]' : 'text-[#FDB022]'
             }`}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -1077,9 +1159,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <button
           type="button"
           onClick={() => logout()}
-          className={`${btn('ghost', 'sm')} w-full justify-start`}
+          className="flex h-9 w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13px] text-[#A7B2C5] transition hover:bg-white/[0.05] hover:text-white"
         >
-          <Power className="w-3.5 h-3.5" />
+          <Power className="w-4 h-4" />
           Sign out
         </button>
       </div>
@@ -1087,39 +1169,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   );
 
   const navBtn =
-    'inline-flex h-7 w-7 items-center justify-center rounded border border-transparent text-gray-300 hover:bg-white/10';
+    'inline-flex h-9 w-9 items-center justify-center rounded-[9px] text-[#475467] transition hover:bg-[#F2F4F7] dark:text-[#A7B2C5] dark:hover:bg-white/5';
 
   return (
-    <div className="drawer lg:drawer-open h-dvh w-full bg-gray-200 text-gray-900 dark:bg-[#0b1220] dark:text-gray-100">
-      <input
-        id="admin-nav"
-        type="checkbox"
-        className="drawer-toggle"
-        checked={isMobileNavOpen}
-        onChange={(e) => setIsMobileNavOpen(e.target.checked)}
-        aria-label="Toggle admin navigation"
-      />
+    <div className="adm-root flex h-dvh w-full bg-[#F4F5F7] text-[#101828] dark:bg-[#0A0F1A] dark:text-[#E6EAF2]">
+      {/* Desktop sidebar */}
+      <aside className="adm-sidebar hidden w-[250px] shrink-0 flex-col lg:flex">{sidebar}</aside>
 
-      <div className="drawer-content flex flex-col h-dvh min-w-0 overflow-hidden">
-        {/* Master header — WHM chrome */}
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[#374151] bg-[#1f2937] px-2 text-gray-100 sm:px-3">
+      {/* Mobile sidebar overlay */}
+      {isMobileNavOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-[#0A0F1A]/50"
+            onClick={() => setIsMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="adm-sidebar absolute inset-y-0 left-0 flex w-[264px] max-w-[85vw] flex-col">
+            {sidebar}
+          </aside>
+        </div>
+      )}
+
+      <div className="flex flex-col h-dvh min-w-0 flex-1 overflow-hidden">
+        {/* Top bar */}
+        <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-[#E4E7EC] bg-white px-4 dark:border-[#1B2740] dark:bg-[#0D1526] sm:px-6">
           <div className="flex-none lg:hidden">
-            <label htmlFor="admin-nav" className={navBtn} aria-label="Open navigation">
-              <Menu className="w-4 h-4" />
-            </label>
+            <button
+              type="button"
+              onClick={() => setIsMobileNavOpen(true)}
+              className={navBtn}
+              aria-label="Open navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
           </div>
 
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <AffinMailLogo variant="icon" size="xs" withTile />
-            <span className="text-[13px] font-semibold tracking-tight text-white">AffinMail</span>
-            <div className="hidden h-4 w-px shrink-0 bg-[#4b5563] sm:block" />
-            <span className="truncate text-[13px] text-gray-400">{activeLabel}</span>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <AffinMailLogo variant="icon" size="sm" withTile />
+            <span className="text-[14px] font-semibold tracking-[-0.01em] text-[#101828] dark:text-white">
+              AffinMail
+            </span>
+            <div className="hidden h-5 w-px shrink-0 bg-[#E4E7EC] dark:bg-[#22304A] sm:block" />
+            <span className="truncate text-[13.5px] text-[#667085] max-sm:hidden dark:text-[#8A94A6]">{activeLabel}</span>
           </div>
 
           <div className="flex flex-none items-center gap-1 sm:gap-1.5">
             <div
-              className={`hidden items-center gap-1.5 text-[11px] font-medium md:inline-flex ${
-                healthyCount === 3 ? 'text-green-400' : 'text-amber-400'
+              className={`hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold md:inline-flex ${
+                healthyCount === 3
+                  ? 'bg-[#ECFDF3] text-[#067647] dark:bg-[#067647]/15 dark:text-[#32D583]'
+                  : 'bg-[#FFFAEB] text-[#B54708] dark:bg-[#B54708]/15 dark:text-[#FDB022]'
               }`}
               title={`${healthyCount} of 3 services healthy`}
             >
@@ -1164,8 +1263,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         )}
 
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-gray-200 dark:bg-[#0b1220]">
-          <div className="w-full space-y-3 p-3 sm:p-4">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <div className="w-full space-y-4 p-4 sm:p-6">
             {/* ===================== TAB 1: DASHBOARD ===================== */}
             {activeTab === 'dashboard' && (
               <>
@@ -1186,8 +1285,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   }
                 />
 
-                {/* Metric strip */}
-                <div className={`grid grid-cols-2 divide-gray-300 md:grid-cols-4 md:divide-x dark:divide-[#374151] ${PANEL}`}>
+                {/* Metric cards */}
+                <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
                   {[
                     {
                       label: 'Virtual domains',
@@ -1215,17 +1314,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       bad: healthyCount !== 3,
                     },
                   ].map((m) => (
-                    <div key={m.label} className="px-3 py-2">
-                      <div className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${MUTED}`}>
-                        {m.icon}
-                        {m.label}
+                    <div key={m.label} className={`${PANEL} p-5`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${MUTED}`}>
+                          {m.label}
+                        </span>
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#EEF4FF] text-[#0B57D0] dark:bg-[#0B57D0]/15 dark:text-[#7FB0FF]">
+                          {m.icon}
+                        </span>
                       </div>
-                      <div className="mt-0.5 text-[18px] font-semibold tabular-nums leading-tight text-gray-900 dark:text-gray-100">
+                      <div className="mt-3 text-[26px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-[#101828] dark:text-white">
                         {m.value}
                       </div>
                       <div
-                        className={`text-[11px] ${
-                          'bad' in m && m.bad ? 'text-amber-700 dark:text-amber-400' : MUTED
+                        className={`mt-1.5 text-[12px] ${
+                          'bad' in m && m.bad ? 'text-[#B54708] dark:text-[#FDB022]' : MUTED
                         }`}
                       >
                         {m.sub}
@@ -1234,8 +1337,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  <div className={PANEL}>
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className={`${PANEL} overflow-hidden`}>
                     <SectionTitle
                       actions={
                         <span className={`${BADGE_NEUTRAL} tabular-nums`}>{healthyCount} / 3</span>
@@ -1243,7 +1346,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     >
                       Service checks
                     </SectionTitle>
-                    <table className={TABLE}>
+                    <table className={TABLE_FIT}>
                       <thead>
                         <tr>
                           <th className={TH}>Service</th>
@@ -1268,14 +1371,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         })}
                       </tbody>
                     </table>
-                    <div className={`border-t border-gray-300 px-3 py-1.5 text-[11px] dark:border-[#374151] ${MUTED} ${CODE}`}>
+                    <div className={`border-t border-[#EEF1F5] px-5 py-3 text-[11.5px] dark:border-[#1B2740] ${MUTED} ${CODE}`}>
                       {healthData?.service ?? 'api'} {healthData?.version ?? ''}
                     </div>
                   </div>
 
-                  <div className={PANEL}>
+                  <div className={`${PANEL} overflow-hidden`}>
                     <SectionTitle>Cluster protocols</SectionTitle>
-                    <table className={TABLE}>
+                    <table className={TABLE_FIT}>
                       <thead>
                         <tr>
                           <th className={TH}>Port</th>
@@ -1423,14 +1526,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         Filter mailboxes
                       </label>
                       <div className="relative">
-                        <Search className="pointer-events-none absolute left-1.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-gray-400" />
+                        <Search className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[#98A2B3]" />
                         <input
                           id="mailbox-filter"
                           type="search"
                           value={mailboxFilter}
                           onChange={(e) => setMailboxFilter(e.target.value)}
                           placeholder="Filter mailboxes"
-                          className={`${INPUT} h-7 w-32 pl-6 sm:w-56`}
+                          className={`${INPUT} h-9 w-40 pl-9 sm:w-64`}
                         />
                       </div>
                       <span className={`hidden text-[11px] sm:inline ${MUTED}`}>
@@ -1576,10 +1679,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   description="An alias delivers mail for one address into another mailbox on this server."
                 />
 
-                <div className={PANEL}>
+                <div className={`${PANEL} overflow-hidden`}>
                   <SectionTitle>Create alias</SectionTitle>
                   <form
-                    className="grid grid-cols-1 items-end gap-2 p-2 sm:grid-cols-[1fr_1fr_auto]"
+                    className="grid grid-cols-1 items-end gap-3 p-5 sm:grid-cols-[1fr_1fr_auto]"
                     onSubmit={(e) => {
                       e.preventDefault();
                       void handleCreateAlias();
@@ -1783,10 +1886,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   description="Search the mail server log by sender, recipient, or message ID."
                 />
 
-                <div className={PANEL}>
+                <div className={`${PANEL} overflow-hidden`}>
                   <SectionTitle>Log search</SectionTitle>
                   <form
-                    className="flex flex-col gap-2 p-2 sm:flex-row"
+                    className="flex flex-col gap-3 p-5 sm:flex-row"
                     onSubmit={(e) => {
                       e.preventDefault();
                       void handleTrackSearch();
@@ -1821,7 +1924,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </form>
                 </div>
 
-                <div className={PANEL}>
+                <div className={`${PANEL} overflow-hidden`}>
                   <SectionTitle
                     actions={
                       trackLines !== null ? (
@@ -1831,7 +1934,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   >
                     Results
                   </SectionTitle>
-                  <div className="p-2">
+                  <div className="p-5">
                     {trackLines === null && (
                       <EmptyState
                         icon={<Search className="w-5 h-5" />}
@@ -1847,7 +1950,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       />
                     )}
                     {trackLines !== null && trackLines.length > 0 && (
-                      <div className="max-h-[480px] overflow-y-auto overflow-x-hidden rounded-sm border border-gray-300 bg-gray-50 p-2 dark:border-[#374151] dark:bg-[#0f172a]">
+                      <div className="max-h-[480px] overflow-y-auto overflow-x-hidden rounded-xl border border-[#E4E7EC] bg-[#F8FAFC] p-4 dark:border-[#22304A] dark:bg-[#0A0F1A]">
                         <div className={`${CODE} space-y-0.5`}>
                           {trackLines.map((line, i) => (
                             <p key={i} className="text-gray-700 break-all dark:text-gray-300">
@@ -1942,29 +2045,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   description="Live blob storage status reported by the admin API."
                 />
 
-                <div className={`grid grid-cols-1 divide-gray-300 sm:grid-cols-3 sm:divide-x dark:divide-[#374151] ${PANEL}`}>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   {[
                     ['Used', storage ? fmtBytes(storage.used_bytes) : '—'],
                     ['Free', storage ? fmtBytes(storage.free_bytes) : '—'],
                     ['Total', storage ? fmtBytes(storage.total_bytes) : '—'],
                   ].map(([label, value]) => (
-                    <div key={label} className="px-3 py-2">
-                      <div className={`text-[11px] font-semibold uppercase tracking-wide ${MUTED}`}>{label}</div>
-                      <div className={`text-[16px] font-semibold ${CODE} text-gray-900 dark:text-gray-100`}>
+                    <div key={label} className={`${PANEL} p-5`}>
+                      <div className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${MUTED}`}>{label}</div>
+                      <div className="mt-2 text-[20px] font-semibold tabular-nums text-[#101828] dark:text-white">
                         {value}
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className={PANEL}>
+                <div className={`${PANEL} overflow-hidden`}>
                   <SectionTitle>Capacity</SectionTitle>
-                  <div className="space-y-1.5 p-2">
+                  <div className="space-y-2 p-5">
                     {storage && storage.total_bytes > 0 ? (
                       <>
-                        <div className="h-2 w-full overflow-hidden rounded-sm border border-gray-300 bg-gray-100 dark:border-[#374151] dark:bg-[#0f172a]">
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-[#EEF1F5] dark:bg-white/5">
                           <div
-                            className="h-full bg-[#0B57D0] dark:bg-[#A8C7FA]"
+                            className="h-full rounded-full bg-[#0B57D0] dark:bg-[#4C8DFF]"
                             style={{
                               width: `${Math.min(100, Math.round((storage.used_bytes / storage.total_bytes) * 100))}%`,
                             }}
@@ -1978,7 +2081,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <p className={`text-[12px] ${MUTED}`}>Capacity information unavailable.</p>
                     )}
                   </div>
-                  <table className={TABLE}>
+                  <table className={TABLE_FIT}>
                     <tbody>
                       <tr className={T.row}>
                         <td className={`${TD} w-48 font-medium`}>Backend</td>
@@ -2002,9 +2105,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   description="Cluster service orchestration and maintenance."
                 />
 
-                <div className={PANEL}>
+                <div className={`${PANEL} overflow-hidden`}>
                   <SectionTitle>Cluster operations</SectionTitle>
-                  <div className="flex flex-wrap gap-1.5 p-2">
+                  <div className="flex flex-wrap gap-2 p-5">
                     <button onClick={() => void handleBackup()} className={btn('outline')}>
                       <Database className="w-3.5 h-3.5" />
                       Create database backup
@@ -2016,8 +2119,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  <div className={PANEL}>
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className={`${PANEL} overflow-hidden`}>
                     <SectionTitle
                       actions={
                         <span className={`${healthyCount === 3 ? BADGE_OK : BADGE_WARN} tabular-nums`}>
@@ -2027,7 +2130,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     >
                       Service checks
                     </SectionTitle>
-                    <table className={TABLE}>
+                    <table className={TABLE_FIT}>
                       <thead>
                         <tr>
                           <th className={TH}>Service</th>
@@ -2049,7 +2152,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </table>
                   </div>
 
-                  <div className={PANEL}>
+                  <div className={`${PANEL} overflow-hidden`}>
                     <SectionTitle
                       actions={
                         <span className={`${BADGE_NEUTRAL} ${CODE} max-w-full truncate`}>
@@ -2059,7 +2162,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     >
                       CLI management
                     </SectionTitle>
-                    <div className={`${CODE} space-y-0.5 overflow-x-auto border-t border-gray-200 bg-gray-50 p-2 dark:border-[#374151] dark:bg-[#0f172a]`}>
+                    <div className={`${CODE} space-y-0.5 overflow-x-auto border-t border-[#EEF1F5] bg-[#F8FAFC] p-4 dark:border-[#1B2740] dark:bg-[#0A0F1A]`}>
                       {['status', 'restart', 'update', 'backup', 'logs stalwart'].map((cmd) => (
                         <p key={cmd} className="whitespace-nowrap text-gray-700 dark:text-gray-300">
                           <span className="select-none text-gray-400">$ </span>
@@ -2070,7 +2173,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </div>
 
-                <div className={PANEL}>
+                <div className={`${PANEL} overflow-hidden`}>
                   <SectionTitle
                     actions={
                       <button
@@ -2088,12 +2191,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       Mail server log
                     </span>
                   </SectionTitle>
-                  <div className="max-h-80 space-y-0.5 overflow-y-auto overflow-x-hidden bg-gray-50 p-2 font-mono text-[12px] dark:bg-[#0f172a]">
+                  <div className="max-h-80 space-y-0.5 overflow-y-auto overflow-x-hidden bg-[#F8FAFC] p-4 font-mono text-[12px] dark:bg-[#0A0F1A]">
                     {logsLoading && (
                       <div className="space-y-1.5">
-                        <div className="h-3 w-full animate-pulse rounded-sm bg-gray-200 dark:bg-[#1f2937]" />
-                        <div className="h-3 w-5/6 animate-pulse rounded-sm bg-gray-200 dark:bg-[#1f2937]" />
-                        <div className="h-3 w-4/6 animate-pulse rounded-sm bg-gray-200 dark:bg-[#1f2937]" />
+                        <div className="h-3 w-full animate-pulse rounded-md bg-[#EEF1F5] dark:bg-white/5" />
+                        <div className="h-3 w-5/6 animate-pulse rounded-md bg-[#EEF1F5] dark:bg-white/5" />
+                        <div className="h-3 w-4/6 animate-pulse rounded-md bg-[#EEF1F5] dark:bg-white/5" />
                       </div>
                     )}
                     {!logsLoading &&
@@ -2113,14 +2216,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </main>
       </div>
 
-      {/* Sidebar / mobile drawer */}
-      <div className="drawer-side z-50 h-dvh">
-        <label htmlFor="admin-nav" className="drawer-overlay" aria-label="Close navigation" />
-        <aside className="flex flex-col w-56 max-w-[85vw] h-full border-r border-gray-300 bg-white dark:border-[#374151] dark:bg-[#111827]">
-          {sidebar}
-        </aside>
-      </div>
-
       {/* ===================== MODAL: ADD VIRTUAL DOMAIN ===================== */}
       {showAddDomainModal && (
         <AdminModal
@@ -2129,7 +2224,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           onClose={() => setShowAddDomainModal(false)}
         >
           <form
-            className="space-y-2.5"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void handleCreateDomain();
@@ -2169,7 +2264,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </select>
             </div>
 
-            <div className="flex items-center justify-end gap-1.5 border-t border-gray-200 pt-2.5 dark:border-[#374151]">
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
               <button type="button" onClick={() => setShowAddDomainModal(false)} className={btn('outline')}>
                 Cancel
               </button>
@@ -2189,7 +2284,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           onClose={() => setShowAddMailboxModal(false)}
         >
           <form
-            className="space-y-2.5"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void handleCreateMailbox();
@@ -2256,7 +2351,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               />
             </div>
 
-            <div className="flex items-center justify-end gap-1.5 border-t border-gray-200 pt-2.5 dark:border-[#374151]">
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
               <button type="button" onClick={() => setShowAddMailboxModal(false)} className={btn('outline')}>
                 Cancel
               </button>
@@ -2279,7 +2374,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }}
         >
           <form
-            className="space-y-2.5"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void handleResetPassword();
@@ -2303,7 +2398,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               The mailbox user signs in with this password from now on. Panel SSO into this mailbox
               keeps working after a reset.
             </p>
-            <div className="flex items-center justify-end gap-1.5 border-t border-gray-200 pt-2.5 dark:border-[#374151]">
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
               <button
                 type="button"
                 onClick={() => {
@@ -2330,7 +2425,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           onClose={() => setQuotaTarget(null)}
         >
           <form
-            className="space-y-2.5"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void handleSaveQuota();
@@ -2350,7 +2445,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 autoFocus
               />
             </div>
-            <div className="flex items-center justify-end gap-1.5 border-t border-gray-200 pt-2.5 dark:border-[#374151]">
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
               <button type="button" onClick={() => setQuotaTarget(null)} className={btn('outline')}>
                 Cancel
               </button>
@@ -2370,7 +2465,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           onClose={() => setShowAddIpModal(false)}
         >
           <form
-            className="space-y-2.5"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void handleCreateIpPool();
@@ -2417,7 +2512,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <option value="dedicated">Dedicated</option>
               </select>
             </div>
-            <div className="flex items-center justify-end gap-1.5 border-t border-gray-200 pt-2.5 dark:border-[#374151]">
+            <div className="flex items-center justify-end gap-2 border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
               <button type="button" onClick={() => setShowAddIpModal(false)} className={btn('outline')}>
                 Cancel
               </button>
@@ -2440,15 +2535,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="space-y-3">
             {delivLoading && (
               <div className="space-y-1.5">
-                <div className="h-3 w-full animate-pulse rounded-sm bg-gray-200 dark:bg-[#1f2937]" />
-                <div className="h-3 w-5/6 animate-pulse rounded-sm bg-gray-200 dark:bg-[#1f2937]" />
-                <div className="h-3 w-4/6 animate-pulse rounded-sm bg-gray-200 dark:bg-[#1f2937]" />
+                <div className="h-3 w-full animate-pulse rounded-md bg-[#EEF1F5] dark:bg-white/5" />
+                <div className="h-3 w-5/6 animate-pulse rounded-md bg-[#EEF1F5] dark:bg-white/5" />
+                <div className="h-3 w-4/6 animate-pulse rounded-md bg-[#EEF1F5] dark:bg-white/5" />
               </div>
             )}
 
             {!delivLoading && deliv && (
               <>
-                <div className="overflow-x-auto rounded-sm border border-gray-300 dark:border-[#374151]">
+                <div className="overflow-x-auto rounded-xl border border-[#E4E7EC] dark:border-[#22304A]">
                   <table className={TABLE}>
                     <thead>
                       <tr>
@@ -2500,11 +2595,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </table>
                 </div>
 
-                <div className="rounded-sm border border-gray-300 dark:border-[#374151]">
-                  <div className="border-b border-gray-300 bg-gray-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:border-[#374151] dark:bg-[#0f172a] dark:text-gray-400">
+                <div className="rounded-xl border border-[#E4E7EC] dark:border-[#22304A]">
+                  <div className="border-b border-[#EEF1F5] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#98A2B3] dark:border-[#1B2740] dark:text-[#5B6B82]">
                     DKIM signing keys
                   </div>
-                  <div className="space-y-1.5 p-2">
+                  <div className="space-y-2 p-5">
                     {deliv.signatures.length === 0 ? (
                       <p className={`text-[12px] ${MUTED}`}>No signing keys found for this domain.</p>
                     ) : (
@@ -2528,11 +2623,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </div>
 
-                <div className="rounded-sm border border-gray-300 dark:border-[#374151]">
-                  <div className="border-b border-gray-300 bg-gray-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:border-[#374151] dark:bg-[#0f172a] dark:text-gray-400">
+                <div className="rounded-xl border border-[#E4E7EC] dark:border-[#22304A]">
+                  <div className="border-b border-[#EEF1F5] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#98A2B3] dark:border-[#1B2740] dark:text-[#5B6B82]">
                     Catch-all address
                   </div>
-                  <div className="space-y-1.5 p-2">
+                  <div className="space-y-2 p-5">
                     <p className={`text-[11px] ${MUTED}`}>
                       Mail to addresses that do not exist on this domain is delivered to the catch-all
                       mailbox instead of bouncing.
@@ -2562,7 +2657,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </>
             )}
 
-            <div className="flex items-center justify-end border-t border-gray-200 pt-2.5 dark:border-[#374151]">
+            <div className="flex items-center justify-end border-t border-[#EEF1F5] pt-4 dark:border-[#1B2740]">
               <button onClick={() => setSelectedDnsDomain(null)} className={btn('outline')}>
                 Close
               </button>
