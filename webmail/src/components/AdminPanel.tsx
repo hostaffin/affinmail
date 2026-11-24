@@ -23,6 +23,10 @@ import {
   KeyRound,
   Gauge,
   Forward,
+  ListOrdered,
+  Route,
+  Copy,
+  Search,
 } from 'lucide-react';
 import { AffinMailLogo } from './AffinMailLogo';
 import {
@@ -31,7 +35,6 @@ import {
   type IpPool,
   type StorageStatus,
   type Health,
-  type DnsRecord,
   getToken,
   clearToken,
   adminLogin,
@@ -43,11 +46,20 @@ import {
   listAliases,
   createAlias,
   deleteAlias,
+  type QueuedMessage,
+  getQueue,
+  deleteQueuedMessage,
+  retryQueuedMessage,
+  type Deliverability,
+  getDeliverability,
+  setCatchAll,
+  rotateDkim,
+  trackMail,
+  getSystemLogs,
   health as apiHealth,
   listDomains,
   createDomain,
   deleteDomain,
-  getDomainDns,
   listMailboxes,
   createMailbox,
   setMailboxStatus,
@@ -67,7 +79,7 @@ interface AdminPanelProps {
   onNotify: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-type AdminTab = 'dashboard' | 'domains' | 'mailboxes' | 'aliases' | 'ippools' | 'storage' | 'system';
+type AdminTab = 'dashboard' | 'domains' | 'mailboxes' | 'aliases' | 'queue' | 'track' | 'ippools' | 'storage' | 'system';
 
 interface DomainRow {
   id: string;
@@ -110,6 +122,27 @@ function fmtBytes(bytes: number): string {
   return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+function qStr(v: unknown): string {
+  return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
+}
+
+function queueSender(item: QueuedMessage): string {
+  const env = item.envelope as { mailFrom?: unknown } | undefined;
+  return qStr(item.mailFrom) || qStr(item.from) || qStr(env?.mailFrom) || '—';
+}
+
+function queueRecipients(item: QueuedMessage): string {
+  const raw = (item.recipients ?? item.rcpts ?? item.rcptTo ?? item.recipient) as unknown;
+  const one = (v: unknown): string =>
+    typeof v === 'string'
+      ? v
+      : v && typeof v === 'object'
+        ? qStr((v as { email?: unknown }).email) || qStr((v as { address?: unknown }).address)
+        : '';
+  if (Array.isArray(raw)) return raw.map(one).filter(Boolean).join(', ') || '—';
+  return one(raw) || '—';
+}
+
 function isAuthError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   return msg === 'unauthorized' || msg.includes('401');
@@ -126,7 +159,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Auth gate
   const [authed, setAuthed] = useState(() => !!getToken());
-  const [usernameInput, setUsernameInput] = useState('root');
+  const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
@@ -145,8 +178,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newDomainIp, setNewDomainIp] = useState('');
 
   const [selectedDnsDomain, setSelectedDnsDomain] = useState<string | null>(null);
-  const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
-  const [dnsLoading, setDnsLoading] = useState(false);
+  const [deliv, setDeliv] = useState<Deliverability | null>(null);
+  const [delivLoading, setDelivLoading] = useState(false);
+  const [catchAllInput, setCatchAllInput] = useState('');
 
   const [showAddMailboxModal, setShowAddMailboxModal] = useState(false);
   const [newMailboxUser, setNewMailboxUser] = useState('');
@@ -247,17 +281,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     if (!selectedDnsDomain) return;
     let cancelled = false;
-    setDnsLoading(true);
-    setDnsRecords([]);
-    getDomainDns(selectedDnsDomain)
+    setDelivLoading(true);
+    setDeliv(null);
+    getDeliverability(selectedDnsDomain)
       .then((r) => {
-        if (!cancelled) setDnsRecords(r.records);
+        if (!cancelled) {
+          setDeliv(r);
+          setCatchAllInput(r.catchAllAddress ?? '');
+        }
       })
       .catch((e) => {
         if (!cancelled) fail(e);
       })
       .finally(() => {
-        if (!cancelled) setDnsLoading(false);
+        if (!cancelled) setDelivLoading(false);
       });
     return () => {
       cancelled = true;
@@ -452,6 +489,128 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Mail queue
+  const [queueItems, setQueueItems] = useState<QueuedMessage[]>([]);
+  const [queueLoading, setQueueLoading] = useState(false);
+
+  const loadQueue = useCallback(async () => {
+    setQueueLoading(true);
+    try {
+      const r = await getQueue();
+      setQueueItems(r.messages);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setQueueLoading(false);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed) void loadQueue();
+  }, [authed, loadQueue]);
+
+  const handleQueueDelete = async (item: QueuedMessage) => {
+    if (!confirm(`Remove queued message ${item.id} from the queue?`)) return;
+    try {
+      await deleteQueuedMessage(item.id);
+      onNotify('Queued message removed', 'info');
+      await loadQueue();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleQueueRetry = async (item: QueuedMessage) => {
+    try {
+      await retryQueuedMessage(item.id);
+      onNotify('Queued message rescheduled for immediate delivery', 'success');
+      await loadQueue();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  // Track delivery
+  const [trackQuery, setTrackQuery] = useState('');
+  const [trackHours, setTrackHours] = useState(24);
+  const [trackLines, setTrackLines] = useState<string[] | null>(null);
+  const [trackBusy, setTrackBusy] = useState(false);
+
+  const handleTrackSearch = async () => {
+    const q = trackQuery.trim();
+    if (q.length < 3) {
+      onNotify('Enter at least 3 characters to search the mail log', 'error');
+      return;
+    }
+    setTrackBusy(true);
+    try {
+      const r = await trackMail(q, trackHours);
+      setTrackLines(r.lines);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setTrackBusy(false);
+    }
+  };
+
+  // Mail server log (System tab)
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const r = await getSystemLogs(50);
+      setLogLines(r.lines);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    if (authed && activeTab === 'system') void loadLogs();
+  }, [authed, activeTab, loadLogs]);
+
+  // Deliverability actions (DNS modal)
+  const refreshDeliv = async () => {
+    if (!selectedDnsDomain) return;
+    try {
+      const r = await getDeliverability(selectedDnsDomain);
+      setDeliv(r);
+      setCatchAllInput(r.catchAllAddress ?? '');
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleRotateDkim = async () => {
+    if (!selectedDnsDomain) return;
+    if (!confirm(`Rotate the DKIM key for ${selectedDnsDomain}? A new DNS record must be published for the new selector.`)) return;
+    try {
+      const r = await rotateDkim(selectedDnsDomain);
+      onNotify(`New DKIM selector ${r.selector} created — publish its DNS record`, 'success');
+      await refreshDeliv();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const handleSaveCatchAll = async () => {
+    if (!selectedDnsDomain) return;
+    try {
+      const r = await setCatchAll(selectedDnsDomain, catchAllInput === '' ? null : catchAllInput);
+      onNotify(
+        r.catchAllAddress ? `Catch-all for ${selectedDnsDomain} now delivers to ${r.catchAllAddress}` : `Catch-all for ${selectedDnsDomain} removed`,
+        'success'
+      );
+      await refreshDeliv();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
   // Mailbox SSO + password + quota
   const [passwordTarget, setPasswordTarget] = useState<MailboxRow | null>(null);
   const [newPassword, setNewPassword] = useState('');
@@ -621,6 +780,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         <button
           onClick={() => {
+            setActiveTab('queue');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center justify-between px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
+            activeTab === 'queue'
+              ? 'bg-base-200 text-base-content font-medium'
+              : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <ListOrdered className="w-4 h-4 stroke-[1.5] text-base-content/60" />
+            <span>Mail queue</span>
+          </div>
+          <span className="font-mono text-xs tabular-nums text-base-content/60">
+            {queueItems.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('track');
+            if (isMobile) setIsMobileNavOpen(false);
+          }}
+          className={`w-full flex items-center gap-2 px-2.5 h-8 rounded-lg text-xs font-normal transition-colors ${
+            activeTab === 'track'
+              ? 'bg-base-200 text-base-content font-medium'
+              : 'text-base-content/70 hover:bg-base-200/60 hover:text-base-content'
+          }`}
+        >
+          <Route className="w-4 h-4 stroke-[1.5] text-base-content/60" />
+          <span>Track delivery</span>
+        </button>
+
+        <button
+          onClick={() => {
             setActiveTab('ippools');
             if (isMobile) setIsMobileNavOpen(false);
           }}
@@ -726,8 +920,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <h1 className="text-sm font-medium">Admin sign in</h1>
             </div>
             <p className="text-xs text-base-content/60">
-              Sign in as root with the server's root password — the same root
-              as SSH and WHM. There is no separate panel password.
+              Sign in with the server administrator credentials.
             </p>
 
             <div className="space-y-1">
@@ -1063,7 +1256,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               onClick={() => setSelectedDnsDomain(dom.name)}
                               className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded-lg"
                             >
-                              View DNS
+                              Deliverability
                             </button>
                             <button
                               onClick={() => void handleAssignIp(dom.name)}
@@ -1297,6 +1490,141 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           )}
 
           {/* ===================== TAB 4: IP POOLS ===================== */}
+          {activeTab === 'queue' && (
+            <div className="space-y-6 max-w-6xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-medium text-base-content">Mail queue</h2>
+                  <p className="text-xs text-base-content/60">Messages waiting for delivery or retry</p>
+                </div>
+                <button
+                  onClick={() => void loadQueue()}
+                  className="btn btn-ghost btn-xs px-3 h-8 gap-1.5 border border-base-300 font-medium rounded-lg self-start sm:self-auto"
+                >
+                  <RotateCw className="w-3.5 h-3.5 stroke-[1.5]" />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              <div className="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto w-full">
+                  <table className="table table-sm w-full text-xs min-w-[640px]">
+                    <thead className="bg-base-200/60 text-base-content/60 font-medium">
+                      <tr>
+                        <th>Message ID</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Size</th>
+                        <th>Next attempt</th>
+                        <th className="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-base-300">
+                      {queueItems.map((item) => (
+                        <tr key={item.id} className="hover:bg-base-200/40">
+                          <td className="font-mono text-base-content/70 break-all">{item.id}</td>
+                          <td className="font-mono text-base-content/70">{queueSender(item)}</td>
+                          <td className="font-mono text-base-content/70">{queueRecipients(item)}</td>
+                          <td className="font-mono tabular-nums text-base-content/70">
+                            {typeof item.size === 'number' ? fmtBytes(item.size) : '—'}
+                          </td>
+                          <td className="font-mono text-base-content/70">
+                            {qStr(item.nextRetry) || qStr(item.nextDelivery) || qStr(item.scheduledAt) || '—'}
+                          </td>
+                          <td className="text-right space-x-1 whitespace-nowrap">
+                            <button
+                              onClick={() => void handleQueueRetry(item)}
+                              className="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content font-medium rounded-lg"
+                            >
+                              Retry now
+                            </button>
+                            <button
+                              onClick={() => void handleQueueDelete(item)}
+                              className="btn btn-ghost btn-xs text-error hover:bg-base-200 font-medium rounded-lg"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {queueItems.length === 0 && !queueLoading && (
+                        <tr>
+                          <td colSpan={6} className="text-center text-xs text-base-content/50 py-6">
+                            The mail queue is empty
+                          </td>
+                        </tr>
+                      )}
+                      {queueLoading && (
+                        <tr>
+                          <td colSpan={6} className="text-center text-xs text-base-content/50 py-6">
+                            Loading queue…
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'track' && (
+            <div className="space-y-6 max-w-6xl">
+              <div>
+                <h2 className="text-base font-medium text-base-content">Track delivery</h2>
+                <p className="text-xs text-base-content/60">Search the mail server log by sender, recipient or message ID</p>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleTrackSearch();
+                }}
+                className="flex flex-col sm:flex-row gap-2"
+              >
+                <input
+                  type="text"
+                  value={trackQuery}
+                  onChange={(e) => setTrackQuery(e.target.value)}
+                  placeholder="e.g. alice@affinmail.local"
+                  className="input input-bordered input-sm h-9 flex-1 font-mono rounded-lg"
+                />
+                <select
+                  value={trackHours}
+                  onChange={(e) => setTrackHours(Number(e.target.value))}
+                  className="select select-bordered select-sm h-9 rounded-lg"
+                >
+                  <option value={24}>Last 24 hours</option>
+                  <option value={48}>Last 48 hours</option>
+                  <option value={168}>Last 7 days</option>
+                </select>
+                <button type="submit" disabled={trackBusy} className="btn btn-primary btn-sm h-9 px-4 gap-1.5 font-medium rounded-lg">
+                  <Search className="w-3.5 h-3.5 stroke-[1.5]" />
+                  <span>{trackBusy ? 'Searching…' : 'Search'}</span>
+                </button>
+              </form>
+
+              {trackLines === null && (
+                <p className="text-xs text-base-content/50">No search yet — results appear here as raw log lines, newest last.</p>
+              )}
+              {trackLines !== null && trackLines.length === 0 && (
+                <p className="text-xs text-base-content/50">No matching log lines in the selected period.</p>
+              )}
+              {trackLines !== null && trackLines.length > 0 && (
+                <div className="bg-base-200 border border-base-300 rounded-xl p-4 space-y-2">
+                  <p className="text-xs text-base-content/50 font-mono tabular-nums">{trackLines.length} matching lines</p>
+                  <div className="font-mono text-xs space-y-1 max-h-[480px] overflow-y-auto">
+                    {trackLines.map((line, i) => (
+                      <p key={i} className="text-base-content/80 break-all">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'ippools' && (
             <div className="space-y-6 max-w-6xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1457,6 +1785,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <p className="text-base-content/80">$ affinmail update</p>
                 <p className="text-base-content/80">$ affinmail backup</p>
                 <p className="text-base-content/80">$ affinmail logs stalwart</p>
+              </div>
+
+              <div className="bg-base-100 border border-base-300 p-4 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-medium text-base-content">Mail server log</h3>
+                  <button
+                    onClick={() => void loadLogs()}
+                    className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded-lg font-medium gap-1.5"
+                  >
+                    <RotateCw className="w-3.5 h-3.5 stroke-[1.5] text-base-content/60" />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+                <div className="font-mono text-xs space-y-1 max-h-80 overflow-y-auto">
+                  {logsLoading && <p className="text-base-content/50">Loading log…</p>}
+                  {!logsLoading &&
+                    logLines.map((line, i) => (
+                      <p key={i} className="text-base-content/70 break-all">
+                        {line}
+                      </p>
+                    ))}
+                  {!logsLoading && logLines.length === 0 && (
+                    <p className="text-base-content/50">No log lines returned</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1687,12 +2040,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* ===================== MODAL: DNS RECORDS & DKIM ===================== */}
+      {/* ===================== MODAL: DELIVERABILITY ===================== */}
       {selectedDnsDomain && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-base-100 border border-base-300 w-full max-w-2xl max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-4">
+          <div className="bg-base-100 border border-base-300 w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-4 sm:p-5 rounded-xl shadow-gmail-modal space-y-5">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-medium text-base-content">DNS records for {selectedDnsDomain}</h3>
+              <h3 className="text-sm font-medium text-base-content">Deliverability for {selectedDnsDomain}</h3>
               <button
                 onClick={() => setSelectedDnsDomain(null)}
                 className="btn btn-ghost btn-circle btn-sm h-10 w-10 min-h-10 text-base-content/60"
@@ -1702,47 +2055,104 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </button>
             </div>
 
-            <div className="overflow-x-auto text-xs">
-              <table className="table table-sm w-full font-mono tabular-nums">
-                <thead className="bg-base-200/60 text-base-content/60">
-                  <tr>
-                    <th>Type</th>
-                    <th>Host</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-base-300">
-                  {dnsLoading && (
-                    <tr>
-                      <td colSpan={3} className="text-center text-base-content/50 py-4">
-                        Loading DNS records…
-                      </td>
-                    </tr>
-                  )}
-                  {!dnsLoading &&
-                    dnsRecords.map((rec, i) => (
-                      <tr key={`${rec.type}-${rec.name}-${i}`}>
-                        <td>
-                          <span className="px-1.5 py-0.5 rounded bg-base-200 border border-base-300 text-xs">
-                            {rec.type}
-                          </span>
-                        </td>
-                        <td>{rec.name}</td>
-                        <td className="break-all">
-                          {rec.priority !== undefined ? `${rec.priority} ${rec.value}` : rec.value}
-                        </td>
+            {delivLoading && <p className="text-xs text-base-content/50">Checking DNS and signing keys…</p>}
+
+            {!delivLoading && deliv && (
+              <>
+                <div className="overflow-x-auto text-xs">
+                  <table className="table table-sm w-full font-mono tabular-nums">
+                    <thead className="bg-base-200/60 text-base-content/60">
+                      <tr>
+                        <th>Type</th>
+                        <th>Host</th>
+                        <th>Value</th>
+                        <th>Status</th>
+                        <th></th>
                       </tr>
-                    ))}
-                  {!dnsLoading && dnsRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={3} className="text-center text-base-content/50 py-4">
-                        No records returned
-                      </td>
-                    </tr>
+                    </thead>
+                    <tbody className="divide-y divide-base-300">
+                      {deliv.checks.map((chk, i) => (
+                        <tr key={`${chk.type}-${chk.name}-${i}`}>
+                          <td>
+                            <span className="px-1.5 py-0.5 rounded bg-base-200 border border-base-300 text-xs">{chk.type}</span>
+                          </td>
+                          <td>{chk.name}</td>
+                          <td className="break-all">{chk.expected}</td>
+                          <td>
+                            {chk.published ? (
+                              <span className="text-success font-medium">Published</span>
+                            ) : (
+                              <span className="text-error font-medium">Missing</span>
+                            )}
+                          </td>
+                          <td>
+                            <button
+                              onClick={() => {
+                                void navigator.clipboard.writeText(chk.expected);
+                                onNotify('Record value copied', 'info');
+                              }}
+                              className="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content rounded-lg"
+                              aria-label="Copy record value"
+                            >
+                              <Copy className="w-3.5 h-3.5 stroke-[1.5]" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-xs font-medium text-base-content">DKIM signing keys on the server</h4>
+                  {deliv.signatures.length === 0 && (
+                    <p className="text-xs text-base-content/50">No signing keys found for this domain</p>
                   )}
-                </tbody>
-              </table>
-            </div>
+                  {deliv.signatures.map((sig) => (
+                    <div key={sig.id ?? sig.selector ?? ''} className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-base-content/70">
+                      <span>selector: {sig.selector}</span>
+                      <span>algorithm: {sig.algorithm}</span>
+                      <span>stage: {sig.stage}</span>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => void handleRotateDkim()}
+                    className="btn btn-ghost btn-xs h-8 px-3 border border-base-300 rounded-lg font-medium"
+                  >
+                    Rotate DKIM key
+                  </button>
+                  <p className="text-xs text-base-content/50">
+                    Rotation adds a new signing key on the server. Publish the new selector record above before retiring the old one.
+                  </p>
+                </div>
+
+                <div className="space-y-2 border-t border-base-300 pt-4">
+                  <h4 className="text-xs font-medium text-base-content">Catch-all address</h4>
+                  <p className="text-xs text-base-content/50">
+                    Mail to addresses that do not exist on this domain is delivered to the catch-all mailbox instead of bouncing.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      value={catchAllInput}
+                      onChange={(e) => setCatchAllInput(e.target.value)}
+                      className="select select-bordered select-sm h-9 flex-1 font-mono rounded-lg"
+                    >
+                      <option value="">None — bounce unknown addresses</option>
+                      {mailboxes
+                        .filter((mb) => mb.domain === selectedDnsDomain)
+                        .map((mb) => (
+                          <option key={mb.id} value={mb.email}>
+                            {mb.email}
+                          </option>
+                        ))}
+                    </select>
+                    <button onClick={() => void handleSaveCatchAll()} className="btn btn-primary btn-sm h-9 px-4 font-medium rounded-lg">
+                      Save catch-all
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="flex justify-end">
               <button onClick={() => setSelectedDnsDomain(null)} className="btn btn-ghost btn-xs h-8 px-4 border border-base-300 rounded-lg font-medium">

@@ -526,7 +526,60 @@ function domainGet(string $name): never
     if (!$row) {
         fail(404, 'domain not found');
     }
-    ok(domainOut($row));
+    $out = domainOut($row);
+    $out['catchAllAddress'] = stalwartCatchAll($row);
+    ok($out);
+}
+
+function stalwartSignaturesForDomain(string $domainId): array
+{
+    try {
+        $res = jmap('x:DkimSignature/get', ['accountId' => stalwartAdminAccountId(), 'ids' => null]);
+    } catch (Throwable) {
+        return [];
+    }
+    return array_values(array_filter(
+        $res['list'] ?? [],
+        static fn(array $s): bool => (string)($s['domainId'] ?? '') === $domainId
+    ));
+}
+
+/**
+ * DNS records a domain must publish. DKIM entries are built from the
+ * signatures Stalwart actually signs with (it auto-generates its own keys
+ * per domain) - the keypair stored in PostgreSQL at domain creation is NOT
+ * what the server signs with, so it must not be served as the DNS record.
+ */
+function domainDnsRecords(array $row): array
+{
+    $records = [
+        ['type' => 'MX', 'name' => '@', 'value' => 'affinmail.hostaffin.com', 'priority' => 10],
+        ['type' => 'TXT', 'name' => '@', 'value' => 'v=spf1 mx include:_spf.hostaffin.com ~all'],
+    ];
+    $dkimAdded = false;
+    if (!empty($row['stalwart_domain_id'])) {
+        foreach (stalwartSignaturesForDomain((string)$row['stalwart_domain_id']) as $s) {
+            if (($s['stage'] ?? 'active') !== 'active') {
+                continue;
+            }
+            $algo = str_contains((string)($s['@type'] ?? ''), 'Ed25519') ? 'ed25519' : 'rsa';
+            $records[] = [
+                'type' => 'TXT', 'name' => (string)$s['selector'] . '._domainkey',
+                'value' => 'v=DKIM1; k=' . $algo . '; p=' . (string)($s['publicKey'] ?? ''),
+                'selector' => (string)$s['selector'], 'algorithm' => $algo,
+            ];
+            $dkimAdded = true;
+        }
+    }
+    if (!$dkimAdded && !empty($row['dkim_public_key'])) {
+        $records[] = [
+            'type' => 'TXT', 'name' => $row['dkim_selector'] . '._domainkey',
+            'value' => 'v=DKIM1; k=rsa; p=' . $row['dkim_public_key'],
+            'selector' => (string)$row['dkim_selector'], 'algorithm' => 'rsa',
+        ];
+    }
+    $records[] = ['type' => 'TXT', 'name' => '_dmarc', 'value' => 'v=DMARC1; p=quarantine; rua=mailto:dmarc@' . $row['domain_name']];
+    return $records;
 }
 
 function domainDns(string $name): never
@@ -537,16 +590,28 @@ function domainDns(string $name): never
     if (!$row) {
         fail(404, 'domain not found');
     }
-    $pub = $row['dkim_public_key'];
     ok([
         'domain'  => $row['domain_name'],
-        'records' => [
-            ['type' => 'MX', 'name' => '@', 'value' => 'affinmail.hostaffin.com', 'priority' => 10],
-            ['type' => 'TXT', 'name' => '@', 'value' => 'v=spf1 mx include:_spf.hostaffin.com ~all'],
-            ['type' => 'TXT', 'name' => $row['dkim_selector'] . '._domainkey', 'value' => 'v=DKIM1; k=rsa; p=' . $pub],
-            ['type' => 'TXT', 'name' => '_dmarc', 'value' => 'v=DMARC1; p=quarantine; rua=mailto:dmarc@' . $row['domain_name']],
-        ],
+        'records' => domainDnsRecords($row),
     ]);
+}
+
+function stalwartCatchAll(array $row): ?string
+{
+    if (empty($row['stalwart_domain_id'])) {
+        return null;
+    }
+    try {
+        $d = jmap('x:Domain/get', [
+            'accountId'  => stalwartAdminAccountId(),
+            'ids'        => [(string)$row['stalwart_domain_id']],
+            'properties' => ['catchAllAddress'],
+        ]);
+        $ca = $d['list'][0]['catchAllAddress'] ?? null;
+        return is_string($ca) && $ca !== '' ? $ca : null;
+    } catch (Throwable) {
+        return null;
+    }
 }
 
 function domainDelete(string $name): never
@@ -968,6 +1033,208 @@ function aliasDelete(string $id): never
 
     db()->prepare('DELETE FROM aliases WHERE id = ?')->execute([$id]);
     ok(['deleted' => $id]);
+}
+
+/* ---------------------------------------------------------------- mail queue */
+
+function queueList(): never
+{
+    $res = jmap('x:QueuedMessage/get', ['accountId' => stalwartAdminAccountId(), 'ids' => null]);
+    $items = $res['list'] ?? [];
+    ok(['messages' => $items, 'count' => count($items)]);
+}
+
+function queueDelete(string $id): never
+{
+    $res = jmap('x:QueuedMessage/set', ['accountId' => stalwartAdminAccountId(), 'destroy' => [$id]]);
+    if (!empty($res['notDestroyed'][$id])) {
+        fail(404, 'queued message not found');
+    }
+    ok(['deleted' => $id]);
+}
+
+function queueRetry(string $id): never
+{
+    $res = jmap('x:QueuedMessage/get', ['accountId' => stalwartAdminAccountId(), 'ids' => [$id]]);
+    $item = $res['list'][0] ?? null;
+    if ($item === null) {
+        fail(404, 'queued message not found');
+    }
+    $field = null;
+    foreach (['nextRetry', 'nextDelivery', 'nextAttempt'] as $f) {
+        if (array_key_exists($f, $item)) {
+            $field = $f;
+            break;
+        }
+    }
+    if ($field === null) {
+        fail(501, 'this queued message cannot be rescheduled from the panel');
+    }
+    $upd = jmap('x:QueuedMessage/set', [
+        'accountId' => stalwartAdminAccountId(),
+        'update'    => [$id => [$field => gmdate('Y-m-d\\TH:i:s\\Z')]],
+    ]);
+    if (!empty($upd['notUpdated'][$id])) {
+        fail(502, 'retry failed: ' . (string)($upd['notUpdated'][$id]['description'] ?? 'unknown error'));
+    }
+    ok(['retried' => $id]);
+}
+
+/* ------------------------------------------------------- deliverability */
+
+function domainDeliverability(string $name): never
+{
+    $st = db()->prepare('SELECT * FROM domains WHERE domain_name = ?');
+    $st->execute([strtolower($name)]);
+    $row = $st->fetch();
+    if (!$row) {
+        fail(404, 'domain not found');
+    }
+    $domain = $row['domain_name'];
+    $records = domainDnsRecords($row);
+    $checks = [];
+    foreach ($records as $rec) {
+        $host = $rec['name'] === '@' ? $domain : $rec['name'] . '.' . $domain;
+        $found = null;
+        if ($rec['type'] === 'MX') {
+            foreach (dns_get_record($domain, DNS_MX) ?: [] as $mx) {
+                if (!empty($mx['target'])) {
+                    $found = (string)$mx['target'];
+                    break;
+                }
+            }
+        } else {
+            $needle = str_contains($rec['value'], 'v=DKIM1') ? 'v=DKIM1'
+                : (str_contains($rec['value'], 'v=DMARC1') ? 'v=DMARC1' : 'v=spf1');
+            foreach (dns_get_record($host, DNS_TXT) ?: [] as $tx) {
+                $txt = (string)($tx['txt'] ?? implode('', $tx['entries'] ?? []));
+                if (str_contains($txt, $needle)) {
+                    $found = $txt;
+                    break;
+                }
+            }
+        }
+        $checks[] = [
+            'type' => $rec['type'], 'name' => $rec['name'], 'host' => $host,
+            'expected' => $rec['value'], 'published' => $found !== null, 'found' => $found,
+        ];
+    }
+    $signatures = [];
+    if (!empty($row['stalwart_domain_id'])) {
+        foreach (stalwartSignaturesForDomain((string)$row['stalwart_domain_id']) as $s) {
+            $signatures[] = [
+                'id'        => $s['id'] ?? null,
+                'selector'  => $s['selector'] ?? null,
+                'algorithm' => str_contains((string)($s['@type'] ?? ''), 'Ed25519') ? 'ed25519' : 'rsa',
+                'stage'     => $s['stage'] ?? null,
+            ];
+        }
+    }
+    ok([
+        'domain'          => $domain,
+        'records'         => $records,
+        'checks'          => $checks,
+        'signatures'      => $signatures,
+        'catchAllAddress' => stalwartCatchAll($row),
+    ]);
+}
+
+function domainCatchAll(string $name): never
+{
+    $st = db()->prepare('SELECT * FROM domains WHERE domain_name = ?');
+    $st->execute([strtolower($name)]);
+    $row = $st->fetch();
+    if (!$row) {
+        fail(404, 'domain not found');
+    }
+    if (empty($row['stalwart_domain_id'])) {
+        fail(409, 'domain is not provisioned on the mail server');
+    }
+    $b = body();
+    $email = array_key_exists('email', $b) && $b['email'] !== null
+        ? strtolower(trim((string)$b['email'])) : null;
+    if ($email !== null) {
+        if (!validEmail($email) || !str_ends_with($email, '@' . $row['domain_name'])) {
+            fail(400, 'catch-all must be an address on this domain');
+        }
+        if (stalwartFindAccountByEmail($email) === null) {
+            fail(404, 'catch-all mailbox not found on the mail server');
+        }
+    }
+    $res = jmap('x:Domain/set', [
+        'accountId' => stalwartAdminAccountId(),
+        'update'    => [(string)$row['stalwart_domain_id'] => ['catchAllAddress' => $email]],
+    ]);
+    if (!empty($res['notUpdated'])) {
+        fail(502, 'catch-all update failed');
+    }
+    ok(['domain' => $row['domain_name'], 'catchAllAddress' => $email]);
+}
+
+function domainDkimRotate(string $name): never
+{
+    $st = db()->prepare('SELECT * FROM domains WHERE domain_name = ?');
+    $st->execute([strtolower($name)]);
+    $row = $st->fetch();
+    if (!$row) {
+        fail(404, 'domain not found');
+    }
+    if (empty($row['stalwart_domain_id'])) {
+        fail(409, 'domain is not provisioned on the mail server');
+    }
+    [$priv, $pub] = dkimKeypair();
+    $selector = 'am' . gmdate('ymd') . '-' . substr(bin2hex(random_bytes(2)), 0, 4);
+    $res = jmap('x:DkimSignature/set', [
+        'accountId' => stalwartAdminAccountId(),
+        'create'    => ['s1' => [
+            '@type'      => 'Dkim1RsaSha256',
+            'domainId'   => (string)$row['stalwart_domain_id'],
+            'selector'   => $selector,
+            'privateKey' => ['@type' => 'Text', 'secret' => $priv],
+        ]],
+    ]);
+    if (empty($res['created']['s1']['id'])) {
+        fail(502, 'signature create failed: ' . json_encode($res['notCreated']['s1'] ?? []));
+    }
+    db()->prepare('UPDATE domains SET dkim_selector = ?, dkim_private_key = ?, dkim_public_key = ? WHERE id = ?')
+        ->execute([$selector, $priv, $pub, $row['id']]);
+    ok([
+        'domain'   => $row['domain_name'],
+        'selector' => $selector,
+        'record'   => ['type' => 'TXT', 'name' => $selector . '._domainkey', 'value' => 'v=DKIM1; k=rsa; p=' . $pub],
+    ], 201);
+}
+
+/* --------------------------------------------------- tracking and logs */
+
+function cleanLogLines(array $lines): array
+{
+    return array_map(static function (string $l): string {
+        $l = preg_replace('/\x1b\[[0-9;]*m/', '', $l) ?? $l;
+        return substr($l, 0, 500);
+    }, $lines);
+}
+
+function mailTrack(): never
+{
+    $q = trim((string)($_GET['q'] ?? ''));
+    $hours = max(1, min(168, (int)($_GET['hours'] ?? 24)));
+    if (strlen($q) < 3 || str_contains($q, "\n") || str_contains($q, "\r")) {
+        fail(400, 'search text must be at least 3 characters');
+    }
+    $cmd = 'journalctl -u stalwart --since ' . escapeshellarg("-{$hours} hours")
+        . ' --no-pager -o cat 2>/dev/null | grep -F -- ' . escapeshellarg($q) . ' | tail -n 200';
+    $out = [];
+    exec($cmd, $out);
+    ok(['query' => $q, 'hours' => $hours, 'count' => count($out), 'lines' => cleanLogLines($out)]);
+}
+
+function systemLogs(): never
+{
+    $n = max(10, min(200, (int)($_GET['lines'] ?? 50)));
+    $out = [];
+    exec('journalctl -u stalwart -n ' . $n . ' --no-pager -o cat 2>/dev/null', $out);
+    ok(['service' => 'stalwart', 'count' => count($out), 'lines' => cleanLogLines($out)]);
 }
 
 /* ---------------------------------------------------------------- ip pools */
@@ -2458,6 +2725,28 @@ try {
             aliasCreate();
         case $n === 2 && $seg[0] === 'aliases' && $method === 'DELETE':
             aliasDelete($seg[1]);
+
+        // mail queue
+        case $n === 1 && $seg[0] === 'queue' && $method === 'GET':
+            queueList();
+        case $n === 2 && $seg[0] === 'queue' && $method === 'DELETE':
+            queueDelete($seg[1]);
+        case $n === 3 && $seg[0] === 'queue' && $seg[2] === 'retry' && $method === 'POST':
+            queueRetry($seg[1]);
+
+        // deliverability, catch-all, dkim rotation
+        case $n === 3 && $seg[0] === 'domains' && $seg[2] === 'deliverability' && $method === 'GET':
+            domainDeliverability($seg[1]);
+        case $n === 3 && $seg[0] === 'domains' && $seg[2] === 'catch-all' && $method === 'PUT':
+            domainCatchAll($seg[1]);
+        case $n === 3 && $seg[0] === 'domains' && $seg[2] === 'dkim-rotate' && $method === 'POST':
+            domainDkimRotate($seg[1]);
+
+        // mail tracking and service logs
+        case $n === 2 && $seg[0] === 'mail' && $seg[1] === 'track' && $method === 'GET':
+            mailTrack();
+        case $n === 2 && $seg[0] === 'system' && $seg[1] === 'logs' && $method === 'GET':
+            systemLogs();
 
         // ip pools
         case $n === 1 && ($seg[0] === 'ip-pools' || $seg[0] === 'ippools') && $method === 'GET':

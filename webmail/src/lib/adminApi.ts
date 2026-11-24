@@ -67,6 +67,7 @@ export interface Domain {
   isActive: boolean;
   assignedIpId: string | null;
   mailboxCount: number | null;
+  catchAllAddress?: string | null;
   createdAt: string;
 }
 
@@ -117,6 +118,8 @@ export interface DnsRecord {
   name: string;
   value: string;
   priority?: number;
+  selector?: string;
+  algorithm?: string;
 }
 
 export interface DnsResult {
@@ -264,3 +267,69 @@ export const createAlias = (source: string, destination: string) =>
 
 export const deleteAlias = (id: string) =>
   apiFetch<{ deleted: string }>(`/aliases/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+/* ------------------------------------------------------------- mail queue */
+
+export interface QueuedMessage {
+  id: string;
+  [key: string]: unknown;
+}
+
+export const getQueue = () => apiFetch<{ messages: QueuedMessage[]; count: number }>('/queue');
+
+export const deleteQueuedMessage = (id: string) =>
+  apiFetch<{ deleted: string }>(`/queue/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const retryQueuedMessage = (id: string) =>
+  apiFetch<{ retried: string }>(`/queue/${encodeURIComponent(id)}/retry`, { method: 'POST' });
+
+/* ------------------------------------------------------- deliverability */
+
+export interface DnsCheck {
+  type: string;
+  name: string;
+  host: string;
+  expected: string;
+  published: boolean;
+  found: string | null;
+}
+
+export interface DkimSignatureInfo {
+  id: string | null;
+  selector: string | null;
+  algorithm: string;
+  stage: string | null;
+}
+
+export interface Deliverability {
+  domain: string;
+  records: DnsRecord[];
+  checks: DnsCheck[];
+  signatures: DkimSignatureInfo[];
+  catchAllAddress: string | null;
+}
+
+export const getDeliverability = (domain: string) =>
+  apiFetch<Deliverability>(`/domains/${encodeURIComponent(domain)}/deliverability`);
+
+export const setCatchAll = (domain: string, email: string | null) =>
+  apiFetch<{ domain: string; catchAllAddress: string | null }>(
+    `/domains/${encodeURIComponent(domain)}/catch-all`,
+    { method: 'PUT', body: { email } }
+  );
+
+export const rotateDkim = (domain: string) =>
+  apiFetch<{ domain: string; selector: string; record: DnsRecord }>(
+    `/domains/${encodeURIComponent(domain)}/dkim-rotate`,
+    { method: 'POST' }
+  );
+
+/* ---------------------------------------------------- tracking and logs */
+
+export const trackMail = (q: string, hours: number) =>
+  apiFetch<{ query: string; hours: number; count: number; lines: string[] }>(
+    `/mail/track?q=${encodeURIComponent(q)}&hours=${hours}`
+  );
+
+export const getSystemLogs = (lines = 50) =>
+  apiFetch<{ service: string; count: number; lines: string[] }>(`/system/logs?lines=${lines}`);
