@@ -1999,10 +1999,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
 
-            <button onClick={() => setLocale(locale === 'en' ? 'bn' : 'en')} className={`${navBtn} w-auto gap-1 px-2`} title={t('language')}>
-              <Languages className="w-4 h-4" />
-              <span className="hidden sm:inline text-[12px]">{locale === 'en' ? 'বাংলা' : 'EN'}</span>
-            </button>
             <button onClick={() => logout()} className={`${navBtn} w-auto gap-1 px-2`} title="Sign out">
               <Power className="w-3.5 h-3.5" />
               <span className="hidden sm:inline text-[12px]">{t('signOut')}</span>

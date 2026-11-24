@@ -1,21 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import en from './en.json';
-import bn from './bn.json';
 
 type TranslationRecord = typeof en;
 
-export type Locale = 'en' | 'bn';
+// AffinMail ships English-only (owner decision, 2026-11-25). The i18n
+// framework is retained so additional locales can be added later by
+// dropping in a new dictionary; the locale is fixed to 'en' for now.
+export type Locale = 'en';
 
 const DEFAULT_LOCALE: Locale = 'en';
 const STORAGE_KEY = 'affinmail_locale';
 
 function getInitialLocale(): Locale {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(STORAGE_KEY) as Locale | null;
-    if (stored) return stored;
-    const nav = navigator.language as Locale | undefined;
-    if (nav && nav.startsWith('bn')) return 'bn';
-  }
   return DEFAULT_LOCALE;
 }
 
@@ -36,8 +32,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, [locale]);
 
   const t = (key: keyof TranslationRecord): string => {
-    const dictionary: TranslationRecord = locale === 'bn' ? bn : en;
-    return dictionary[key] || key;
+    return en[key] || key;
   };
 
   return (
