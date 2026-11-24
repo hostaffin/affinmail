@@ -14,7 +14,7 @@ function getInitialLocale(): Locale {
     const stored = localStorage.getItem(STORAGE_KEY) as Locale | null;
     if (stored) return stored;
     const nav = navigator.language as Locale | undefined;
-    if (nav === 'bn' || nav.startsWith('bn')) return 'bn';
+    if (nav && nav.startsWith('bn')) return 'bn';
   }
   return DEFAULT_LOCALE;
 }
