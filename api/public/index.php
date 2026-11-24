@@ -1303,6 +1303,66 @@ function statsOverview(): never
         $lastBackup = ['file' => basename($f), 'sizeBytes' => (int)(filesize($f) ?: 0), 'at' => gmdate('Y-m-d H:i:s', filemtime($f) ?: time())];
     }
 
+    // Time series for the dashboard charts (fed by api/bin/collect-stats.php).
+    $history = ['mailDaily' => [], 'queueSeries' => [], 'repSeries' => [], 'uptime24h' => [], 'ips' => []];
+    try {
+        $mailRows = $pdo->query("SELECT to_char((hour + interval '6 hours')::date, 'YYYY-MM-DD') AS day,
+            sum(count) FILTER (WHERE kind = 'queued') AS queued,
+            sum(count) FILTER (WHERE kind = 'delivered') AS delivered,
+            sum(count) FILTER (WHERE kind = 'failed') AS failed,
+            sum(count) FILTER (WHERE kind = 'deferred') AS deferred,
+            sum(count) FILTER (WHERE kind = 'spam') AS spam
+            FROM stats_mail_events WHERE hour > now() - interval '8 days'
+            GROUP BY 1 ORDER BY 1")->fetchAll();
+        foreach ($mailRows as $r) {
+            $d = (int)($r['delivered'] ?? 0);
+            $f = (int)($r['failed'] ?? 0);
+            $history['mailDaily'][] = [
+                'day' => (string)$r['day'],
+                'queued' => (int)($r['queued'] ?? 0),
+                'delivered' => $d,
+                'failed' => $f,
+                'deferred' => (int)($r['deferred'] ?? 0),
+                'spam' => (int)($r['spam'] ?? 0),
+                'rate' => ($d + $f) > 0 ? round($d / ($d + $f) * 100, 1) : null,
+            ];
+        }
+        $sampleRows = $pdo->query("SELECT to_char(ts, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS ts, queue_count, svc_stalwart, svc_pg, svc_redis
+            FROM stats_samples WHERE ts > now() - interval '25 hours' ORDER BY ts")->fetchAll();
+        $up = ['stalwart' => [0, 0], 'postgresql' => [0, 0], 'redis' => [0, 0]];
+        foreach ($sampleRows as $s) {
+            $history['queueSeries'][] = ['ts' => (string)$s['ts'], 'queue' => $s['queue_count'] === null ? null : (int)$s['queue_count'],
+                'svc' => [$s['svc_stalwart'] === null ? null : (int)$s['svc_stalwart'], $s['svc_pg'] === null ? null : (int)$s['svc_pg'], $s['svc_redis'] === null ? null : (int)$s['svc_redis']]];
+            foreach (['stalwart' => 'svc_stalwart', 'postgresql' => 'svc_pg', 'redis' => 'svc_redis'] as $name => $col) {
+                if ($s[$col] !== null) {
+                    $up[$name][1]++;
+                    if ((int)$s[$col] === 1) {
+                        $up[$name][0]++;
+                    }
+                }
+            }
+        }
+        foreach ($up as $name => [$okN, $tot]) {
+            $history['uptime24h'][$name] = $tot > 0 ? round($okN / $tot * 100, 2) : null;
+        }
+        $repRows = $pdo->query("SELECT to_char(ts, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS ts, rep_score FROM stats_samples
+            WHERE ts > now() - interval '7 days' AND rep_score IS NOT NULL ORDER BY ts")->fetchAll();
+        $history['repSeries'] = array_map(static fn($r) => ['ts' => (string)$r['ts'], 'score' => (float)$r['rep_score']], $repRows);
+        $ipRows = $pdo->query("SELECT host(p.ip_address) AS ip, p.reputation_score AS score, p.is_blacklisted AS blacklisted,
+            (SELECT count(*) FROM ip_rbl_checks c WHERE c.ip_id = p.id AND c.is_listed AND c.checked_at > now() - interval '1 hour') AS listed_now,
+            (SELECT max(c.checked_at) FROM ip_rbl_checks c WHERE c.ip_id = p.id) AS last_checked
+            FROM ip_pools p WHERE p.is_active ORDER BY p.ip_address")->fetchAll();
+        $history['ips'] = array_map(static fn($r) => [
+            'ip' => (string)$r['ip'],
+            'score' => (float)$r['score'],
+            'blacklisted' => (bool)$r['blacklisted'],
+            'listedNow' => (int)$r['listed_now'],
+            'lastChecked' => $r['last_checked'] === null ? null : (string)$r['last_checked'],
+        ], $ipRows);
+    } catch (Throwable) {
+        // Collector tables not created yet — charts render empty until the first run.
+    }
+
     ok([
         'byDomain'        => $byDomain,
         'topMailboxes'    => $topMailboxes,
@@ -1319,6 +1379,7 @@ function statsOverview(): never
             'uptimeSec'  => $uptimeSec,
         ],
         'lastBackup'      => $lastBackup,
+        'history'         => $history,
     ]);
 }
 

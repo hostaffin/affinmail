@@ -51,6 +51,7 @@ import {
   deleteAlias,
   type QueuedMessage,
   type AdminStats,
+  type MailDay,
   getStats,
   getQueue,
   deleteQueuedMessage,
@@ -230,6 +231,113 @@ const Bar: React.FC<{ value: number }> = ({ value }) => (
     />
   </div>
 );
+
+type ChartSeries = { label: string; color: string; points: (number | null)[]; area?: boolean };
+
+const LineChart: React.FC<{
+  series: ChartSeries[];
+  height?: number;
+  yMax?: number;
+  yMin?: number;
+  formatY?: (v: number) => string;
+  xLabels?: string[];
+}> = ({ series, height = 128, yMax, yMin = 0, formatY, xLabels }) => {
+  const W = 560;
+  const H = height;
+  const PADL = 36;
+  const PADR = 10;
+  const PADT = 10;
+  const PADB = 20;
+  const all = series.flatMap((s) => s.points).filter((v): v is number => v !== null);
+  const max = yMax ?? Math.max(10, ...all);
+  const min = yMin;
+  const n = Math.max(1, ...series.map((s) => s.points.length));
+  const x = (i: number) => PADL + (n <= 1 ? (W - PADL - PADR) / 2 : (i / (n - 1)) * (W - PADL - PADR));
+  const y = (v: number) => PADT + (1 - (v - min) / (max - min || 1)) * (H - PADT - PADB);
+  const gridVals = [min, min + (max - min) / 2, max];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img">
+      {gridVals.map((gv, i) => (
+        <g key={i}>
+          <line x1={PADL} x2={W - PADR} y1={y(gv)} y2={y(gv)} strokeWidth="1" className="stroke-[#EAECF0] dark:stroke-[#1B2740]" />
+          <text x={PADL - 6} y={y(gv) + 3} textAnchor="end" className="fill-[#98A2B3] text-[9px]">
+            {formatY ? formatY(gv) : Math.round(gv)}
+          </text>
+        </g>
+      ))}
+      {series.map((s) => {
+        const pts = s.points
+          .map((v, i) => (v === null ? null : ([x(i), y(v)] as const)))
+          .filter((p): p is readonly [number, number] => p !== null);
+        if (pts.length === 0) return null;
+        const line = pts.map((p) => `${p[0]},${p[1]}`).join(' ');
+        return (
+          <g key={s.label}>
+            {s.area && pts.length > 1 && (
+              <polygon points={`${pts[0][0]},${y(min)} ${line} ${pts[pts.length - 1][0]},${y(min)}`} fill={s.color} opacity="0.12" />
+            )}
+            {pts.length > 1 && (
+              <polyline points={line} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {pts.map((p, i) => (
+              <circle key={i} cx={p[0]} cy={p[1]} r="2.4" fill={s.color} />
+            ))}
+          </g>
+        );
+      })}
+      {xLabels &&
+        xLabels.map(
+          (lb, i) =>
+            (i === 0 || i === xLabels.length - 1 || i === Math.floor(xLabels.length / 2)) && (
+              <text
+                key={i}
+                x={x(i)}
+                y={H - 5}
+                textAnchor={i === 0 ? 'start' : i === xLabels.length - 1 ? 'end' : 'middle'}
+                className="fill-[#98A2B3] text-[9px]"
+              >
+                {lb}
+              </text>
+            ),
+        )}
+    </svg>
+  );
+};
+
+const ChartLegend: React.FC<{ items: { label: string; color: string; value?: string }[] }> = ({ items }) => (
+  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+    {items.map((it) => (
+      <span key={it.label} className="inline-flex items-center gap-1.5 text-[12px] text-[#475467] dark:text-[#A7B2C5]">
+        <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
+        {it.label}
+        {it.value && <span className="font-semibold text-[#101828] dark:text-white">{it.value}</span>}
+      </span>
+    ))}
+  </div>
+);
+
+/** Seven chart days ending at the last day present in the data (zeros filled). */
+function last7Days(mailDaily: MailDay[]): MailDay[] {
+  const byDay = new Map(mailDaily.map((d) => [d.day, d]));
+  const end = mailDaily.length > 0 ? mailDaily[mailDaily.length - 1].day : new Date().toISOString().slice(0, 10);
+  const [yy, mm, dd] = end.split('-').map(Number);
+  const endTs = Date.UTC(yy, (mm || 1) - 1, dd || 1);
+  const out: MailDay[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const key = new Date(endTs - i * 86400000).toISOString().slice(0, 10);
+    out.push(byDay.get(key) ?? { day: key, queued: 0, delivered: 0, failed: 0, deferred: 0, spam: 0, rate: null });
+  }
+  return out;
+}
+
+function dayLabel(day: string): string {
+  const [yy, mm, dd] = day.split('-').map(Number);
+  return new Date(Date.UTC(yy, (mm || 1) - 1, dd || 1)).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
 
 const PageHeader: React.FC<{
   title: string;
@@ -1328,6 +1436,175 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   ))}
                 </div>
+
+                {/* Charts: mail flow, delivery rate, reputation, queue history, service status */}
+                {(() => {
+                  const hist = stats?.history;
+                  if (!hist) return null;
+                  const days = last7Days(hist.mailDaily);
+                  const dayLabels = days.map((d) => dayLabel(d.day));
+                  const totalFlow = days.reduce((a, d) => a + d.queued + d.delivered + d.failed, 0);
+                  const rateDay = [...days].reverse().find((d) => d.rate !== null);
+                  const queuePts = hist.queueSeries.map((p) => p.queue);
+                  const queueLabels = hist.queueSeries.map((p) => p.ts.slice(11, 16));
+                  const svcNames = ['Stalwart mail core', 'PostgreSQL', 'Redis'];
+                  const svcKeys = ['stalwart', 'postgresql', 'redis'];
+                  return (
+                    <>
+                      <div className={`${PANEL} p-5`}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <SectionTitle>Mail flow — last 7 days</SectionTitle>
+                            <div className="mt-2">
+                              <ChartLegend
+                                items={[
+                                  { label: 'Queued', color: '#0B57D0', value: String(days.reduce((a, d) => a + d.queued, 0)) },
+                                  { label: 'Delivered', color: '#079455', value: String(days.reduce((a, d) => a + d.delivered, 0)) },
+                                  { label: 'Failed', color: '#D92D20', value: String(days.reduce((a, d) => a + d.failed, 0)) },
+                                ]}
+                              />
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[26px] font-semibold leading-none tabular-nums text-[#101828] dark:text-white">
+                              {rateDay?.rate != null ? `${rateDay.rate}%` : '—'}
+                            </div>
+                            <div className={`mt-1.5 text-[12px] ${MUTED}`}>
+                              delivery rate{rateDay ? ` · ${dayLabel(rateDay.day)}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          {totalFlow > 0 ? (
+                            <LineChart
+                              height={150}
+                              xLabels={dayLabels}
+                              series={[
+                                { label: 'Queued', color: '#0B57D0', points: days.map((d) => d.queued) },
+                                { label: 'Delivered', color: '#079455', points: days.map((d) => d.delivered) },
+                                { label: 'Failed', color: '#D92D20', points: days.map((d) => d.failed) },
+                              ]}
+                            />
+                          ) : (
+                            <p className={`py-6 text-center text-[13px] ${MUTED}`}>
+                              No mail recorded in the last 7 days yet. The collector reads Stalwart's log every 5 minutes.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <div className={`${PANEL} p-5`}>
+                          <SectionTitle>Delivery rate</SectionTitle>
+                          <p className={`mt-1 text-[12px] ${MUTED}`}>Delivered ÷ (delivered + failed), per day</p>
+                          <div className="mt-3">
+                            {days.some((d) => d.rate !== null) ? (
+                              <LineChart
+                                height={120}
+                                yMax={100}
+                                formatY={(v) => `${Math.round(v)}%`}
+                                xLabels={dayLabels}
+                                series={[{ label: 'Rate', color: '#079455', points: days.map((d) => d.rate), area: true }]}
+                              />
+                            ) : (
+                              <p className={`py-6 text-center text-[13px] ${MUTED}`}>No completed deliveries yet.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className={`${PANEL} p-5`}>
+                          <SectionTitle>IP reputation</SectionTitle>
+                          <p className={`mt-1 text-[12px] ${MUTED}`}>
+                            Average pool score from DNSBL checks (Spamhaus, SpamCop, Barracuda), sampled every 5 minutes
+                          </p>
+                          <div className="mt-3">
+                            {hist.repSeries.length > 1 ? (
+                              <LineChart
+                                height={120}
+                                yMax={100}
+                                formatY={(v) => `${Math.round(v)}`}
+                                xLabels={hist.repSeries.map((p) => p.ts.slice(11, 16))}
+                                series={[{ label: 'Reputation', color: '#0B57D0', points: hist.repSeries.map((p) => p.score), area: true }]}
+                              />
+                            ) : (
+                              <p className={`py-4 text-center text-[13px] ${MUTED}`}>
+                                Reputation sampling has started — the trend line appears as samples accumulate.
+                              </p>
+                            )}
+                          </div>
+                          <div className="mt-2 divide-y divide-[#EAECF0] dark:divide-[#1B2740]">
+                            {hist.ips.map((ip) => (
+                              <div key={ip.ip} className="flex items-center justify-between gap-3 py-2">
+                                <span className="font-mono text-[12.5px] text-[#101828] dark:text-white">{ip.ip}</span>
+                                <span className="flex items-center gap-2">
+                                  <span className={ip.listedNow > 0 ? BADGE_BAD : BADGE_OK}>
+                                    {ip.listedNow > 0 ? `Listed on ${ip.listedNow}` : 'Not listed'}
+                                  </span>
+                                  <span className="text-[12.5px] font-semibold tabular-nums text-[#101828] dark:text-white">
+                                    {ip.score.toFixed(1)}
+                                  </span>
+                                </span>
+                              </div>
+                            ))}
+                            {hist.ips.length === 0 && <p className={`py-3 text-[13px] ${MUTED}`}>No active IP pools.</p>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <div className={`${PANEL} p-5`}>
+                          <SectionTitle>Mail queue — last 24 hours</SectionTitle>
+                          <div className="mt-3">
+                            {queuePts.length > 1 ? (
+                              <LineChart
+                                height={120}
+                                xLabels={queueLabels}
+                                series={[{ label: 'Queue', color: '#B54708', points: queuePts, area: true }]}
+                              />
+                            ) : (
+                              <p className={`py-6 text-center text-[13px] ${MUTED}`}>
+                                Queue sampling has started — history builds every 5 minutes.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className={`${PANEL} p-5`}>
+                          <SectionTitle>Service status — last 24 hours</SectionTitle>
+                          <div className="mt-3 space-y-4">
+                            {svcNames.map((name, si) => {
+                              const uptime = hist.uptime24h[svcKeys[si]];
+                              const strip = hist.queueSeries.slice(-48);
+                              return (
+                                <div key={name}>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[13px] font-medium text-[#101828] dark:text-white">{name}</span>
+                                    <span className={`text-[12px] tabular-nums ${MUTED}`}>
+                                      {uptime != null ? `${uptime}% uptime` : 'no samples yet'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1.5 flex gap-[2px]">
+                                    {strip.map((p, i) => {
+                                      const v = p.svc?.[si];
+                                      return (
+                                        <span
+                                          key={i}
+                                          className="h-4 flex-1 rounded-[2px]"
+                                          style={{ background: v == null ? '#EAECF0' : v === 1 ? '#12B76A' : '#F04438' }}
+                                        />
+                                      );
+                                    })}
+                                    {strip.length === 0 && <span className={`text-[12px] ${MUTED}`}>Sampling has started.</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Mail queue snapshot */}
                 <div className={`${PANEL} overflow-hidden`}>

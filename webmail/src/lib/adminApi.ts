@@ -350,7 +350,32 @@ export interface TopMailbox {
   quotaMb: number;
 }
 
+export interface MailDay {
+  day: string;
+  queued: number;
+  delivered: number;
+  failed: number;
+  deferred: number;
+  spam: number;
+  rate: number | null;
+}
+
+export interface IpReputation {
+  ip: string;
+  score: number;
+  blacklisted: boolean;
+  listedNow: number;
+  lastChecked: string | null;
+}
+
 export interface AdminStats {
+  history: {
+    mailDaily: MailDay[];
+    queueSeries: { ts: string; queue: number | null; svc?: (number | null)[] }[];
+    repSeries: { ts: string; score: number }[];
+    uptime24h: Record<string, number | null>;
+    ips: IpReputation[];
+  };
   byDomain: DomainStorage[];
   topMailboxes: TopMailbox[];
   recentMailboxes: { email: string; domain: string; createdAt: string }[];
