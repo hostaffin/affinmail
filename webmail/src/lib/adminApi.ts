@@ -44,7 +44,9 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
     if (res.status === 401) clearToken();
     throw new Error(payload?.error || `HTTP ${res.status}`);
   }
-  return payload?.data as T;
+  // Envelope-agnostic: the PHP API wrapped payloads in {data}, the Rust
+  // backend returns them at the top level.
+  return (payload?.data ?? payload) as T;
 }
 
 /* ---------------------------------------------------------------- types */
@@ -129,7 +131,20 @@ export interface DnsResult {
 
 /* ---------------------------------------------------------------- helpers */
 
-export const health = () => apiFetch<Health>('/health');
+export const health = async (): Promise<Health> => {
+  // Rust /health reports flat status strings instead of a checks object.
+  const r = await apiFetch<Health & { database?: string; redis?: string; stalwart?: string; engine?: string; runtime?: string }>('/health');
+  if (r?.checks) return r;
+  return {
+    service: r?.engine ?? 'AffinMail API',
+    version: r?.runtime ?? '',
+    checks: {
+      postgres: r?.database === 'connected',
+      redis: r?.redis === 'connected',
+      stalwart: r?.stalwart === 'online',
+    },
+  };
+};
 
 export const listDomains = () => apiFetch<{ domains: Domain[]; count: number }>('/domains');
 
@@ -169,7 +184,12 @@ export const setMailboxStatus = (email: string, status: 'active' | 'suspended') 
 export const deleteMailbox = (email: string) =>
   apiFetch<{ deleted: string }>(`/mailboxes/${encodeURIComponent(email)}`, { method: 'DELETE' });
 
-export const listIpPools = () => apiFetch<{ ipPools: IpPool[]; count: number }>('/ip-pools');
+export const listIpPools = async (): Promise<{ ipPools: IpPool[]; count: number }> => {
+  // Rust backend names the list ip_pools; the PHP API used ipPools.
+  const r = await apiFetch<{ ipPools?: IpPool[]; ip_pools?: IpPool[]; count?: number }>('/ip-pools');
+  const ipPools = r.ipPools ?? r.ip_pools ?? [];
+  return { ipPools, count: r.count ?? ipPools.length };
+};
 
 export const createIpPool = (body: {
   ip_address: string;
@@ -216,7 +236,7 @@ export async function adminLogin(
   if (!res.ok || payload?.status === 'error') {
     throw new Error(payload?.error || `HTTP ${res.status}`);
   }
-  const data = payload.data as { token: string; username: string };
+  const data = (payload.data ?? payload) as { token: string; username: string };
   setToken(data.token);
   return data;
 }
@@ -275,7 +295,12 @@ export interface QueuedMessage {
   [key: string]: unknown;
 }
 
-export const getQueue = () => apiFetch<{ messages: QueuedMessage[]; count: number }>('/queue');
+export const getQueue = async (): Promise<{ messages: QueuedMessage[]; count: number }> => {
+  // Rust backend names the list queue; the PHP API used messages.
+  const r = await apiFetch<{ messages?: QueuedMessage[]; queue?: QueuedMessage[]; count?: number }>('/queue');
+  const messages = r.messages ?? r.queue ?? [];
+  return { messages, count: r.count ?? messages.length };
+};
 
 export const deleteQueuedMessage = (id: string) =>
   apiFetch<{ deleted: string }>(`/queue/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -393,4 +418,20 @@ export interface AdminStats {
   lastBackup: { file: string; sizeBytes: number; at: string } | null;
 }
 
-export const getStats = () => apiFetch<AdminStats>('/stats');
+export const getStats = async (): Promise<AdminStats> => {
+  // The Rust backend's /stats returns a different shape ({overview}); merge
+  // over empty defaults so the Overview renders instead of crashing.
+  const raw = await apiFetch<Partial<AdminStats>>('/stats');
+  return {
+    byDomain: [],
+    topMailboxes: [],
+    recentMailboxes: [],
+    recentDomains: [],
+    newMailboxes7d: 0,
+    queue: { count: 0, items: [] },
+    server: { diskTotal: 0, diskFree: 0, memTotalKb: 0, memAvailKb: 0, load: [0, 0, 0], uptimeSec: 0 },
+    lastBackup: null,
+    history: { mailDaily: [], queueSeries: [], repSeries: [], uptime24h: {}, ips: [] },
+    ...raw,
+  };
+};
