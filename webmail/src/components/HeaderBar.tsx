@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Search,
   Sun,
@@ -60,6 +60,37 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showSearchFilter, setShowSearchFilter] = useState(false);
 
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const appsMenuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setShowAccountMenu(false);
+      }
+      if (appsMenuRef.current && !appsMenuRef.current.contains(e.target as Node)) {
+        setShowAppsMenu(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSearchFilter(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAccountMenu(false);
+        setShowAppsMenu(false);
+        setShowSearchFilter(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
   return (
     <header className="min-h-16 px-2 sm:px-4 pb-1 pt-[env(safe-area-inset-top)] bg-gmail-canvas dark:bg-gmail-dark-canvas flex items-center justify-between gap-1 sm:gap-4 select-none shrink-0 relative z-30">
       {/* 1. Brand & menu toggle */}
@@ -85,7 +116,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
       </div>
 
       {/* 2. Search */}
-      <div className={`flex-1 max-w-[720px] relative min-w-0 ${mobileSearch ? "" : "max-sm:hidden"}`}>
+      <div ref={searchRef} className={`flex-1 max-w-[720px] relative min-w-0 ${mobileSearch ? "" : "max-sm:hidden"}`}>
         <div
           className={`flex items-center h-12 px-3 rounded-lg border transition-colors duration-150 ${
             searchQuery.trim()
@@ -207,7 +238,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         </button>
 
         {/* Workspace launcher: the sidebar already carries Calendar, Contacts and Admin on phones */}
-        <div className="relative hidden sm:block">
+        <div ref={appsMenuRef} className="relative hidden sm:block">
           <button
             onClick={() => {
               setShowAppsMenu(!showAppsMenu);
@@ -320,7 +351,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         </button>
 
         {/* Account */}
-        <div className="relative ml-0.5 sm:ml-1 shrink-0">
+        <div ref={accountMenuRef} className="relative ml-0.5 sm:ml-1 shrink-0">
           <button
             onClick={() => {
               setShowAccountMenu(!showAccountMenu);
