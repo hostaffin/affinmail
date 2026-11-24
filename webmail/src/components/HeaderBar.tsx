@@ -348,7 +348,13 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 {user.displayName}
               </div>
 
-              <button className="mt-3 px-4 py-1.5 rounded-lg border border-gmail-border dark:border-gmail-dark-border text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+              <button
+                onClick={() => {
+                  setShowAccountMenu(false);
+                  onOpenSettings?.();
+                }}
+                className="mt-3 h-9 px-3 rounded-lg border border-gmail-border dark:border-gmail-dark-border text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center gap-1.5"
+              >
                 Manage your AffinMail account
               </button>
 
@@ -358,7 +364,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   onToggleTheme();
                   setShowAccountMenu(false);
                 }}
-                className="w-full mt-3 py-2 px-3 rounded-lg text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center gap-1.5 transition-colors sm:hidden"
+                className="w-full h-9 px-3 rounded-lg text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center gap-1.5 transition-colors sm:hidden"
               >
                 {theme === 'light' ? (
                   <Moon className="w-4 h-4 stroke-[1.5]" />
@@ -390,26 +396,13 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 </div>
               )}
 
-              {onSwitchToAdmin && (
-                <button
-                  onClick={() => {
-                    setShowAccountMenu(false);
-                    onSwitchToAdmin();
-                  }}
-                  className="w-full mt-3 py-2 px-3 rounded-lg text-xs font-medium text-gmail-blue dark:text-gmail-dark-blue-text hover:bg-gmail-blue/5 dark:hover:bg-white/5 flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Server className="w-4 h-4 stroke-[1.5]" />
-                  <span>Open admin panel</span>
-                </button>
-              )}
-
-              <div className="mt-3 pt-3 border-t border-gmail-border dark:border-gmail-dark-border">
+              <div className="mt-2 pt-2 border-t border-gmail-border dark:border-gmail-dark-border">
                 <button
                   onClick={() => {
                     setShowAccountMenu(false);
                     onLogout?.();
                   }}
-                  className="text-xs text-[#444746] dark:text-[#C4C7C5] hover:text-red-600 dark:hover:text-red-400 font-medium py-1"
+                  className="w-full h-9 px-3 rounded-lg text-xs font-medium text-[#444746] dark:text-[#C4C7C5] hover:text-red-600 dark:hover:text-red-400 flex items-center justify-center gap-1.5"
                 >
                   Sign out
                 </button>

@@ -70,7 +70,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
           <Inbox className="w-8 h-8 stroke-[1.5]" />
         </div>
         <h3 className="font-medium text-base text-[#1F1F1F] dark:text-[#E3E3E3]">No conversations here</h3>
-        <p className="text-sm text-[#5E5E5E] dark:text-[#8E918F] mt-1.5 max-w-sm">
+        <p className="text-sm text-[#5E5E5E] dark:text-[#8E918F] mt-2 max-w-sm">
           New messages for this folder appear here automatically.
         </p>
       </div>
@@ -120,7 +120,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
             <div
               key={thread.id}
               onClick={() => onSelectThread(thread)}
-              className={`gmail-row group cursor-pointer text-xs transition-colors flex flex-wrap items-center px-3 sm:px-4 min-h-12 sm:min-h-10 py-1.5 relative border-l-2 ${
+              className={`gmail-row group cursor-pointer text-xs transition-colors flex flex-wrap items-center px-3 sm:px-4 min-h-12 sm:min-h-10 py-2 relative border-l-2 ${
                 isPicked
                   ? 'bg-[#C2E7FF]/60 dark:bg-[#004A77]/40 border-l-gmail-blue dark:border-l-gmail-dark-blue-text'
                   : isSelected
@@ -174,7 +174,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
               <SenderAvatar
                 name={thread.senderName}
                 email={thread.senderEmail}
-                className="w-8 h-8 text-[11px] mr-2 sm:mr-2.5"
+                className="w-8 h-8 text-[11px] mr-2 sm:mr-3"
               />
 
               <div className="flex-1 min-w-0 sm:flex-none sm:w-36 md:w-48 sm:shrink-0 flex items-center gap-1.5 mr-3">
@@ -207,7 +207,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
                   .map((lbl) => (
                     <span
                       key={lbl}
-                      className="px-2 py-0.5 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-xs font-normal text-[#444746] dark:text-[#C4C7C5] shrink-0 border border-[#E0E2E7] dark:border-[#333538]"
+                      className="px-2 py-1 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-xs font-normal text-[#444746] dark:text-[#C4C7C5] shrink-0 border border-[#E0E2E7] dark:border-[#333538]"
                     >
                       {lbl}
                     </span>
@@ -230,7 +230,7 @@ export const EmailThreadList: React.FC<EmailThreadListProps> = ({
 
               {thread.hasAttachments && (
                 <div
-                  className="shrink-0 text-[#5E5E5E] dark:text-[#8E918F] mr-3 hidden sm:flex items-center gap-1 px-2 py-0.5 rounded bg-[#F2F6FC] dark:bg-[#282A2C] border border-[#E0E2E7] dark:border-[#333538]"
+                  className="shrink-0 text-[#5E5E5E] dark:text-[#8E918F] mr-3 hidden sm:flex items-center gap-1 px-2 py-1 rounded bg-[#F2F6FC] dark:bg-[#282A2C] border border-[#E0E2E7] dark:border-[#333538]"
                   title="Attachment included"
                 >
                   <Paperclip className="w-3.5 h-3.5 stroke-[1.5]" />

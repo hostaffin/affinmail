@@ -92,7 +92,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
   return (
     <div className="min-h-12 border-b border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] px-2 sm:px-4 py-1 flex items-center justify-between select-none shrink-0 gap-1 sm:gap-2 transition-colors">
       {/* Left controls */}
-      <div className="flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1 overflow-x-auto">
+      <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
         {isDetailView ? (
           <button
             onClick={onBackToList}
@@ -101,7 +101,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
           >
             <ArrowLeft className="w-5 h-5 stroke-[1.5]" />
             <span className="text-xs font-medium hidden sm:inline text-[#1F1F1F] dark:text-[#E3E3E3]">Back</span>
-            <kbd className="text-xs font-mono bg-[#F2F6FC] dark:bg-[#282A2C] px-1.5 py-0.5 rounded text-[#5E5E5E] dark:text-[#8E918F] hidden md:inline">
+            <kbd className="text-xs font-mono bg-[#F2F6FC] dark:bg-[#282A2C] px-2 py-1 rounded text-[#5E5E5E] dark:text-[#8E918F] hidden md:inline">
               Esc
             </kbd>
           </button>
@@ -134,7 +134,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
             </div>
 
             {isSelectMenuOpen && (
-              <div className="absolute top-full left-0 mt-1 w-40 bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] py-1.5 z-40 text-xs font-normal text-[#1F1F1F] dark:text-[#E3E3E3]">
+              <div className="absolute top-full left-0 mt-1 w-40 bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] py-2 z-40 text-xs font-normal text-[#1F1F1F] dark:text-[#E3E3E3]">
                 <button onClick={() => handleSelectOption('all')} className={MENU_ITEM}>All</button>
                 <button onClick={() => handleSelectOption('none')} className={MENU_ITEM}>None</button>
                 <button onClick={() => handleSelectOption('read')} className={MENU_ITEM}>Read</button>
@@ -215,7 +215,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
             <MoreVertical className="w-4 h-4 stroke-[1.5]" />
           </button>
           {isMoreMenuOpen && (
-            <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] py-1.5 z-40 text-xs font-normal text-[#1F1F1F] dark:text-[#E3E3E3]">
+            <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] py-2 z-40 text-xs font-normal text-[#1F1F1F] dark:text-[#E3E3E3]">
               <button
                 onClick={() => {
                   onMarkRead();
@@ -239,7 +239,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
           <button
             onClick={onCompare}
             title="Open the selected emails side by side"
-            className="h-10 min-h-10 md:h-8 md:min-h-8 px-2.5 ml-1 shrink-0 flex items-center gap-1.5 rounded-full border border-[#C4C7C5] dark:border-[#5F6368] text-xs font-medium text-[#0B57D0] dark:text-[#A8C7FA] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] transition-colors"
+            className="h-10 min-h-10 md:h-8 md:min-h-8 px-3 ml-1 shrink-0 flex items-center gap-2 rounded-full border border-[#C4C7C5] dark:border-[#5F6368] text-xs font-medium text-[#0B57D0] dark:text-[#A8C7FA] hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] transition-colors"
           >
             <Columns2 className="w-4 h-4 stroke-[1.5]" />
             <span className="hidden sm:inline">Compare</span>
@@ -254,7 +254,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
       </div>
 
       {/* Right: count and paging */}
-      <div className="flex items-center gap-0.5 sm:gap-2 text-xs text-[#444746] dark:text-[#C4C7C5] shrink-0 font-normal select-none">
+      <div className="flex items-center gap-1 sm:gap-2 text-xs text-[#444746] dark:text-[#C4C7C5] shrink-0 font-normal select-none">
         <span className="text-xs tabular-nums hidden sm:inline">
           {totalCount > 0 ? `1–${totalCount} of ${totalCount}` : '0 of 0'}
         </span>

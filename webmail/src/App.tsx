@@ -227,7 +227,6 @@ export const App: React.FC = () => {
   const [activeThread, setActiveThread] = useState<EmailThread | null>(null);
   const [compareThreads, setCompareThreads] = useState<EmailThread[]>([]);
   const [comparePicking, setComparePicking] = useState(false);
-  const [compareActivePane, setCompareActivePane] = useState(0);
   const [cursorIndex, setCursorIndex] = useState(0);
 
   // Compose Modal State
@@ -609,7 +608,6 @@ export const App: React.FC = () => {
   const exitCompare = useCallback(() => {
     setCompareThreads([]);
     setComparePicking(false);
-    setCompareActivePane(0);
   }, []);
 
   const startCompareWith = async (thread: EmailThread) => {
@@ -646,7 +644,6 @@ export const App: React.FC = () => {
     const full = await Promise.all(picked.map((t) => loadFullThread(t)));
     setCompareThreads(full);
     setComparePicking(false);
-    setCompareActivePane(0);
     setSelectedThreadIds(new Set());
   };
 
@@ -658,7 +655,6 @@ export const App: React.FC = () => {
     } else {
       setCompareThreads(next);
     }
-    setCompareActivePane(0);
   };
 
   const handleSelectThread = async (thread: EmailThread) => {
@@ -979,48 +975,20 @@ export const App: React.FC = () => {
 
           {/* Thread List, Conversation View or Compare panes */}
           {compareThreads.length >= 2 && !comparePicking ? (
-            <div className="flex-1 flex flex-col min-h-0">
-              <div className="flex lg:hidden items-stretch border-b border-[#E0E2E7] dark:border-[#333538] shrink-0">
-                {compareThreads.map((t, i) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setCompareActivePane(i)}
-                    className={`flex-1 min-w-0 px-3 h-10 text-xs truncate border-b-2 -mb-px ${
-                      i === compareActivePane
-                        ? 'border-b-gmail-blue dark:border-b-gmail-dark-blue-text text-gmail-blue dark:text-gmail-dark-blue-text font-medium'
-                        : 'border-b-transparent text-[#444746] dark:text-[#C4C7C5]'
-                    }`}
-                  >
-                    {t.subject || '(no subject)'}
-                  </button>
-                ))}
-                <button
-                  onClick={exitCompare}
-                  className="h-10 w-10 min-h-10 flex items-center justify-center shrink-0 text-[#444746] dark:text-[#C4C7C5]"
-                  title="Exit compare"
-                  aria-label="Exit compare"
-                >
-                  <X className="w-4 h-4 stroke-[1.5]" />
-                </button>
-              </div>
-              <div className="flex-1 flex flex-col lg:flex-row min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-[#E0E2E7] dark:divide-[#333538]">
-                {compareThreads.map((t, i) => (
-                  <div
-                    key={t.id}
-                    className={`flex-1 min-w-0 min-h-0 flex-col ${i === compareActivePane ? 'flex' : 'hidden'} lg:flex`}
-                  >
-                    <ConversationView
-                      thread={t}
-                      currentUserEmail={currentUser.email}
-                      onToggleStar={handleToggleStar}
-                      onSendQuickReply={() => undefined}
-                      maxAttachmentMb={quota?.maxAttachmentSizeMb ?? 25}
-                      compact
-                      onClose={() => closeComparePane(t.id)}
-                    />
-                  </div>
-                ))}
-              </div>
+            <div className="flex-1 flex flex-col min-h-0 divide-y divide-[#E0E2E7] dark:divide-[#333538]">
+              {compareThreads.map((t) => (
+                <div key={t.id} className="flex flex-1 min-w-0 min-h-0 flex-col">
+                  <ConversationView
+                    thread={t}
+                    currentUserEmail={currentUser.email}
+                    onToggleStar={handleToggleStar}
+                    onSendQuickReply={() => undefined}
+                    maxAttachmentMb={quota?.maxAttachmentSizeMb ?? 25}
+                    compact
+                    onClose={() => closeComparePane(t.id)}
+                  />
+                </div>
+              ))}
             </div>
           ) : (
             <>

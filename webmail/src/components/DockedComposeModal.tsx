@@ -118,13 +118,13 @@ const RecipientRow: React.FC<RecipientRowProps> = ({
   };
 
   return (
-    <div className="flex flex-wrap items-center px-4 py-2 gap-1.5 min-h-[40px]">
+    <div className="flex flex-wrap items-center px-4 py-2 gap-1 min-h-[40px]">
       <span className="text-[#5E5E5E] dark:text-[#8E918F] w-8 font-normal">{label}</span>
       <div className="flex-1 flex flex-wrap items-center gap-1.5 min-w-[120px] relative">
         {chips.map((chip, idx) => (
           <span
             key={`${chip}-${idx}`}
-            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-[#1F1F1F] dark:text-[#E3E3E3] text-xs font-normal border border-[#E0E2E7] dark:border-[#333538]"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-[#1F1F1F] dark:text-[#E3E3E3] text-xs font-normal border border-[#E0E2E7] dark:border-[#333538]"
           >
             <span>{chip}</span>
             <button
@@ -168,7 +168,7 @@ const RecipientRow: React.FC<RecipientRowProps> = ({
                   e.preventDefault();
                   pick(contact);
                 }}
-                className="w-full text-left px-3 py-1.5 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] flex flex-col"
+                className="w-full text-left px-3 py-2 hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C] flex flex-col"
               >
                 <span className="text-xs font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{contact.fullName}</span>
                 <span className="text-xs text-[#5E5E5E] dark:text-[#8E918F] truncate">{contact.emails[0]}</span>
@@ -390,7 +390,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
       }`}
     >
       {/* 1. Modal Top Bar */}
-      <div className="bg-[#F2F6FC] dark:bg-[#282A2C] px-2 sm:px-4 h-12 sm:h-10 flex items-center justify-between select-none shrink-0 rounded-t-xl border-b border-[#E0E2E7] dark:border-[#333538] pt-[env(safe-area-inset-top)] sm:pt-0 gap-2">
+      <div className="bg-[#F2F6FC] dark:bg-[#282A2C] px-2 sm:px-4 min-h-12 sm:h-10 py-1 sm:py-0 flex items-center justify-between select-none shrink-0 rounded-t-xl border-b border-[#E0E2E7] dark:border-[#333538] pt-[max(0.25rem,env(safe-area-inset-top))] sm:pt-0 gap-2">
         <span className="font-medium text-xs text-[#1F1F1F] dark:text-[#E3E3E3] truncate min-w-0">
           {subject ? subject : 'New message'}
         </span>
@@ -498,7 +498,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().toggleBold().run()}
-                className={`p-1.5 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bold') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
+                className={`p-2 hover:bg-white dark:hover:bg-[#1E1F20] rounded ${editor.isActive('bold') ? 'bg-[#C2E7FF] dark:bg-[#004A77] text-gmail-blue dark:text-gmail-dark-blue-text' : ''}`}
                 title="Bold"
               >
                 <Bold className="w-3.5 h-3.5 stroke-[1.5]" />
@@ -610,7 +610,7 @@ export const DockedComposeModal: React.FC<DockedComposeModalProps> = ({
 
                 {/* Schedule Send Popup Menu */}
                 {showScheduleMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 w-[min(16rem,calc(100vw-1rem))] bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] py-2 z-50 text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">
+                  <div className="px-4 py-2 bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] py-2 z-50 text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">
                     <div className="px-4 py-1.5 text-xs font-medium text-[#5E5E5E] dark:text-[#8E918F]">
                       Schedule send
                     </div>

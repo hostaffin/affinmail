@@ -108,7 +108,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
               .map((lbl) => (
                 <span
                   key={lbl}
-                  className="px-2 py-0.5 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-xs font-normal text-[#444746] dark:text-[#C4C7C5] border border-[#E0E2E7] dark:border-[#333538]"
+                  className="px-2 py-1 rounded bg-[#F2F6FC] dark:bg-[#282A2C] text-xs font-normal text-[#444746] dark:text-[#C4C7C5] border border-[#E0E2E7] dark:border-[#333538]"
                 >
                   {lbl}
                 </span>
@@ -183,7 +183,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
               />
             </ContactHovercard>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                 <ContactHovercard
                   senderName={thread.senderName}
                   senderEmail={thread.senderEmail}
@@ -199,11 +199,11 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
               </div>
 
               {/* Transport details */}
-              <div className="relative inline-block mt-0.5" ref={detailsRef}>
+              <div className="relative inline-block mt-1" ref={detailsRef}>
                 <button
                   type="button"
                   onClick={() => setShowDetailsDropdown((prev) => !prev)}
-                  className="flex items-center gap-1 text-xs text-[#5E5E5E] dark:text-[#8E918F] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] transition-colors py-0.5 px-1 rounded-md hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]"
+                  className="flex items-center gap-1 text-xs text-[#5E5E5E] dark:text-[#8E918F] hover:text-[#1F1F1F] dark:hover:text-[#E3E3E3] transition-colors py-1 px-1 rounded-md hover:bg-[#F2F6FC] dark:hover:bg-[#282A2C]"
                 >
                   <span>to me</span>
                   <ChevronDown className="w-3.5 h-3.5 stroke-[1.5]" />
@@ -211,7 +211,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
 
                 {showDetailsDropdown && (
                   <div className="absolute top-full left-0 mt-1 max-sm:fixed max-sm:inset-x-2 max-sm:top-20 max-sm:w-auto w-[min(24rem,calc(100vw-2rem))] max-h-[70dvh] overflow-y-auto bg-white dark:bg-[#1E1F20] rounded-xl shadow-gmail-modal border border-[#E0E2E7] dark:border-[#333538] p-4 z-50 text-xs space-y-2 select-text">
-                    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-1.5 text-xs">
+                    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 text-xs">
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">From</span>
                       <span className="font-medium text-[#1F1F1F] dark:text-[#E3E3E3] break-all">
                         {thread.senderName} &lt;{thread.senderEmail}&gt;
@@ -237,13 +237,13 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                       </span>
 
                       <span className="text-[#5E5E5E] dark:text-[#8E918F]">Security</span>
-                      <div className="flex items-center gap-1.5 text-[#137333] dark:text-[#81C995]">
+                      <div className="flex items-center gap-2 text-[#137333] dark:text-[#81C995]">
                         <ShieldCheck className="w-4 h-4 stroke-[1.5]" />
                         <span>Standard encryption (TLS 1.3)</span>
                       </div>
                     </div>
 
-                    <div className="pt-2.5 mt-2 border-t border-[#E0E2E7] dark:border-[#333538] flex flex-wrap gap-3 text-xs font-mono">
+                    <div className="pt-3 mt-2 border-t border-[#E0E2E7] dark:border-[#333538] flex flex-wrap gap-3 text-xs font-mono">
                       <span className="flex items-center gap-1 text-[#137333] dark:text-[#81C995]">
                         <CheckCircle2 className="w-3.5 h-3.5 stroke-[1.5]" /> SPF pass
                       </span>

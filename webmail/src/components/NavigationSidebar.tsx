@@ -180,7 +180,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                 <Pencil className="w-5 h-5 stroke-[1.5]" />
                 <span className="font-medium text-sm">Compose</span>
               </div>
-              <kbd className="kbd kbd-xs h-5 min-h-5 bg-black/10 dark:bg-white/10 text-[#001D35] dark:text-gmail-dark-blue-text font-mono text-xs border-none px-1.5">
+              <kbd className="kbd kbd-xs h-5 min-h-5 bg-black/10 dark:bg-white/10 text-[#001D35] dark:text-gmail-dark-blue-text font-mono text-xs border-none px-2">
                 c
               </kbd>
             </button>
@@ -188,7 +188,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
         </div>
 
         {/* Folders */}
-        <nav className="flex flex-col gap-0.5 pr-3">
+        <nav className="flex flex-col gap-1 pr-3">
           {primaryFolders.map((f) => renderFolderButton(f, isMini))}
 
           {!isMini && (
@@ -266,7 +266,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                 <Plus className="w-4 h-4 stroke-[1.5]" />
               </button>
             </div>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-1">
               {labels.map((lbl) => {
                 const isLblActive = selectedLabel === lbl.name.toLowerCase();
                 return (
@@ -304,7 +304,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
             value={quota.percent}
             max="100"
           ></progress>
-          <div className="flex justify-between items-center text-xs text-[#444746] dark:text-[#C4C7C5] pt-0.5">
+          <div className="flex justify-between items-center text-xs text-[#444746] dark:text-[#C4C7C5] pt-1">
             <span className="truncate font-mono">Max attach: {quota.maxAttachmentSizeMb} MB</span>
             <span className="text-gmail-blue dark:text-gmail-dark-blue-text hover:underline cursor-pointer">Manage</span>
           </div>
@@ -324,7 +324,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
       </aside>
 
       {isOpenMobile && (
-        <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 md:hidden flex h-dvh" role="dialog" aria-modal="true">
           <div
             className="absolute inset-0 bg-black/40 transition-opacity"
             onClick={onCloseMobile}
