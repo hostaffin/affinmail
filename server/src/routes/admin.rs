@@ -969,3 +969,48 @@ pub async fn restore_check(Path(id): Path<String>) -> impl IntoResponse {
         ],
     })))
 }
+
+/* ------------------------------------------------------------------ */
+/* Aliases — AdminPanel Aliases tab                                    */
+/* ------------------------------------------------------------------ */
+
+/// GET /api/v1/aliases. The tab renders source_address / destination_address /
+/// domain / isActive / createdAt, which differ from the client API's Alias
+/// serialization — map explicitly instead of changing the shared shape.
+pub async fn list_aliases(State(state): State<AppState>) -> impl IntoResponse {
+    let aliases = state.aliases.read().unwrap();
+    let domains = state.domains.read().unwrap();
+    let list: Vec<Value> = aliases
+        .values()
+        .map(|a| {
+            let domain = domains
+                .values()
+                .find(|d| d.id == a.domain_id)
+                .map(|d| d.domain_name.clone())
+                .unwrap_or_else(|| a.domain_id.clone());
+            json!({
+                "id": a.id,
+                "source_address": a.source_email,
+                "destination_address": a.destination_email,
+                "domain": domain,
+                "isActive": true,
+                "createdAt": a.created_at,
+            })
+        })
+        .collect();
+    Json(json!({ "aliases": list, "count": list.len() }))
+}
+
+/// POST /api/v1/aliases — this route has no {domain} segment, so derive the
+/// domain from the source address and reuse the client create path.
+pub async fn create_alias(
+    State(state): State<AppState>,
+    Json(payload): Json<crate::routes::client::CreateAliasPayload>,
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<ErrorResponse>)> {
+    let domain = payload
+        .source
+        .split_once('@')
+        .map(|(_, d)| d.to_lowercase())
+        .unwrap_or_default();
+    crate::routes::client::create_alias_for_domain(state, domain, payload).await
+}

@@ -54,6 +54,8 @@ pub struct Domain {
     pub disk_quota_mb: i64,
     pub dkim_selector: String,
     pub dkim_public_key: String,
+    /// Never leaves the API: skipped on serialize, still deserializable.
+    #[serde(skip_serializing)]
     pub dkim_private_key: String,
     pub catch_all_mailbox_id: Option<String>,
     /// F-033: per-domain send limits (independent of plan defaults).

@@ -893,3 +893,77 @@ async fn test_2fa_totp_enrolment_flow() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/* ================================================================== */
+/* Close-out: DKIM private key never serialized, admin aliases 200      */
+/* ================================================================== */
+
+#[tokio::test]
+async fn test_domains_never_expose_dkim_private_key() {
+    let app = create_app(AppState::new());
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/domains")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let text = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(
+        !text.contains("PRIVATE KEY"),
+        "GET /api/v1/domains must not serialize the DKIM private key"
+    );
+    let body: Value = serde_json::from_str(&text).unwrap();
+    let domains = body["domains"].as_array().unwrap();
+    assert!(domains.len() >= 1);
+    // Public key + selector stay in the payload.
+    assert!(domains[0].get("dkim_public_key").is_some());
+    assert!(domains[0].get("dkim_selector").is_some());
+    assert!(domains[0].get("dkim_private_key").is_none());
+}
+
+#[tokio::test]
+async fn test_admin_aliases_list_ok() {
+    let app = create_app(AppState::new());
+
+    // Pathless admin route: used to 500 (Path extractor with no path param).
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/aliases")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let aliases = body["aliases"].as_array().unwrap();
+    assert!(aliases.len() >= 1);
+    assert_eq!(body["count"], aliases.len() as u64);
+    // Field names AdminPanel.tsx's Aliases tab renders.
+    let a = &aliases[0];
+    assert!(a.get("id").is_some());
+    assert!(a.get("source_address").is_some());
+    assert!(a.get("destination_address").is_some());
+    assert!(a.get("isActive").is_some());
+
+    // The tab's create button hits POST /api/v1/aliases (also pathless).
+    let (status, _) = json_response(
+        app,
+        json_request(
+            "POST",
+            "/api/v1/aliases",
+            serde_json::json!({
+                "source": "closeout@affinmail.local",
+                "destination": "alex.mercer@affinmail.local"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+}

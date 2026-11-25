@@ -356,7 +356,7 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route(
             "/api/v1/aliases",
-            get(routes::client::list_aliases).post(routes::client::create_alias),
+            get(routes::admin::list_aliases).post(routes::admin::create_alias),
         )
         .route(
             "/api/v1/aliases/{id}",
