@@ -20,6 +20,7 @@ import {
   Mail,
   CalendarDays,
   BookUser,
+  Globe,
 } from 'lucide-react';
 import { PlanQuota, UserProfile } from '../types';
 import { AffinMailLogo } from './AffinMailLogo';
@@ -38,6 +39,7 @@ interface HeaderBarProps {
   onOpenSettings?: () => void;
   onOpenCalendar?: () => void;
   onOpenContacts?: () => void;
+  onOpenPanel?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -54,6 +56,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenSettings,
   onOpenCalendar,
   onOpenContacts,
+  onOpenPanel,
 }) => {
   const [showAppsMenu, setShowAppsMenu] = useState(false);
   const [mobileSearch, setMobileSearch] = useState(false);
@@ -299,6 +302,19 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   >
                     <Server className="w-5 h-5 stroke-[1.5]" />
                     <span className="text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">Admin</span>
+                  </button>
+                )}
+
+                {onOpenPanel && (
+                  <button
+                    onClick={() => {
+                      setShowAppsMenu(false);
+                      onOpenPanel();
+                    }}
+                    className="flex flex-col items-center gap-1.5 p-2 rounded-lg text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Globe className="w-5 h-5 stroke-[1.5]" />
+                    <span className="text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">Domain panel</span>
                   </button>
                 )}
 

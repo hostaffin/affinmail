@@ -67,6 +67,79 @@ pub struct CreateMcpTokenPayload {
     pub scopes: Option<Vec<String>>,
 }
 
+#[derive(Deserialize)]
+pub struct CreateListPayload {
+    pub address_prefix: Option<String>,
+    pub address: Option<String>,
+    pub name: String,
+    pub members: Option<Vec<String>>,
+    pub post_policy: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateListPayload {
+    pub name: Option<String>,
+    pub members: Option<Vec<String>>,
+    pub post_policy: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PasswordPolicyPayload {
+    pub min_length: Option<i64>,
+    pub require_upper: Option<bool>,
+    pub require_number: Option<bool>,
+    pub require_special: Option<bool>,
+    pub expiry_days: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct TwoFaCodePayload {
+    pub code: String,
+}
+
+/// F-082: valid post_policy values.
+fn valid_post_policy(p: &str) -> bool {
+    matches!(p, "members" | "anyone" | "moderated")
+}
+
+/// F-084: the policy in effect for a domain (stored override or defaults).
+fn effective_password_policy(state: &AppState, domain: &str) -> crate::types::PasswordPolicy {
+    state
+        .password_policies
+        .read()
+        .unwrap()
+        .get(&domain.to_lowercase())
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// F-084: check a password against a domain's policy; Err names the unmet rule.
+pub fn validate_password(
+    policy: &crate::types::PasswordPolicy,
+    password: &str,
+) -> Result<(), String> {
+    if (password.len() as i64) < policy.min_length {
+        return Err(format!(
+            "Password must be at least {} characters",
+            policy.min_length
+        ));
+    }
+    if policy.require_upper && !password.chars().any(|c| c.is_ascii_uppercase()) {
+        return Err("Password must contain an uppercase letter".to_string());
+    }
+    if policy.require_number && !password.chars().any(|c| c.is_ascii_digit()) {
+        return Err("Password must contain a number".to_string());
+    }
+    if policy.require_special
+        && !password
+            .chars()
+            .any(|c| "!@#$%^&*()-_=+[]{};:,.<>?/|~`'\"".contains(c))
+    {
+        return Err("Password must contain a special character".to_string());
+    }
+    Ok(())
+}
+
 // GET /api/v1/client/dashboard
 pub async fn client_dashboard(State(state): State<AppState>) -> impl IntoResponse {
     let mailboxes = state.mailboxes.read().unwrap();
@@ -118,6 +191,14 @@ pub async fn create_domain_mailbox(
         ));
     }
 
+    // F-084: enforce the domain's password policy on creation.
+    if let Some(pw) = &payload.password {
+        let policy = effective_password_policy(&state, &domain);
+        if let Err(msg) = validate_password(&policy, pw) {
+            return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse::new(400, msg))));
+        }
+    }
+
     let mbox_id = format!("mb_{}", uuid::Uuid::new_v4().simple());
     let mbox = Mailbox {
         id: mbox_id.clone(),
@@ -137,6 +218,9 @@ pub async fn create_domain_mailbox(
         vacation_body: None,
         vacation_start: None,
         vacation_end: None,
+        totp_secret: None,
+        totp_enabled: false,
+        recovery_codes: Vec::new(),
         created_at: chrono::Utc::now().to_rfc3339(),
     };
 
@@ -194,19 +278,22 @@ pub async fn change_mailbox_password(
     Path(id): Path<String>,
     Json(payload): Json<ChangePasswordPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    if payload.password.len() < 8 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(400, "Password must be at least 8 characters")),
-        ));
-    }
-
-    let mailboxes = state.mailboxes.read().unwrap();
-    if !mailboxes.contains_key(&id) {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new(404, "Mailbox not found")),
-        ));
+    // F-084: enforce the mailbox domain's password policy.
+    let domain = {
+        let mailboxes = state.mailboxes.read().unwrap();
+        match mailboxes.get(&id) {
+            Some(m) => m.domain_name.clone(),
+            None => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse::new(404, "Mailbox not found")),
+                ))
+            }
+        }
+    };
+    let policy = effective_password_policy(&state, &domain);
+    if let Err(msg) = validate_password(&policy, &payload.password) {
+        return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse::new(400, msg))));
     }
 
     Ok(Json(json!({ "status": "success", "message": "Password changed successfully" })))
@@ -1117,4 +1204,369 @@ pub async fn generate_pgp_key(Path(id): Path<String>) -> impl IntoResponse {
         "mailboxId": id,
         "note": "WebCrypto-based OpenPGP key generation is not yet wired into the Rust backend; browser-generated keys arrive via the manual public-key upload endpoint. Use POST /encryption with publicKey field.",
     }))
+}
+
+/* ================================================================== */
+/* F-082 — Distribution lists (state-backed CRUD)                      */
+/* ================================================================== */
+
+/// GET /api/v1/client/domains/{domain}/lists
+pub async fn list_distribution_lists(
+    State(state): State<AppState>,
+    Path(domain): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    ensure_domain(&state, &domain)?;
+    let lists = state.distribution_lists.read().unwrap();
+    let list: Vec<crate::types::DistributionList> = lists
+        .values()
+        .filter(|l| l.domain.eq_ignore_ascii_case(&domain))
+        .cloned()
+        .collect();
+    Ok(Json(list))
+}
+
+/// POST /api/v1/client/domains/{domain}/lists
+pub async fn create_distribution_list(
+    State(state): State<AppState>,
+    Path(domain): Path<String>,
+    Json(payload): Json<CreateListPayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    ensure_domain(&state, &domain)?;
+
+    let address = match payload.address {
+        Some(a) => {
+            let a = a.trim().to_lowercase();
+            if !a.ends_with(&format!("@{}", domain.to_lowercase())) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse::new(400, format!("address must end with @{}", domain))),
+                ));
+            }
+            a
+        }
+        None => match payload.address_prefix.as_deref().map(str::trim) {
+            Some(p) if !p.is_empty() && !p.contains('@') && !p.contains(' ') => {
+                format!("{}@{}", p.to_lowercase(), domain.to_lowercase())
+            }
+            _ => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse::new(400, "address_prefix (or full address) is required")),
+                ))
+            }
+        },
+    };
+
+    let post_policy = payload.post_policy.clone().unwrap_or_else(|| "members".to_string());
+    if !valid_post_policy(&post_policy) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(400, "post_policy must be one of: members, anyone, moderated")),
+        ));
+    }
+
+    let members: Vec<String> = payload
+        .members
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| m.trim().to_lowercase())
+        .filter(|m| !m.is_empty())
+        .collect();
+
+    let mut lists = state.distribution_lists.write().unwrap();
+    if lists.values().any(|l| l.address == address) {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse::new(409, "Distribution list already exists")),
+        ));
+    }
+
+    let id = format!("lst_{}", uuid::Uuid::new_v4().simple());
+    let list = crate::types::DistributionList {
+        id: id.clone(),
+        domain: domain.to_lowercase(),
+        address,
+        name: payload.name,
+        members,
+        post_policy,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    lists.insert(id, list.clone());
+    Ok((StatusCode::CREATED, Json(list)))
+}
+
+/// PATCH /api/v1/client/lists/{id}
+pub async fn update_distribution_list(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateListPayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    if let Some(p) = &payload.post_policy {
+        if !valid_post_policy(p) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(400, "post_policy must be one of: members, anyone, moderated")),
+            ));
+        }
+    }
+
+    let mut lists = state.distribution_lists.write().unwrap();
+    let list = match lists.get_mut(&id) {
+        Some(l) => l,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new(404, "Distribution list not found")),
+            ))
+        }
+    };
+
+    if let Some(name) = payload.name {
+        list.name = name;
+    }
+    if let Some(members) = payload.members {
+        list.members = members
+            .into_iter()
+            .map(|m| m.trim().to_lowercase())
+            .filter(|m| !m.is_empty())
+            .collect();
+    }
+    if let Some(p) = payload.post_policy {
+        list.post_policy = p;
+    }
+    Ok(Json(list.clone()))
+}
+
+/// DELETE /api/v1/client/lists/{id}
+pub async fn delete_distribution_list(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mut lists = state.distribution_lists.write().unwrap();
+    if lists.remove(&id).is_some() {
+        Ok(Json(json!({ "deleted": id })))
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new(404, "Distribution list not found")),
+        ))
+    }
+}
+
+/// 404 unless the domain exists in state (case-insensitive).
+fn ensure_domain(
+    state: &AppState,
+    domain: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let domains = state.domains.read().unwrap();
+    if domains
+        .values()
+        .any(|d| d.domain_name.eq_ignore_ascii_case(domain))
+    {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new(404, "Domain not found")),
+        ))
+    }
+}
+
+/* ================================================================== */
+/* F-084 — Per-domain password policy                                  */
+/* ================================================================== */
+
+/// GET /api/v1/client/domains/{domain}/password-policy
+pub async fn get_password_policy(
+    State(state): State<AppState>,
+    Path(domain): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    ensure_domain(&state, &domain)?;
+    Ok(Json(effective_password_policy(&state, &domain)))
+}
+
+/// PUT /api/v1/client/domains/{domain}/password-policy
+pub async fn put_password_policy(
+    State(state): State<AppState>,
+    Path(domain): Path<String>,
+    Json(payload): Json<PasswordPolicyPayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    ensure_domain(&state, &domain)?;
+
+    if let Some(ml) = payload.min_length {
+        if !(8..=32).contains(&ml) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(400, "min_length must be between 8 and 32")),
+            ));
+        }
+    }
+    if let Some(ed) = payload.expiry_days {
+        if ![0, 30, 60, 90].contains(&ed) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(400, "expiry_days must be one of: 0, 30, 60, 90")),
+            ));
+        }
+    }
+
+    // Start from the effective policy and apply only the provided fields.
+    let mut policy = effective_password_policy(&state, &domain);
+    if let Some(v) = payload.min_length {
+        policy.min_length = v;
+    }
+    if let Some(v) = payload.require_upper {
+        policy.require_upper = v;
+    }
+    if let Some(v) = payload.require_number {
+        policy.require_number = v;
+    }
+    if let Some(v) = payload.require_special {
+        policy.require_special = v;
+    }
+    if let Some(v) = payload.expiry_days {
+        policy.expiry_days = v;
+    }
+
+    state
+        .password_policies
+        .write()
+        .unwrap()
+        .insert(domain.to_lowercase(), policy.clone());
+    Ok(Json(policy))
+}
+
+/* ================================================================== */
+/* F-085 — TOTP 2FA enrolment (enrolment only; login flow untouched)   */
+/* ================================================================== */
+
+/// GET /api/v1/client/mailboxes/{id}/2fa
+pub async fn get_2fa_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mailboxes = state.mailboxes.read().unwrap();
+    match mailboxes.get(&id) {
+        Some(m) => Ok(Json(json!({ "enabled": m.totp_enabled }))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new(404, "Mailbox not found")),
+        )),
+    }
+}
+
+/// POST /api/v1/client/mailboxes/{id}/2fa/setup
+pub async fn setup_2fa(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let secret = crate::totp::generate_secret();
+    let email = {
+        let mut mailboxes = state.mailboxes.write().unwrap();
+        match mailboxes.get_mut(&id) {
+            Some(m) => {
+                m.totp_secret = Some(secret.clone());
+                m.totp_enabled = false;
+                m.email.clone()
+            }
+            None => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse::new(404, "Mailbox not found")),
+                ))
+            }
+        }
+    };
+    Ok(Json(json!({
+        "secret": secret,
+        "otpauth_url": format!(
+            "otpauth://totp/AffinMail:{}?secret={}&issuer=AffinMail&digits=6&period=30",
+            email, secret
+        )
+    })))
+}
+
+/// POST /api/v1/client/mailboxes/{id}/2fa/enable
+pub async fn enable_2fa(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<TwoFaCodePayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mut mailboxes = state.mailboxes.write().unwrap();
+    let mbox = match mailboxes.get_mut(&id) {
+        Some(m) => m,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new(404, "Mailbox not found")),
+            ))
+        }
+    };
+
+    let secret = match &mbox.totp_secret {
+        Some(s) => s.clone(),
+        None => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(400, "2FA setup not started — call /2fa/setup first")),
+            ))
+        }
+    };
+
+    let now = chrono::Utc::now().timestamp().max(0) as u64;
+    if !crate::totp::verify(&secret, &payload.code, now) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(400, "Invalid verification code")),
+        ));
+    }
+
+    let recovery_codes = crate::totp::generate_recovery_codes();
+    mbox.totp_enabled = true;
+    mbox.recovery_codes = recovery_codes.clone();
+    Ok(Json(json!({ "recovery_codes": recovery_codes })))
+}
+
+/// POST /api/v1/client/mailboxes/{id}/2fa/disable
+pub async fn disable_2fa(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<TwoFaCodePayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mut mailboxes = state.mailboxes.write().unwrap();
+    let mbox = match mailboxes.get_mut(&id) {
+        Some(m) => m,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new(404, "Mailbox not found")),
+            ))
+        }
+    };
+
+    let secret = match &mbox.totp_secret {
+        Some(s) => s.clone(),
+        None => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(400, "2FA is not set up for this mailbox")),
+            ))
+        }
+    };
+
+    let code = payload.code.trim().to_string();
+    let now = chrono::Utc::now().timestamp().max(0) as u64;
+    let totp_ok = crate::totp::verify(&secret, &code, now);
+    let recovery_ok = mbox.recovery_codes.iter().any(|c| c.eq_ignore_ascii_case(&code));
+    if !totp_ok && !recovery_ok {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(400, "Invalid verification code")),
+        ));
+    }
+
+    mbox.totp_secret = None;
+    mbox.totp_enabled = false;
+    mbox.recovery_codes = Vec::new();
+    Ok(Json(json!({ "enabled": false, "status": "2FA disabled" })))
 }

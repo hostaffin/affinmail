@@ -8,6 +8,7 @@ import { ConversationView } from './components/ConversationView';
 import { DockedComposeModal, ComposePayload } from './components/DockedComposeModal';
 import { ToastAlert, ToastMessage } from './components/ToastAlert';
 import { AdminPanel } from './components/AdminPanel';
+import { ClientPanel } from './components/ClientPanel';
 import { SplashScreen } from './components/SplashScreen';
 import { Login } from './components/Login';
 import { CalendarView } from './components/CalendarView';
@@ -41,7 +42,7 @@ import {
 /** Stalwart has no inbox category tabbing; everything lives in Primary. */
 const CATEGORY: EmailThread['category'] = 'primary';
 
-type AppView = 'mail' | 'calendar' | 'contacts' | 'settings' | 'import';
+type AppView = 'mail' | 'calendar' | 'contacts' | 'settings' | 'import' | 'panel';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -863,6 +864,16 @@ export const App: React.FC = () => {
     }
   })();
 
+  // Domain-owner self-service panel (full-screen, same mount pattern as AdminPanel).
+  if (view === 'panel') {
+    return (
+      <div className="h-dvh w-full overflow-hidden bg-base-100">
+        <ClientPanel onNotify={addToast} onBack={() => setView('mail')} userEmail={currentUser.email} />
+        <ToastAlert toasts={toasts} onDismiss={removeToast} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-dvh w-full overflow-hidden bg-gmail-canvas dark:bg-gmail-dark-canvas select-none">
       {ssoAdminEmail && (
@@ -890,6 +901,7 @@ export const App: React.FC = () => {
         onOpenSettings={() => setView('settings')}
         onOpenCalendar={() => setView('calendar')}
         onOpenContacts={() => setView('contacts')}
+        onOpenPanel={() => setView('panel')}
         onToggleSidebar={() => {
           if (window.innerWidth < 768) {
             setIsMobileNavOpen((prev) => !prev);

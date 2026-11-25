@@ -85,7 +85,46 @@ pub struct Mailbox {
     pub vacation_body: Option<String>,
     pub vacation_start: Option<String>,
     pub vacation_end: Option<String>,
+    /// F-085: TOTP 2FA enrolment state.
+    pub totp_secret: Option<String>,
+    pub totp_enabled: bool,
+    pub recovery_codes: Vec<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DistributionList {
+    pub id: String,
+    pub domain: String,
+    pub address: String,
+    pub name: String,
+    pub members: Vec<String>,
+    /// members | anyone | moderated
+    pub post_policy: String,
+    pub created_at: String,
+}
+
+/// F-084: per-domain password policy. Defaults apply when unset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasswordPolicy {
+    pub min_length: i64,
+    pub require_upper: bool,
+    pub require_number: bool,
+    pub require_special: bool,
+    /// 0 = never expires.
+    pub expiry_days: i64,
+}
+
+impl Default for PasswordPolicy {
+    fn default() -> Self {
+        Self {
+            min_length: 10,
+            require_upper: false,
+            require_number: false,
+            require_special: false,
+            expiry_days: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

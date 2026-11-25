@@ -449,3 +449,447 @@ async fn test_admin_and_queue_operations() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+/* ================================================================== */
+/* Module H — F-082 lists, F-084 password policy, F-085 2FA (TOTP)     */
+/* ================================================================== */
+
+async fn json_response(app: axum::Router, request: Request<Body>) -> (StatusCode, Value) {
+    let response = app.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, body)
+}
+
+fn json_request(method: &str, uri: &str, payload: Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn test_distribution_lists_crud() {
+    let app = create_app(AppState::new());
+
+    // GET seeded list
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/domains/affinmail.local/lists")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let seed_count = body.as_array().unwrap().len();
+    assert!(seed_count >= 1);
+    assert!(body
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|l| l["address"] == "team@affinmail.local"
+            && l["members"].as_array().unwrap().len() == 1
+            && l["post_policy"] == "members"));
+
+    // Unknown domain -> 404
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/domains/nodomain.example/lists")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], 404);
+
+    // POST with address_prefix, default post_policy
+    let (status, body) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/domains/affinmail.local/lists",
+            serde_json::json!({
+                "address_prefix": "ops",
+                "name": "Ops Team",
+                "members": ["alex.mercer@affinmail.local", "outsider@example.com"]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["address"], "ops@affinmail.local");
+    assert_eq!(body["post_policy"], "members");
+    assert_eq!(body["members"].as_array().unwrap().len(), 2);
+    let list_id = body["id"].as_str().unwrap().to_string();
+    assert!(list_id.starts_with("lst_"));
+
+    // Duplicate address -> 409
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/domains/affinmail.local/lists",
+            serde_json::json!({ "address_prefix": "ops", "name": "Dup" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // Invalid post_policy -> 400
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/domains/affinmail.local/lists",
+            serde_json::json!({ "address_prefix": "x2", "name": "Bad", "post_policy": "weird" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // PATCH name + policy
+    let (status, body) = json_response(
+        app.clone(),
+        json_request(
+            "PATCH",
+            &format!("/api/v1/client/lists/{}", list_id),
+            serde_json::json!({ "name": "Operations", "post_policy": "anyone" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["name"], "Operations");
+    assert_eq!(body["post_policy"], "anyone");
+
+    // PATCH unknown id -> 404
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "PATCH",
+            "/api/v1/client/lists/lst_nope",
+            serde_json::json!({ "name": "Ghost" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // DELETE
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .method("DELETE")
+            .uri(format!("/api/v1/client/lists/{}", list_id).as_str())
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["deleted"], list_id);
+
+    // DELETE again -> 404
+    let (status, _) = json_response(
+        app.clone(),
+        Request::builder()
+            .method("DELETE")
+            .uri(format!("/api/v1/client/lists/{}", list_id).as_str())
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_password_policy_and_enforcement() {
+    let app = create_app(AppState::new());
+
+    // GET default policy
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/domains/affinmail.local/password-policy")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["min_length"], 10);
+    assert_eq!(body["require_upper"], false);
+    assert_eq!(body["require_number"], false);
+    assert_eq!(body["require_special"], false);
+    assert_eq!(body["expiry_days"], 0);
+
+    // PUT invalid min_length -> 400
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "PUT",
+            "/api/v1/client/domains/affinmail.local/password-policy",
+            serde_json::json!({ "min_length": 5 }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // PUT invalid expiry_days -> 400
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "PUT",
+            "/api/v1/client/domains/affinmail.local/password-policy",
+            serde_json::json!({ "expiry_days": 45 }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // PUT valid policy
+    let (status, body) = json_response(
+        app.clone(),
+        json_request(
+            "PUT",
+            "/api/v1/client/domains/affinmail.local/password-policy",
+            serde_json::json!({
+                "min_length": 12,
+                "require_upper": true,
+                "require_number": true
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["min_length"], 12);
+    assert_eq!(body["require_upper"], true);
+
+    // GET reflects the override
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/domains/affinmail.local/password-policy")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["min_length"], 12);
+
+    // Enforcement: weak password rejected on mailbox create
+    let (status, body) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/domains/affinmail.local/mailboxes",
+            serde_json::json!({ "email": "weakpw@affinmail.local", "password": "short1" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_lowercase()
+        .contains("character"));
+
+    // Missing uppercase also rejected
+    let (status, body) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/domains/affinmail.local/mailboxes",
+            serde_json::json!({ "email": "weakpw2@affinmail.local", "password": "alllowercase12" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_lowercase()
+        .contains("uppercase"));
+
+    // Strong password accepted
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/domains/affinmail.local/mailboxes",
+            serde_json::json!({ "email": "strongpw@affinmail.local", "password": "Sup3rSecure!" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Enforcement on password change: weak rejected, strong ok
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "PUT",
+            "/api/v1/client/mailboxes/mb_1/password",
+            serde_json::json!({ "password": "weak" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "PUT",
+            "/api/v1/client/mailboxes/mb_1/password",
+            serde_json::json!({ "password": "N3wStrongPass!" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_2fa_totp_enrolment_flow() {
+    let app = create_app(AppState::new());
+
+    // Initially disabled
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/mailboxes/mb_1/2fa")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"], false);
+
+    // Unknown mailbox -> 404
+    let (status, _) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/mailboxes/mb_nope/2fa")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Setup: fresh secret + otpauth url, still disabled
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .method("POST")
+            .uri("/api/v1/client/mailboxes/mb_1/2fa/setup")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let secret = body["secret"].as_str().unwrap().to_string();
+    assert!(!secret.is_empty());
+    let url = body["otpauth_url"].as_str().unwrap();
+    assert!(url.starts_with("otpauth://totp/AffinMail:alex.mercer@affinmail.local?secret="));
+    assert!(url.contains("issuer=AffinMail"));
+    assert!(url.contains("digits=6"));
+    assert!(url.contains("period=30"));
+
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/mailboxes/mb_1/2fa")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(body["enabled"], false);
+    assert_eq!(status, StatusCode::OK);
+
+    // Enable with a wrong code -> 400 (guaranteed to differ from the real code)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let real = affinmail_server::totp::code_at(&secret, now).unwrap();
+    let bad: String = real
+        .chars()
+        .map(|c| if c == '0' { '1' } else { '0' })
+        .collect();
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/mailboxes/mb_1/2fa/enable",
+            serde_json::json!({ "code": bad }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Enable with the correct TOTP code (same function the server verifies with)
+    let (status, body) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/mailboxes/mb_1/2fa/enable",
+            serde_json::json!({ "code": real }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let codes = body["recovery_codes"].as_array().unwrap();
+    assert_eq!(codes.len(), 10);
+    for c in codes {
+        let s = c.as_str().unwrap();
+        assert_eq!(s.len(), 9);
+        assert_eq!(&s[4..5], "-");
+    }
+
+    // Status now enabled
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/mailboxes/mb_1/2fa")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"], true);
+
+    // Disable with a recovery code
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/mailboxes/mb_1/2fa/disable",
+            serde_json::json!({ "code": codes[0].as_str().unwrap() }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // State cleared
+    let (status, body) = json_response(
+        app.clone(),
+        Request::builder()
+            .uri("/api/v1/client/mailboxes/mb_1/2fa")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"], false);
+
+    // Disable again -> 400 (nothing enrolled)
+    let (status, _) = json_response(
+        app.clone(),
+        json_request(
+            "POST",
+            "/api/v1/client/mailboxes/mb_1/2fa/disable",
+            serde_json::json!({ "code": "AAAA-BBBB" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

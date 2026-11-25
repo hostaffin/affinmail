@@ -80,6 +80,9 @@ pub async fn batch_mailboxes(
             vacation_body: None,
             vacation_start: None,
             vacation_end: None,
+            totp_secret: None,
+            totp_enabled: false,
+            recovery_codes: Vec::new(),
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 
