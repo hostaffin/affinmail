@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   Globe,
+  HardDrive,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -14,6 +15,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Send,
   ShieldCheck,
   Trash2,
   Users,
@@ -173,15 +175,17 @@ function fmtWhen(iso?: string | null): string {
 const enc = encodeURIComponent;
 
 /* Shared style tokens — same palette as SettingsView / DomainActivitySettings. */
-const card = 'rounded-xl border border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] p-4';
-const label = 'text-xs text-[#5E5E5E] dark:text-[#8E918F]';
+const card =
+  'rounded-2xl border border-[#E4E7EC] dark:border-white/10 bg-white dark:bg-[#111827] shadow-[0_1px_2px_rgba(16,24,40,0.05)] p-5';
+const label = 'text-[11px] font-medium uppercase tracking-wide text-[#667085] dark:text-[#8E918F]';
 const btnGhost =
-  'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#E0E2E7] dark:border-[#333538] text-xs font-medium text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40';
+  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-[#E4E7EC] dark:border-white/10 bg-white dark:bg-transparent text-[13px] font-medium text-[#344054] dark:text-[#C4C7C5] hover:bg-[#F9FAFB] dark:hover:bg-white/5 transition-colors disabled:opacity-40';
 const btnPrimary =
-  'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#0B57D0] hover:bg-[#0a4cb8] text-white text-xs font-medium transition-colors disabled:opacity-40';
+  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-[#0B57D0] hover:bg-[#0a4cb8] text-white text-[13px] font-medium shadow-[0_1px_2px_rgba(16,24,40,0.08)] transition-colors disabled:opacity-40';
 const btnDanger =
-  'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-red-200 dark:border-red-900/50 text-xs font-medium text-[#B3261E] dark:text-[#F28B82] hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors disabled:opacity-40';
-const inputCls = 'input input-bordered input-sm w-full bg-white dark:bg-[#1E1F20]';
+  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-red-200 dark:border-red-900/50 text-[13px] font-medium text-[#B3261E] dark:text-[#F28B82] hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors disabled:opacity-40';
+const inputCls =
+  'input input-bordered h-10 w-full rounded-lg border-[#E4E7EC] dark:border-white/10 bg-white dark:bg-[#111827] text-sm focus:border-[#0B57D0] focus:outline-none';
 
 function Badge({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'muted'; children: React.ReactNode }) {
   const tones: Record<string, string> = {
@@ -274,12 +278,58 @@ interface DashboardData {
   dns_verified?: boolean | null;
 }
 
+interface ActivityDay {
+  day: string;
+  sent: number;
+  received: number;
+}
+
+function KpiCard({
+  icon: Icon,
+  tint,
+  iconColor,
+  label: lbl,
+  value,
+  sub,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  tint: string;
+  iconColor: string;
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className={card}>
+      <div className="flex items-start gap-3">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tint}`}>
+          <Icon className={`h-5 w-5 stroke-[1.5] ${iconColor}`} />
+        </span>
+        <div className="min-w-0">
+          <div className={label}>{lbl}</div>
+          <div className="mt-0.5 text-[26px] font-semibold leading-8 tabular-nums text-[#101828] dark:text-[#E6EAF2]">
+            {value}
+          </div>
+          {sub && <div className="mt-0.5 text-xs text-[#667085] dark:text-[#8E918F]">{sub}</div>}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 const DashboardSection: React.FC<{
   domains: Domain[];
   onNotify: ClientPanelProps['onNotify'];
-}> = ({ domains, onNotify }) => {
+  onNavigate: (s: Section) => void;
+}> = ({ domains, onNotify, onNavigate }) => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState<Record<string, number | null>>({});
+  const [activity, setActivity] = useState<ActivityDay[]>([]);
+  const primary = domains[0]?.domain ?? '';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -296,21 +346,67 @@ const DashboardSection: React.FC<{
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, number | null> = {};
+      await Promise.all(
+        domains.map(async (d) => {
+          try {
+            const r = await apiFetch<{ mailboxes?: unknown[] }>(
+              `/client/domains/${enc(d.domain)}/mailboxes`
+            );
+            next[d.domain] = Array.isArray(r?.mailboxes) ? r.mailboxes.length : null;
+          } catch {
+            next[d.domain] = null;
+          }
+        })
+      );
+      if (!cancelled) setCounts(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [domains]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!primary) return;
+      try {
+        const s = await apiFetch<{ days?: ActivityDay[] }>(
+          `/client/domains/${enc(primary)}/stats`
+        );
+        if (!cancelled) setActivity(Array.isArray(s?.days) ? s.days.slice(-7) : []);
+      } catch {
+        if (!cancelled) setActivity([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [primary]);
+
   const used = data?.storage_used_mb ?? 0;
   const limit = data?.storage_limit_mb ?? 0;
   const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const maxActivity = Math.max(1, ...activity.map((d) => Math.max(d.sent || 0, d.received || 0)));
+  const dayLabel = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { weekday: 'short' });
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Overview</h3>
-          <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
-            Workspace usage for your domains.
+          <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Overview</h3>
+          <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
+            Everything about your domains, mailboxes and mail flow in one place.
           </p>
         </div>
         <button onClick={() => void load()} className={btnGhost}>
-          <RefreshCw className={`w-3.5 h-3.5 stroke-[1.5] ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-4 w-4 stroke-[1.5] ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
@@ -319,21 +415,32 @@ const DashboardSection: React.FC<{
         <Loading />
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className={card}>
-              <div className={label}>Mailboxes</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-[#1F1F1F] dark:text-[#E3E3E3]">
-                {data?.mailbox_count ?? 0}
-                {data?.mailbox_limit ? ` / ${data.mailbox_limit}` : ''}
-              </div>
-            </div>
-            <div className={card}>
-              <div className={label}>Storage used</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-[#1F1F1F] dark:text-[#E3E3E3]">
-                {fmtMb(data?.storage_used_mb)}
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="h-2 flex-1 rounded-full bg-[#E0E2E7] dark:bg-[#333538]">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiCard
+              icon={MailboxIcon}
+              tint="bg-[#E8F0FE] dark:bg-[#173A6B]"
+              iconColor="text-[#0B57D0] dark:text-[#A8C7FA]"
+              label="Mailboxes"
+              value={
+                <>
+                  {data?.mailbox_count ?? 0}
+                  {data?.mailbox_limit ? (
+                    <span className="text-base font-medium text-[#667085]"> / {data.mailbox_limit}</span>
+                  ) : null}
+                </>
+              }
+              sub={domains.length === 1 ? 'on 1 domain' : `across ${domains.length} domains`}
+            />
+            <KpiCard
+              icon={HardDrive}
+              tint="bg-[#E6F4EA] dark:bg-[#1E3329]"
+              iconColor="text-[#137333] dark:text-[#81C995]"
+              label="Storage used"
+              value={fmtMb(data?.storage_used_mb)}
+              sub={`of ${fmtMb(data?.storage_limit_mb)} total`}
+            >
+              <div className="mt-3 flex items-center gap-2">
+                <div className="h-2 flex-1 rounded-full bg-[#EAECF0] dark:bg-white/10">
                   <div
                     className="h-2 rounded-full bg-[#0B57D0]"
                     style={{ width: `${pct}%` }}
@@ -343,47 +450,106 @@ const DashboardSection: React.FC<{
                     aria-valuemax={100}
                   />
                 </div>
-                <span className={label}>of {fmtMb(data?.storage_limit_mb)}</span>
+                <span className="text-xs font-medium text-[#667085] dark:text-[#8E918F]">{pct}%</span>
               </div>
-            </div>
-            <div className={card}>
-              <div className={label}>Emails sent today</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-[#1F1F1F] dark:text-[#E3E3E3]">
-                {data?.emails_sent_today ?? '—'}
-              </div>
-              <div className={label}>{data?.daily_limit ? `Daily limit ${data.daily_limit}` : 'No daily limit reported'}</div>
-            </div>
-            <div className={card}>
-              <div className={label}>Security score</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-[#1F1F1F] dark:text-[#E3E3E3]">
-                {data?.security_score_pct ?? '—'}%
-              </div>
-            </div>
+            </KpiCard>
+            <KpiCard
+              icon={Send}
+              tint="bg-[#FEF7E0] dark:bg-[#3C3226]"
+              iconColor="text-[#B06000] dark:text-[#FDD663]"
+              label="Emails sent today"
+              value={data?.emails_sent_today ?? '—'}
+              sub={data?.daily_limit ? `Daily limit ${data.daily_limit}` : 'No daily limit set'}
+            />
+            <KpiCard
+              icon={ShieldCheck}
+              tint="bg-[#E6F4EA] dark:bg-[#1E3329]"
+              iconColor="text-[#137333] dark:text-[#81C995]"
+              label="Security score"
+              value={data?.security_score_pct != null ? `${data.security_score_pct}%` : '—'}
+              sub={data?.dns_verified ? 'DNS verified for your domains' : 'DNS verification pending'}
+            />
           </div>
 
           <div className={card}>
-            <h4 className="text-sm font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Domains</h4>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-[#101828] dark:text-[#E6EAF2]">Mail activity</h4>
+                <p className="mt-0.5 text-xs text-[#667085] dark:text-[#8E918F]">
+                  Last 7 days{primary ? ` · ${primary}` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-[#667085] dark:text-[#8E918F]">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-[#0B57D0]" /> Sent
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-[#A8C7FA]" /> Received
+                </span>
+              </div>
+            </div>
+            {activity.length === 0 ? (
+              <Empty text="No mail activity recorded yet." />
+            ) : (
+              <div className="mt-5 flex h-36 items-end gap-2 sm:gap-3">
+                {activity.map((d) => (
+                  <div key={d.day} className="flex flex-1 flex-col items-center gap-2">
+                    <div className="flex h-28 w-full items-end justify-center gap-1">
+                      <div
+                        className="w-3.5 rounded-t-md bg-[#0B57D0] sm:w-4"
+                        style={{ height: `${Math.max(3, ((d.sent || 0) / maxActivity) * 100)}%` }}
+                        title={`Sent: ${d.sent || 0}`}
+                      />
+                      <div
+                        className="w-3.5 rounded-t-md bg-[#A8C7FA] sm:w-4"
+                        style={{ height: `${Math.max(3, ((d.received || 0) / maxActivity) * 100)}%` }}
+                        title={`Received: ${d.received || 0}`}
+                      />
+                    </div>
+                    <span className="text-[11px] text-[#667085] dark:text-[#8E918F]">{dayLabel(d.day)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className={card}>
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-[#101828] dark:text-[#E6EAF2]">Your domains</h4>
+              <span className="text-xs text-[#667085] dark:text-[#8E918F]">{domains.length} total</span>
+            </div>
             {domains.length === 0 ? (
               <Empty text="No domains yet. Domains appear here once they are added to the workspace." />
             ) : (
-              <div className="mt-2 divide-y divide-[#F2F4F7] dark:divide-[#333538]">
+              <div className="mt-3 divide-y divide-[#F2F4F7] dark:divide-white/5">
                 {domains.map((d) => (
-                  <div key={d.domain} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Globe className="w-4 h-4 stroke-[1.5] text-[#0B57D0] shrink-0" />
-                      <span className="text-sm text-[#1F1F1F] dark:text-[#E3E3E3] font-medium truncate">{d.domain}</span>
+                  <div key={d.domain} className="flex flex-wrap items-center gap-3 py-3.5">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E8F0FE] dark:bg-[#173A6B]">
+                      <Globe className="h-5 w-5 stroke-[1.5] text-[#0B57D0] dark:text-[#A8C7FA]" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-[#101828] dark:text-[#E6EAF2]">{d.domain}</div>
+                      <div className="mt-0.5 text-xs text-[#667085] dark:text-[#8E918F]">
+                        {counts[d.domain] == null ? '—' : counts[d.domain]} mailbox
+                        {counts[d.domain] === 1 ? '' : 'es'}
+                        {d.maxMailboxes ? ` of ${d.maxMailboxes}` : ''} · {fmtMb(d.diskQuotaMb)} storage
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className={label}>
-                        {d.mailboxCount ?? 0} mailbox{d.mailboxCount === 1 ? '' : 'es'}
-                      </span>
-                      {data?.dns_verified ? (
-                        <Badge tone="ok">DNS verified</Badge>
-                      ) : data?.dns_verified === false ? (
-                        <Badge tone="warn">DNS pending</Badge>
-                      ) : (
-                        <Badge tone="muted">Unknown</Badge>
-                      )}
+                    {d.isActive ? <Badge tone="ok">Active</Badge> : <Badge tone="bad">Suspended</Badge>}
+                    {data?.dns_verified ? (
+                      <Badge tone="ok">DNS verified</Badge>
+                    ) : data?.dns_verified === false ? (
+                      <Badge tone="warn">DNS pending</Badge>
+                    ) : (
+                      <Badge tone="muted">DNS unknown</Badge>
+                    )}
+                    <div className="flex gap-2">
+                      <button onClick={() => onNavigate('mailboxes')} className={btnGhost}>
+                        Mailboxes
+                      </button>
+                      <button onClick={() => onNavigate('aliases')} className={btnGhost}>
+                        Aliases
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -2043,37 +2209,56 @@ export const ClientPanel: React.FC<ClientPanelProps> = ({ userEmail, onNotify, o
   }, [onNotify]);
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-base-100 text-base-content">
-      {/* Left section nav */}
-      <nav className="hidden md:flex w-56 shrink-0 flex-col border-r border-[#E0E2E7] dark:border-[#333538] bg-white dark:bg-[#1E1F20] p-3">
-        <div className="flex items-center gap-2 px-2 py-2">
-          <Globe className="w-5 h-5 stroke-[1.5] text-[#0B57D0]" />
-          <span className="text-sm font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Domain panel</span>
+    <div className="adm-root flex h-dvh w-full overflow-hidden bg-[#F4F5F7] text-[#101828] dark:bg-[#0A0F1A] dark:text-[#E6EAF2]">
+      {/* Left section nav — AffinMail Console ink sidebar */}
+      <nav className="adm-sidebar hidden w-[248px] shrink-0 flex-col p-4 text-white md:flex">
+        <div className="flex items-center gap-3 px-1 py-2">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0B57D0]">
+            <Globe className="h-5 w-5 stroke-[1.5] text-white" />
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-[15px] font-semibold leading-5">Domain panel</div>
+            <div className="text-[11px] leading-4 text-white/50">AffinMail self-service</div>
+          </div>
         </div>
-        <div className="mt-2 flex flex-col gap-0.5">
+        <div className="mt-6 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">
+          Manage
+        </div>
+        <div className="mt-2 flex flex-col gap-1">
           {NAV.map(({ id, label: lbl, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setSection(id)}
-              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+              className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                 section === id
-                  ? 'bg-[#E8F0FE] dark:bg-[#1E3329] text-[#0B57D0] dark:text-[#A8C7FA] font-medium'
-                  : 'text-[#444746] dark:text-[#C4C7C5] hover:bg-black/5 dark:hover:bg-white/5'
+                  ? 'bg-white/10 font-medium text-white'
+                  : 'text-white/65 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <Icon className="w-4 h-4 stroke-[1.5] shrink-0" />
+              {section === id && (
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-[#4C8DFF]" />
+              )}
+              <Icon className="h-[18px] w-[18px] shrink-0 stroke-[1.5]" />
               {lbl}
             </button>
           ))}
         </div>
         <div className="flex-1" />
-        <div className="px-2 pb-1">
-          <p className="text-xs text-[#5E5E5E] dark:text-[#8E918F] truncate">{userEmail}</p>
+        <div className="border-t border-white/10 pt-3">
+          <div className="flex items-center gap-2.5 px-1">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0B57D0] text-xs font-semibold text-white">
+              {(userEmail || '?').charAt(0).toUpperCase()}
+            </span>
+            <p className="min-w-0 flex-1 truncate text-xs text-white/70">{userEmail}</p>
+          </div>
+          <button
+            onClick={onBack}
+            className="mt-3 flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4 stroke-[1.5]" />
+            Back to webmail
+          </button>
         </div>
-        <button onClick={onBack} className={`${btnGhost} mt-1 justify-start`}>
-          <ArrowLeft className="w-3.5 h-3.5 stroke-[1.5]" />
-          Back to webmail
-        </button>
       </nav>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -2106,12 +2291,12 @@ export const ClientPanel: React.FC<ClientPanelProps> = ({ userEmail, onNotify, o
           ))}
         </div>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-[1120px]">
           {!domainsLoaded ? (
             <Loading text="Loading domains…" />
           ) : (
             <>
-              {section === 'dashboard' && <DashboardSection domains={domains} onNotify={onNotify} />}
+              {section === 'dashboard' && <DashboardSection domains={domains} onNotify={onNotify} onNavigate={setSection} />}
               {section === 'mailboxes' && <MailboxSection domains={domains} onNotify={onNotify} />}
               {section === 'aliases' && <AliasSection domains={domains} onNotify={onNotify} />}
               {section === 'lists' && <ListSection domains={domains} onNotify={onNotify} />}

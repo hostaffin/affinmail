@@ -146,7 +146,37 @@ export const health = async (): Promise<Health> => {
   };
 };
 
-export const listDomains = () => apiFetch<{ domains: Domain[]; count: number }>('/domains');
+/** The Rust API returns snake_case domain rows; normalize them onto the
+ *  camelCase Domain contract the panels consume. */
+function normalizeDomain(d: Record<string, unknown>): Domain {
+  const num = (v: unknown): number | null => {
+    const n = typeof v === 'string' ? Number(v) : (v as number);
+    return typeof n === 'number' && Number.isFinite(n) ? n : null;
+  };
+  return {
+    domain: (d.domain_name as string) ?? (d.domain as string) ?? '',
+    maxMailboxes: num(d.max_mailboxes ?? d.maxMailboxes) ?? 0,
+    diskQuotaMb: num(d.disk_quota_mb ?? d.diskQuotaMb) ?? 0,
+    maxAttachmentMb: num(d.max_attachment_size_mb ?? d.max_attachment_mb ?? d.maxAttachmentMb) ?? 0,
+    hostaffinServiceId: num(d.hostaffin_service_id ?? d.hostaffinServiceId),
+    dkimSelector: (d.dkim_selector as string) ?? (d.dkimSelector as string) ?? '',
+    dkimPublicKey: (d.dkim_public_key as string) ?? (d.dkimPublicKey as string) ?? '',
+    stalwartDomainId:
+      (d.stalwart_domain_id as string) ?? (d.account_id as string) ?? (d.stalwartDomainId as string) ?? null,
+    isActive:
+      typeof d.status === 'string' ? d.status === 'active' : ((d.isActive as boolean) ?? true),
+    assignedIpId: (d.assigned_ip_id as string) ?? (d.assignedIpId as string) ?? null,
+    mailboxCount: num(d.mailbox_count ?? d.mailboxCount),
+    catchAllAddress: (d.catch_all_address as string) ?? (d.catchAllAddress as string) ?? null,
+    createdAt: (d.created_at as string) ?? (d.createdAt as string) ?? '',
+  };
+}
+
+export const listDomains = async (): Promise<{ domains: Domain[]; count: number }> => {
+  const r = await apiFetch<{ domains?: Record<string, unknown>[]; count?: number }>('/domains');
+  const domains = Array.isArray(r?.domains) ? r.domains.map(normalizeDomain) : [];
+  return { domains, count: r?.count ?? domains.length };
+};
 
 export const createDomain = (body: {
   domain: string;
