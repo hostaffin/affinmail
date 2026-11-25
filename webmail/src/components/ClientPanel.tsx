@@ -234,7 +234,11 @@ function Loading({ text = 'Loading…' }: { text?: string }) {
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="py-6 text-center text-xs text-[#5E5E5E] dark:text-[#8E918F]">{text}</p>;
+  return (
+    <div className="rounded-xl border border-dashed border-[#D0D5DD] dark:border-white/15 px-4 py-10 text-center text-[13px] text-[#667085] dark:text-[#8E918F]">
+      {text}
+    </div>
+  );
 }
 
 function DomainSelect({
@@ -250,7 +254,7 @@ function DomainSelect({
     <label className="flex items-center gap-2 text-xs text-[#444746] dark:text-[#C4C7C5]">
       Domain
       <select
-        className="select select-bordered select-sm max-w-56"
+        className="h-10 rounded-lg border border-[#D0D5DD] dark:border-white/10 bg-white dark:bg-[#111827] px-3 text-sm text-[#101828] dark:text-[#E6EAF2] focus:border-[#0B57D0] focus:outline-none disabled:opacity-40 w-full max-w-56"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -402,7 +406,7 @@ const DashboardSection: React.FC<{
         <div>
           <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Overview</h3>
           <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
-            Everything about your domains, mailboxes and mail flow in one place.
+            Usage, mail flow and status across your domains.
           </p>
         </div>
         <button onClick={() => void load()} className={btnGhost}>
@@ -691,11 +695,11 @@ const MailboxSection: React.FC<{
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Mailboxes</h3>
-          <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
+          <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Mailboxes</h3>
+          <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
             Create, edit and remove mailboxes on your domains.
           </p>
         </div>
@@ -753,8 +757,8 @@ const MailboxSection: React.FC<{
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="table table-sm">
+      <div className="overflow-x-auto rounded-2xl border border-[#E4E7EC] dark:border-white/10 bg-white dark:bg-[#111827] shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+        <table className="w-full text-sm [&_thead_th]:bg-[#F9FAFB] [&_thead_th]:dark:bg-white/5 [&_thead_th]:px-5 [&_thead_th]:py-3 [&_thead_th]:text-[11px] [&_thead_th]:font-semibold [&_thead_th]:uppercase [&_thead_th]:tracking-wide [&_thead_th]:text-[#667085] [&_thead_th:not(.text-right)]:text-left [&_tbody_td]:px-5 [&_tbody_td]:py-3.5 [&_tbody_tr]:border-t [&_tbody_tr]:border-[#F2F4F7] [&_tbody_tr]:dark:border-white/5 [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-[#F9FAFB] [&_tbody_tr:hover]:dark:bg-white/5">
           <thead>
             <tr className="text-xs text-[#5E5E5E] dark:text-[#8E918F]">
               <th>Address</th>
@@ -783,7 +787,7 @@ const MailboxSection: React.FC<{
             {rows.map((m) => (
               <React.Fragment key={m.id}>
                 <tr className="text-sm text-[#444746] dark:text-[#C4C7C5]">
-                  <td className="font-mono text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">{m.email}</td>
+                  <td className="text-[13px] text-[#101828] dark:text-[#E6EAF2]">{m.email}</td>
                   <td>{m.display_name || '—'}</td>
                   <td className="tabular-nums">
                     {fmtMb(m.quota_used_mb)} / {fmtMb(m.quota_limit_mb)}
@@ -947,11 +951,11 @@ const AliasSection: React.FC<{
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Aliases</h3>
-          <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
+          <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Aliases</h3>
+          <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
             Forward one address to one or more mailboxes. Aliases do not consume mailbox slots.
           </p>
         </div>
@@ -985,8 +989,8 @@ const AliasSection: React.FC<{
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="table table-sm">
+      <div className="overflow-x-auto rounded-2xl border border-[#E4E7EC] dark:border-white/10 bg-white dark:bg-[#111827] shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+        <table className="w-full text-sm [&_thead_th]:bg-[#F9FAFB] [&_thead_th]:dark:bg-white/5 [&_thead_th]:px-5 [&_thead_th]:py-3 [&_thead_th]:text-[11px] [&_thead_th]:font-semibold [&_thead_th]:uppercase [&_thead_th]:tracking-wide [&_thead_th]:text-[#667085] [&_thead_th:not(.text-right)]:text-left [&_tbody_td]:px-5 [&_tbody_td]:py-3.5 [&_tbody_tr]:border-t [&_tbody_tr]:border-[#F2F4F7] [&_tbody_tr]:dark:border-white/5 [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-[#F9FAFB] [&_tbody_tr:hover]:dark:bg-white/5">
           <thead>
             <tr className="text-xs text-[#5E5E5E] dark:text-[#8E918F]">
               <th>Alias</th>
@@ -1012,8 +1016,8 @@ const AliasSection: React.FC<{
             )}
             {rows.map((a) => (
               <tr key={a.id} className="text-sm text-[#444746] dark:text-[#C4C7C5]">
-                <td className="font-mono text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">{a.source_email}</td>
-                <td className="font-mono text-xs break-all">
+                <td className="text-[13px] text-[#101828] dark:text-[#E6EAF2]">{a.source_email}</td>
+                <td className="text-[13px] break-all">
                   {(a.destinations && a.destinations.length > 0 ? a.destinations : [a.destination_email]).join(', ')}
                 </td>
                 <td className="text-xs">{fmtWhen(a.created_at)}</td>
@@ -1142,11 +1146,11 @@ const ListSection: React.FC<{
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Distribution lists</h3>
-          <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
+          <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Distribution lists</h3>
+          <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
             Team addresses that forward to one or more members.
           </p>
         </div>
@@ -1173,7 +1177,7 @@ const ListSection: React.FC<{
           </label>
           <label className="form-control">
             <span className="label-text text-xs text-[#5E5E5E] dark:text-[#8E918F]">Who can post</span>
-            <select className="select select-bordered select-sm w-full" value={postPolicy} onChange={(e) => setPostPolicy(e.target.value)}>
+            <select className="h-10 rounded-lg border border-[#D0D5DD] dark:border-white/10 bg-white dark:bg-[#111827] px-3 text-sm text-[#101828] dark:text-[#E6EAF2] focus:border-[#0B57D0] focus:outline-none disabled:opacity-40 w-full" value={postPolicy} onChange={(e) => setPostPolicy(e.target.value)}>
               <option value="members">Members only</option>
               <option value="anyone">Anyone</option>
               <option value="moderated">Moderated</option>
@@ -1203,8 +1207,8 @@ const ListSection: React.FC<{
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="table table-sm">
+      <div className="overflow-x-auto rounded-2xl border border-[#E4E7EC] dark:border-white/10 bg-white dark:bg-[#111827] shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+        <table className="w-full text-sm [&_thead_th]:bg-[#F9FAFB] [&_thead_th]:dark:bg-white/5 [&_thead_th]:px-5 [&_thead_th]:py-3 [&_thead_th]:text-[11px] [&_thead_th]:font-semibold [&_thead_th]:uppercase [&_thead_th]:tracking-wide [&_thead_th]:text-[#667085] [&_thead_th:not(.text-right)]:text-left [&_tbody_td]:px-5 [&_tbody_td]:py-3.5 [&_tbody_tr]:border-t [&_tbody_tr]:border-[#F2F4F7] [&_tbody_tr]:dark:border-white/5 [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-[#F9FAFB] [&_tbody_tr:hover]:dark:bg-white/5">
           <thead>
             <tr className="text-xs text-[#5E5E5E] dark:text-[#8E918F]">
               <th>Address</th>
@@ -1231,7 +1235,7 @@ const ListSection: React.FC<{
             )}
             {rows.map((l) => (
               <tr key={l.id} className="text-sm text-[#444746] dark:text-[#C4C7C5]">
-                <td className="font-mono text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">{l.address}</td>
+                <td className="text-[13px] text-[#101828] dark:text-[#E6EAF2]">{l.address}</td>
                 <td>{l.name || '—'}</td>
                 <td className="tabular-nums">{(l.members ?? []).length}</td>
                 <td>
@@ -1324,11 +1328,11 @@ const SettingsSection: React.FC<{
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Domain settings</h3>
-          <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
+          <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Domain settings</h3>
+          <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
             Password rules and DNS status for your domain.
           </p>
         </div>
@@ -1359,7 +1363,7 @@ const SettingsSection: React.FC<{
               </label>
               <label className="form-control">
                 <span className="label-text text-xs text-[#5E5E5E] dark:text-[#8E918F]">Password expiry</span>
-                <select className="select select-bordered select-sm w-full max-w-48" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
+                <select className="h-10 rounded-lg border border-[#D0D5DD] dark:border-white/10 bg-white dark:bg-[#111827] px-3 text-sm text-[#101828] dark:text-[#E6EAF2] focus:border-[#0B57D0] focus:outline-none disabled:opacity-40 w-full max-w-48" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
                   <option value="0">Never expires</option>
                   <option value="30">Every 30 days</option>
                   <option value="60">Every 60 days</option>
@@ -1369,15 +1373,15 @@ const SettingsSection: React.FC<{
             </div>
             <div className="mt-3 flex flex-col gap-2 text-sm text-[#444746] dark:text-[#C4C7C5]">
               <label className="flex items-center gap-2">
-                <input type="checkbox" className="checkbox checkbox-sm" checked={reqUpper} onChange={(e) => setReqUpper(e.target.checked)} />
+                <input type="checkbox" className="h-4 w-4 shrink-0 rounded accent-[#0B57D0]" checked={reqUpper} onChange={(e) => setReqUpper(e.target.checked)} />
                 Require an uppercase letter
               </label>
               <label className="flex items-center gap-2">
-                <input type="checkbox" className="checkbox checkbox-sm" checked={reqNumber} onChange={(e) => setReqNumber(e.target.checked)} />
+                <input type="checkbox" className="h-4 w-4 shrink-0 rounded accent-[#0B57D0]" checked={reqNumber} onChange={(e) => setReqNumber(e.target.checked)} />
                 Require a number
               </label>
               <label className="flex items-center gap-2">
-                <input type="checkbox" className="checkbox checkbox-sm" checked={reqSpecial} onChange={(e) => setReqSpecial(e.target.checked)} />
+                <input type="checkbox" className="h-4 w-4 shrink-0 rounded accent-[#0B57D0]" checked={reqSpecial} onChange={(e) => setReqSpecial(e.target.checked)} />
                 Require a special character
               </label>
             </div>
@@ -1459,11 +1463,11 @@ const ReportsSection: React.FC<{
   const totals = report?.totals ?? {};
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Reports</h3>
-          <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
+          <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Reports</h3>
+          <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
             Outbound volume and delivery health per mailbox on {domain || 'your domain'}.
           </p>
         </div>
@@ -1498,8 +1502,8 @@ const ReportsSection: React.FC<{
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="table table-sm">
+      <div className="overflow-x-auto rounded-2xl border border-[#E4E7EC] dark:border-white/10 bg-white dark:bg-[#111827] shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+        <table className="w-full text-sm [&_thead_th]:bg-[#F9FAFB] [&_thead_th]:dark:bg-white/5 [&_thead_th]:px-5 [&_thead_th]:py-3 [&_thead_th]:text-[11px] [&_thead_th]:font-semibold [&_thead_th]:uppercase [&_thead_th]:tracking-wide [&_thead_th]:text-[#667085] [&_thead_th:not(.text-right)]:text-left [&_tbody_td]:px-5 [&_tbody_td]:py-3.5 [&_tbody_tr]:border-t [&_tbody_tr]:border-[#F2F4F7] [&_tbody_tr]:dark:border-white/5 [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-[#F9FAFB] [&_tbody_tr:hover]:dark:bg-white/5">
           <thead>
             <tr className="text-xs text-[#5E5E5E] dark:text-[#8E918F]">
               <th>Mailbox</th>
@@ -1528,7 +1532,7 @@ const ReportsSection: React.FC<{
             )}
             {rows.map((r, i) => (
               <tr key={`${r.email ?? i}`} className="text-sm text-[#444746] dark:text-[#C4C7C5]">
-                <td className="font-mono text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">{r.email ?? '—'}</td>
+                <td className="text-[13px] text-[#101828] dark:text-[#E6EAF2]">{r.email ?? '—'}</td>
                 <td className="tabular-nums">{r.sent_today ?? 0}</td>
                 <td className="tabular-nums">{r.sent_this_week ?? 0}</td>
                 <td className="tabular-nums">{r.sent_this_month ?? 0}</td>
@@ -1685,7 +1689,7 @@ const TwoFaCard: React.FC<{
               <span className={label}>otpauth URL</span>
               <CopyBtn text={otpauthUrl} onNotify={onNotify} />
             </div>
-            <p className="mt-1 font-mono text-xs break-all text-[#5E5E5E] dark:text-[#8E918F]">{otpauthUrl || '—'}</p>
+            <p className="mt-1 text-[13px] break-all text-[#5E5E5E] dark:text-[#8E918F]">{otpauthUrl || '—'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -1721,7 +1725,7 @@ const TwoFaCard: React.FC<{
             <CopyBtn text={codes.join('\n')} onNotify={onNotify} />
             <span className={label}>Copy all {codes.length} codes</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 font-mono text-xs text-[#1F1F1F] dark:text-[#E3E3E3]">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 text-[13px] text-[#101828] dark:text-[#E6EAF2]">
             {codes.map((c) => (
               <span key={c} className="rounded bg-[#F1F3F4] dark:bg-[#2D2F31] px-2 py-1">
                 {c}
@@ -1840,7 +1844,7 @@ const ListEditor: React.FC<{
         <div className="mt-2 divide-y divide-[#F2F4F7] dark:divide-[#333538]">
           {rows.map((r) => (
             <div key={r.id} className="flex items-center justify-between gap-2 py-1.5">
-              <span className="font-mono text-xs text-[#1F1F1F] dark:text-[#E3E3E3] truncate">{r.value}</span>
+              <span className="text-[13px] text-[#101828] dark:text-[#E6EAF2] truncate">{r.value}</span>
               <button onClick={() => void remove(r)} disabled={busy} className="btn btn-ghost btn-xs h-7 min-h-7 text-[#B3261E] dark:text-[#F28B82]" title="Remove">
                 <Trash2 className="w-3.5 h-3.5 stroke-[1.5]" />
               </button>
@@ -1894,6 +1898,11 @@ const SecuritySection: React.FC<{
       cancelled = true;
     };
   }, [domains]);
+
+  // Auto-select the first mailbox so the section never opens as a dead end.
+  useEffect(() => {
+    if (!selectedId && allMailboxes.length > 0) setSelectedId(allMailboxes[0].id);
+  }, [allMailboxes, selectedId]);
 
   const loadSecurity = useCallback(async () => {
     if (!selectedId) return;
@@ -1993,18 +2002,18 @@ const SecuritySection: React.FC<{
   const selected = allMailboxes.find((m) => m.id === selectedId);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[#1F1F1F] dark:text-[#E3E3E3]">Security</h3>
-          <p className="mt-0.5 text-xs text-[#5E5E5E] dark:text-[#8E918F]">
+          <h3 className="text-xl font-semibold tracking-tight text-[#101828] dark:text-[#E6EAF2]">Security</h3>
+          <p className="mt-1 text-[13px] text-[#667085] dark:text-[#8E918F]">
             Per-mailbox login history, sessions, quarantine, sender lists and 2FA.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-[#444746] dark:text-[#C4C7C5]">
           Mailbox
           <select
-            className="select select-bordered select-sm max-w-64"
+            className="h-10 rounded-lg border border-[#D0D5DD] dark:border-white/10 bg-white dark:bg-[#111827] px-3 text-sm text-[#101828] dark:text-[#E6EAF2] focus:border-[#0B57D0] focus:outline-none disabled:opacity-40 w-full max-w-64"
             value={selectedId}
             onChange={(e) => setSelectedId(e.target.value)}
             disabled={loadingList}
@@ -2127,7 +2136,7 @@ const SecuritySection: React.FC<{
             </div>
 
             {/* Whitelist / blacklist — F-092 */}
-            <div className="space-y-4">
+            <div className="space-y-5">
               <ListEditor title="Whitelist — always deliver" mailboxId={selectedId} kind="whitelist" onNotify={onNotify} />
               <ListEditor title="Blacklist — always reject" mailboxId={selectedId} kind="blacklist" onNotify={onNotify} />
             </div>
