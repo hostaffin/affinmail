@@ -108,7 +108,7 @@ pub async fn pg_connect() -> Option<Client> {
     Some(client)
 }
 
-fn stalwart_admin() -> Option<(String, String)> {
+pub(crate) fn stalwart_admin() -> Option<(String, String)> {
     let raw = std::fs::read_to_string(SECRETS_FILE).ok()?;
     let (mut user, mut pass) = (None, None);
     for line in raw.lines() {

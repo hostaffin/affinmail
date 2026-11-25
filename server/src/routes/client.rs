@@ -316,6 +316,17 @@ pub async fn create_alias(
     Path(domain): Path<String>,
     Json(payload): Json<CreateAliasPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    create_alias_for_domain(state, domain, payload).await
+}
+
+/// Shared create path: the admin route has no {domain} segment, so callers
+/// pass the domain they derived (client route: path segment, admin: source
+/// address).
+pub(crate) async fn create_alias_for_domain(
+    state: AppState,
+    domain: String,
+    payload: CreateAliasPayload,
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<ErrorResponse>)> {
     let destinations: Vec<String> = payload
         .destinations
         .unwrap_or_default()
@@ -1061,24 +1072,330 @@ pub async fn client_audit_log(State(state): State<AppState>) -> impl IntoRespons
     Json(json!({ "entries": list, "count": list.len() }))
 }
 
+/// F-096: JMAP endpoint constants for local Stalwart.
+const STALWART_URL: &str = "http://127.0.0.1:8080";
+/// F-096: hard cap on messages pulled into one export.
+const EXPORT_MAX_MESSAGES: usize = 500;
+
+/// Admin credentials for export assembly: env vars first, then the local
+/// secrets file (never logged, never serialized).
+fn export_creds() -> Option<(String, String)> {
+    if let (Ok(u), Ok(p)) = (
+        std::env::var("STALWART_ADMIN_USER"),
+        std::env::var("STALWART_ADMIN_PASSWORD"),
+    ) {
+        if !u.is_empty() && !p.is_empty() {
+            return Some((u, p));
+        }
+    }
+    crate::stats::stalwart_admin()
+}
+
+async fn jmap_call(
+    client: &reqwest::Client,
+    user: &str,
+    pass: &str,
+    using: &[&str],
+    calls: Value,
+) -> Result<Vec<Value>, String> {
+    let body = json!({ "using": using, "methodCalls": calls });
+    let resp = client
+        .post(format!("{}/jmap", STALWART_URL))
+        .basic_auth(user, Some(pass))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("JMAP request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("JMAP http {}", resp.status()));
+    }
+    let v: Value = resp.json().await.map_err(|e| e.to_string())?;
+    let responses = v
+        .get("methodResponses")
+        .and_then(|m| m.as_array())
+        .cloned()
+        .ok_or_else(|| "JMAP response had no methodResponses".to_string())?;
+    let mut args = Vec::with_capacity(responses.len());
+    for r in &responses {
+        if r.get(0).and_then(|t| t.as_str()) == Some("error") {
+            return Err(format!(
+                "JMAP error: {}",
+                r.get(1)
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "unknown".into())
+            ));
+        }
+        args.push(
+            r.get(1)
+                .cloned()
+                .ok_or_else(|| "JMAP response had no arguments".to_string())?,
+        );
+    }
+    Ok(args)
+}
+
+/// Args of the (single) method response of a one-call JMAP request.
+async fn jmap_one(
+    client: &reqwest::Client,
+    user: &str,
+    pass: &str,
+    using: &[&str],
+    calls: Value,
+) -> Result<Value, String> {
+    jmap_call(client, user, pass, using, calls)
+        .await?
+        .pop()
+        .ok_or_else(|| "empty JMAP response".to_string())
+}
+
+/// Resolve the JMAP accountId of the account owning `email`. Stalwart's admin
+/// session only lists its own account, so walk the principal list.
+async fn resolve_account_id(
+    client: &reqwest::Client,
+    user: &str,
+    pass: &str,
+    email: &str,
+) -> Result<String, String> {
+    const USING: &[&str] = &[
+        "urn:ietf:params:jmap:core",
+        "urn:ietf:params:jmap:principals",
+        "urn:stalwart:jmap",
+    ];
+    let q = jmap_one(
+        client,
+        user,
+        pass,
+        USING,
+        json!([["Principal/query", { "limit": EXPORT_MAX_MESSAGES }, "0"]]),
+    )
+    .await?;
+    let p_account = q
+        .get("accountId")
+        .and_then(|a| a.as_str())
+        .ok_or_else(|| "Principal/query returned no accountId".to_string())?
+        .to_string();
+    let ids = q.get("ids").cloned().unwrap_or_else(|| json!([]));
+    let g = jmap_one(
+        client,
+        user,
+        pass,
+        USING,
+        json!([["Principal/get", {
+            "accountId": p_account,
+            "ids": ids,
+            "properties": ["email", "accounts"]
+        }, "0"]]),
+    )
+    .await?;
+    let list = g.get("list").and_then(|l| l.as_array()).cloned().unwrap_or_default();
+    let entry = list
+        .iter()
+        .find(|p| {
+            p.get("email")
+                .and_then(|e| e.as_str())
+                .map(|e| e.eq_ignore_ascii_case(email))
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| format!("no Stalwart account for {email}"))?;
+    entry
+        .get("accounts")
+        .and_then(|a| a.as_object())
+        .and_then(|o| o.keys().next().cloned())
+        .ok_or_else(|| format!("no mail account for {email}"))
+}
+
+/// Assemble a valid mbox for `email` from Stalwart over JMAP (admin auth).
+/// Returns (mbox bytes, message count, hit the 500-message cap).
+async fn fetch_mbox(
+    email: &str,
+    user: &str,
+    pass: &str,
+) -> Result<(Vec<u8>, usize, bool), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let account_id = resolve_account_id(&client, user, pass, email).await?;
+
+    // Prefer the inbox; fall back to all mail.
+    const MAIL: &[&str] = &["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"];
+    let mb = jmap_one(
+        &client,
+        user,
+        pass,
+        MAIL,
+        json!([["Mailbox/get", {
+            "accountId": account_id,
+            "ids": null,
+            "properties": ["id", "role"]
+        }, "0"]]),
+    )
+    .await?;
+    let inbox = mb
+        .get("list")
+        .and_then(|l| l.as_array())
+        .map(|list| {
+            list.iter()
+                .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("inbox"))
+                .and_then(|m| m.get("id"))
+                .and_then(|i| i.as_str())
+                .map(|s| s.to_string())
+        })
+        .flatten();
+    let filter = match &inbox {
+        Some(id) => json!({ "inMailbox": id }),
+        None => json!({}),
+    };
+
+    let mut responses = jmap_call(
+        &client,
+        user,
+        pass,
+        MAIL,
+        json!([
+            ["Email/query", {
+                "accountId": account_id,
+                "filter": filter,
+                "limit": EXPORT_MAX_MESSAGES
+            }, "0"],
+            ["Email/get", {
+                "accountId": account_id,
+                "#ids": { "resultOf": "0", "name": "Email/query", "path": "/ids" },
+                "properties": ["blobId"]
+            }, "1"]
+        ]),
+    )
+    .await?;
+    // responses = [Email/query, Email/get]; the get carries the blobIds.
+    let queried = responses
+        .first()
+        .and_then(|q| q.get("ids"))
+        .and_then(|i| i.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let res = responses
+        .pop()
+        .ok_or_else(|| "JMAP returned no Email/get response".to_string())?;
+    let blobs: Vec<String> = res
+        .get("list")
+        .and_then(|l| l.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|e| e.get("blobId").and_then(|b| b.as_str()).map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let capped = queried >= EXPORT_MAX_MESSAGES;
+
+    let mut out: Vec<u8> = Vec::new();
+    let mut count = 0usize;
+    for blob in blobs.iter().take(EXPORT_MAX_MESSAGES) {
+        let resp = client
+            .get(format!(
+                "{}/jmap/download/{}/{}/msg.eml",
+                STALWART_URL, account_id, blob
+            ))
+            .basic_auth(user, Some(pass))
+            .send()
+            .await
+            .map_err(|e| format!("download failed: {e}"))?;
+        if !resp.status().is_success() {
+            continue; // skip unreadable message, keep the rest of the export
+        }
+        let raw = resp.bytes().await.map_err(|e| e.to_string())?;
+        append_mbox_message(&mut out, &raw);
+        count += 1;
+    }
+    Ok((out, count, capped))
+}
+
+/// Append one RFC822 message as an mbox message: "From - <date>" separator,
+/// ">From " escaping for body lines that start with "From ", blank line
+/// terminator.
+fn append_mbox_message(out: &mut Vec<u8>, raw: &[u8]) {
+    let sep = format!(
+        "From - {}\n",
+        chrono::Utc::now().format("%a %b %d %H:%M:%S %Y")
+    );
+    out.extend_from_slice(sep.as_bytes());
+    let mut start = 0usize;
+    while start < raw.len() {
+        let end = raw[start..]
+            .iter()
+            .position(|&b| b == b'\n')
+            .map(|p| start + p)
+            .unwrap_or(raw.len());
+        let line = &raw[start..end];
+        if line.starts_with(b"From ") {
+            out.push(b'>');
+        }
+        out.extend_from_slice(line);
+        out.push(b'\n');
+        start = if end < raw.len() { end + 1 } else { end };
+    }
+    if !out.ends_with(b"\n\n") {
+        out.push(b'\n');
+    }
+}
+
 /// POST /api/v1/client/mailboxes/{id}/export — F-096: trigger data export.
 pub async fn create_export_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<Value>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let email = {
+        let mailboxes = state.mailboxes.read().unwrap();
+        match mailboxes.get(&id) {
+            Some(m) => m.email.clone(),
+            None => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse::new(404, "Mailbox not found")),
+                ))
+            }
+        }
+    };
     let domain = payload.get("domain").and_then(|v| v.as_str()).map(|s| s.to_string());
     let format = payload.get("format").and_then(|v| v.as_str()).unwrap_or("eml");
+
+    // Assemble the mbox; any Stalwart problem degrades to a valid empty mbox
+    // with an honest note (never a placeholder file).
+    let (mbox, note) = match export_creds() {
+        Some((user, pass)) => match fetch_mbox(&email, &user, &pass).await {
+            Ok((bytes, count, capped)) => {
+                let mut n = if count == 0 {
+                    format!(
+                        "Export assembled from Stalwart: 0 messages found for {email}; empty mbox written."
+                    )
+                } else {
+                    format!("Export assembled from Stalwart: {count} message(s) written to mbox.")
+                };
+                if capped {
+                    n.push_str(&format!(
+                        " Capped at {EXPORT_MAX_MESSAGES} messages (export limit)."
+                    ));
+                }
+                (bytes, n)
+            }
+            Err(e) => (
+                Vec::new(),
+                format!("Export assembled from Stalwart: no messages were accessible ({e})."),
+            ),
+        },
+        None => (
+            Vec::new(),
+            "Export assembled from Stalwart: no messages were accessible (admin credentials unavailable)."
+                .to_string(),
+        ),
+    };
+    let size = mbox.len() as i64;
+
     let job_id = format!("ex_{}", uuid::Uuid::new_v4().simple());
     let export_dir = format!("data/exports/{}", id);
-    let file_name = match format.as_ref() {
-        "eml" => format!("{}.mbox", job_id),
-        "zip" => format!("{}.mbox", job_id),
-        _ => format!("{}.mbox", job_id),
-    };
-    let file_path = format!("{}/{}", export_dir, file_name);
+    let file_path = format!("{}/{}.mbox", export_dir, job_id);
     let _ = tokio::fs::create_dir_all(&export_dir).await;
-    tokio::fs::write(&file_path, b"PLACEHOLDER").await.unwrap_or_default();
+    tokio::fs::write(&file_path, &mbox).await.unwrap_or_default();
 
     let job = crate::types::ExportJob {
         id: job_id.clone(),
@@ -1087,21 +1404,43 @@ pub async fn create_export_job(
         status: "completed".to_string(),
         format: format.to_string(),
         file_path: Some(file_path.clone()),
-        file_size_bytes: Some(0), // placeholder: real JMAP assembly not ported
+        file_size_bytes: Some(size),
         created_at: chrono::Utc::now().to_rfc3339(),
         completed_at: Some(chrono::Utc::now().to_rfc3339()),
         expires_at: (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
     };
     state.export_jobs.write().unwrap().insert(job_id.clone(), job.clone());
-    Json(json!({
+    Ok(Json(json!({
         "status": "completed",
         "jobId": job_id,
         "mailboxId": id,
         "domain": domain,
         "format": format,
         "filePath": file_path,
-        "note": "Export job completed. Real EML/vCard assembly not yet ported to Rust backend; placeholder .mbox file written."
-    }))
+        "note": note,
+    })))
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::append_mbox_message;
+
+    #[test]
+    fn mbox_separator_escaping_and_terminator() {
+        let mut out = Vec::new();
+        append_mbox_message(&mut out, b"From: a\r\nFrom danger\r\nbody");
+        let s = String::from_utf8_lossy(&out).to_string();
+        assert!(s.starts_with("From - "), "separator: {s:?}");
+        assert!(s.contains("From: a\r\n"), "header untouched: {s:?}");
+        assert!(s.contains("\n>From danger\r\n"), "From-line escaped: {s:?}");
+        assert!(s.ends_with("body\n\n"), "blank-line terminator: {s:?}");
+
+        // Second message stacks after the first terminator.
+        append_mbox_message(&mut out, b"second");
+        let s = String::from_utf8_lossy(&out).to_string();
+        assert_eq!(s.matches("From - ").count(), 2);
+        assert!(s.ends_with("second\n\n"));
+    }
 }
 
 /// GET /api/v1/client/mailboxes/{id}/export/{job_id} — F-096: job status + download.
