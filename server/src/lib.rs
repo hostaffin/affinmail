@@ -2,6 +2,7 @@ pub mod routes;
 pub mod security_keys;
 pub mod stats;
 pub mod state;
+pub mod totp;
 pub mod types;
 
 use axum::{
@@ -232,6 +233,39 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/api/v1/client/mailboxes/{id}/encryption/generate-pgp",
             post(routes::client::generate_pgp_key),
+        )
+        // F-082: distribution lists
+        .route(
+            "/api/v1/client/domains/{domain}/lists",
+            get(routes::client::list_distribution_lists)
+                .post(routes::client::create_distribution_list),
+        )
+        .route(
+            "/api/v1/client/lists/{id}",
+            patch(routes::client::update_distribution_list)
+                .delete(routes::client::delete_distribution_list),
+        )
+        // F-084: per-domain password policy
+        .route(
+            "/api/v1/client/domains/{domain}/password-policy",
+            get(routes::client::get_password_policy).put(routes::client::put_password_policy),
+        )
+        // F-085: TOTP 2FA enrolment
+        .route(
+            "/api/v1/client/mailboxes/{id}/2fa",
+            get(routes::client::get_2fa_status),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/2fa/setup",
+            post(routes::client::setup_2fa),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/2fa/enable",
+            post(routes::client::enable_2fa),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/2fa/disable",
+            post(routes::client::disable_2fa),
         )
         // Admin API (/api/v1/domains, mailboxes, queue, etc.)
         .route(

@@ -49,6 +49,10 @@ pub struct AppState {
     pub export_jobs: Arc<RwLock<HashMap<String, ExportJob>>>,
     /// F-097: branding
     pub branding: Arc<RwLock<BrandingConfig>>,
+    /// F-082: distribution lists per domain.
+    pub distribution_lists: Arc<RwLock<HashMap<String, DistributionList>>>,
+    /// F-084: per-domain password policy overrides (absent = defaults).
+    pub password_policies: Arc<RwLock<HashMap<String, PasswordPolicy>>>,
 }
 
 impl AppState {
@@ -185,6 +189,9 @@ impl AppState {
                 vacation_body: None,
                 vacation_start: None,
                 vacation_end: None,
+                totp_secret: None,
+                totp_enabled: false,
+                recovery_codes: Vec::new(),
                 created_at: now.clone(),
             },
         );
@@ -203,6 +210,21 @@ impl AppState {
                 who_can_post: None,
                 max_message_size_kb: None,
                 footer: None,
+                created_at: now.clone(),
+            },
+        );
+
+        // F-082: seed one demo distribution list.
+        let mut distribution_lists = HashMap::new();
+        distribution_lists.insert(
+            "lst_1".to_string(),
+            DistributionList {
+                id: "lst_1".to_string(),
+                domain: "affinmail.local".to_string(),
+                address: "team@affinmail.local".to_string(),
+                name: "Team".to_string(),
+                members: vec!["alex.mercer@affinmail.local".to_string()],
+                post_policy: "members".to_string(),
                 created_at: now.clone(),
             },
         );
@@ -291,6 +313,8 @@ impl AppState {
             pgp_keys: Arc::new(RwLock::new(HashMap::new())),
             audit_log: Arc::new(RwLock::new(Vec::new())),
             export_jobs: Arc::new(RwLock::new(HashMap::new())),
+            distribution_lists: Arc::new(RwLock::new(distribution_lists)),
+            password_policies: Arc::new(RwLock::new(HashMap::new())),
             branding: Arc::new(RwLock::new(BrandingConfig {
                 company_name: "AffinMail".to_string(),
                 logo_svg: None,
