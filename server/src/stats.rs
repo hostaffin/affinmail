@@ -57,7 +57,28 @@ const RBL_LISTS: [&str; 10] = [
 /// Connection parameters. Preferred source is the dedicated stats role
 /// in /etc/affinmail-stats.env (root-only): Stalwart's own store secret
 /// in config.json is encrypted, so the platform gets its own login.
+/// Parse postgres://user:pass@host:port/db into pg_params shape.
+fn parse_pg_url(url: &str) -> Option<(String, u16, String, String, String)> {
+    let rest = url.strip_prefix("postgres://").or_else(|| url.strip_prefix("postgresql://"))?;
+    let (userinfo, hostpart) = rest.split_once('@')?;
+    let (user, pass) = userinfo.split_once(':')?;
+    let (hostport, db) = hostpart.split_once('/')?;
+    let db = db.split(['?', '#']).next().unwrap_or("affinmail");
+    let (host, port) = match hostport.split_once(':') {
+        Some((h, p)) => (h.to_string(), p.parse().unwrap_or(5432)),
+        None => (hostport.to_string(), 5432),
+    };
+    Some((host, port, db.to_string(), user.to_string(), pass.to_string()))
+}
+
 fn pg_params() -> Option<(String, u16, String, String, String)> {
+    // Primary source: DATABASE_URL from the process env, like the rest of
+    // the backend (the /etc/affinmail-stats.env file remains as fallback).
+    if let Ok(url) = std::env::var("DATABASE_URL") {
+        if let Some(parsed) = parse_pg_url(&url) {
+            return Some(parsed);
+        }
+    }
     if let Ok(raw) = std::fs::read_to_string("/etc/affinmail-stats.env") {
         let get = |key: &str| {
             raw.lines().find_map(|line| {
@@ -273,6 +294,19 @@ async fn probe_redis() -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let work = async {
         let mut s = tokio::net::TcpStream::connect("127.0.0.1:6379").await.ok()?;
+        // Redis runs with requirepass; AUTH first when a password is
+        // configured, otherwise PING answers -NOAUTH and the probe
+        // reported a healthy Redis as down (svc_redis stuck at 0).
+        if let Ok(pw) = std::env::var("REDIS_PASSWORD") {
+            if !pw.is_empty() {
+                s.write_all(format!("AUTH {pw}\r\n").as_bytes()).await.ok()?;
+                let mut abuf = [0u8; 16];
+                let an = s.read(&mut abuf).await.ok()?;
+                if !abuf[..an].starts_with(b"+OK") {
+                    return None;
+                }
+            }
+        }
         s.write_all(b"PING\r\n").await.ok()?;
         let mut buf = [0u8; 16];
         let n = s.read(&mut buf).await.ok()?;
@@ -602,7 +636,15 @@ async fn collect_logs(pg: &Client, first_run: bool) {
                 if line.len() < 20 || !line.starts_with("20") {
                     continue;
                 }
-                let hour = format!("{}:00:00Z", &line[..13]);
+                // Bucket by the line's real UTC hour: the log timestamp
+                // carries +06:00, and labelling the local hour as "Z"
+                // shifted every bucket by +6h.
+                let hour = line
+                    .split_whitespace()
+                    .next()
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:00:00Z").to_string())
+                    .unwrap_or_else(|| format!("{}:00:00Z", &line[..13]));
                 // Postfix lines carry no Stalwart event: classify them FIRST
                 // (GLM review, 2026-11-28: behind the extract_event gate this
                 // branch was unreachable, so delivered/deferred/bounced were
