@@ -140,6 +140,10 @@ pub async fn jmap(headers: HeaderMap, body: Bytes) -> Response {
                 let result = thread_get(&email, &password, &args).await;
                 json!(["Thread/get", result, cid])
             }
+            "Email/set" => {
+                let result = email_set(&email, &password, &args).await;
+                json!(["Email/set", result, cid])
+            }
             other => json!([
                 "error",
                 {
@@ -482,6 +486,102 @@ fn parse_rfc822_to_jmap(raw: &[u8], folder: &str, uid: u32, flags: &[String]) ->
             json!([])
         },
     }))
+}
+
+fn sanitize_header(s: &str) -> String {
+    s.chars().filter(|c| *c != '\r' && *c != '\n').collect()
+}
+
+fn addr_list_from_value(arr: Option<&Value>) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Some(Value::Array(list)) = arr {
+        for item in list.iter() {
+            if let Some(email) = item.get("email").and_then(|v| v.as_str()) {
+                let email = email.to_string();
+                let name = item.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+                out.push((name, email));
+            }
+        }
+    }
+    out
+}
+
+fn build_rfc822_from_jmap(obj: &Value, from_email: &str) -> Vec<u8> {
+    let from_addrs = addr_list_from_value(obj.get("from"));
+    let (from_name, from_addr) = from_addrs.first().map(|a| a.clone()).unwrap_or((from_email.to_string(), from_email.to_string()));
+    let to_addrs = addr_list_from_value(obj.get("to"));
+    let cc_addrs = addr_list_from_value(obj.get("cc"));
+    let subject = obj.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let body_val = obj.get("bodyValues").cloned().unwrap_or(Value::Null);
+    let text_part = obj.get("textBody").and_then(|v| v.as_array()).and_then(|a| a.first());
+    let text = text_part
+        .and_then(|p| p.get("partId"))
+        .and_then(|v| v.as_str())
+        .and_then(|pid| body_val.get(pid))
+        .and_then(|b| b.get("value").and_then(|v| v.as_str()))
+        .unwrap_or("");
+
+    let mut headers = String::new();
+    headers.push_str("From: ");
+    headers.push_str(&sanitize_header(&format!("{} <{}>", from_name, from_addr)));
+    headers.push_str("\r\nTo: ");
+    for (n, e) in &to_addrs {
+        headers.push_str(&sanitize_header(&format!("{} <{}>", n, e)));
+        headers.push_str("\r\n");
+    }
+    headers.push_str("Cc: ");
+    for (n, e) in &cc_addrs {
+        headers.push_str(&sanitize_header(&format!("{} <{}>", n, e)));
+        headers.push_str("\r\n");
+    }
+    headers.push_str("Subject: ");
+    headers.push_str(&sanitize_header(&subject));
+    headers.push_str("\r\n");
+    headers.push_str("Date: ");
+    headers.push_str(&Utc::now().to_rfc3339());
+    headers.push_str("\r\n");
+    headers.push_str("Message-ID: <");
+    headers.push_str(&uuid::Uuid::new_v4().to_string());
+    headers.push_str(">\r\n");
+    headers.push_str("MIME-Version: 1.0\r\n");
+    headers.push_str("Content-Type: text/plain; charset=utf-8\r\n\r\n");
+
+    let out = format!("{headers}{text}");
+    out.into_bytes()
+}
+
+async fn email_set(email: &str, password: &str, args: &Value) -> Value {
+    let create = args.get("create").cloned().unwrap_or(Value::Null);
+    let update = args.get("update").cloned().unwrap_or(Value::Null);
+    let destroy = args.get("destroy").cloned().unwrap_or(Value::Null);
+
+    let mut created = serde_json::Map::new();
+    if let Value::Object(map) = &create {
+        for (name, obj) in map {
+            let folder = if let Some(Value::Object(mbox)) = obj.get("mailboxIds") {
+                if let Some(f) = mbox.keys().next() {
+                    f.clone()
+                } else { "Drafts".to_string() }
+            } else { "Drafts".to_string() };
+            let bytes = build_rfc822_from_jmap(obj, email);
+            mail_imap::append_message(email.to_string(), password.to_string(), folder.clone(), bytes).await.unwrap_or(());
+            // get new uid (highest UID)
+            let uids = mail_imap::search_basic(email.to_string(), password.to_string(), folder.clone(), "".to_string()).await.unwrap_or_default();
+            let new_uid = uids.first().copied().unwrap_or(0);
+            let id = format!("{}:{}", folder, new_uid);
+            created.insert(name.clone(), json!({ "id": id, "threadId": id }));
+        }
+    }
+
+    json!({
+        "accountId": email,
+        "created": Value::Object(created),
+        "notCreated": Value::Object(serde_json::Map::new()),
+        "updated": Value::Object(serde_json::Map::new()),
+        "notUpdated": Value::Object(serde_json::Map::new()),
+        "destroyed": Vec::<String>::new(),
+        "notDestroyed": Value::Object(serde_json::Map::new()),
+    })
 }
 
 #[cfg(test)]
