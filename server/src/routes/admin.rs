@@ -1200,10 +1200,13 @@ pub async fn track_delivery(Query(params): Query<std::collections::HashMap<Strin
     for line in text.lines() {
         if line.to_lowercase().contains(&term) {
             // Extract queue-id (first alnum block after timestamp and before colon)
+            // Postfix puts the queue id right after the "proc[pid]:" tag.
             let queue_id = line
-                .split_whitespace()
-                .find(|s| s.len() >= 6 && s.chars().all(|c| c.is_ascii_alphanumeric()))
+                .split("]: ")
+                .nth(1)
+                .and_then(|rest| rest.split_whitespace().next())
                 .map(|s| s.trim_end_matches(':').to_string())
+                .filter(|s| s.len() >= 6 && s.chars().all(|c| c.is_ascii_alphanumeric()))
                 .unwrap_or_default();
             // Extract status=...
             let status = line

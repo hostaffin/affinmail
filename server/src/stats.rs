@@ -491,6 +491,40 @@ pub async fn run_collector() {
         if let Some(pg) = pg_connect().await {
             let _ = pg
                 .execute(
+                    "CREATE TABLE IF NOT EXISTS stats_samples (
+                        id bigserial PRIMARY KEY,
+                        ts timestamptz NOT NULL DEFAULT now(),
+                        queue_count integer,
+                        domains integer,
+                        mailboxes integer,
+                        storage_bytes bigint,
+                        disk_pct integer,
+                        mem_pct integer,
+                        load1 numeric,
+                        rep_score numeric,
+                        svc_stalwart smallint NOT NULL DEFAULT 0,
+                        svc_postfix smallint NOT NULL DEFAULT 0,
+                        svc_dovecot smallint NOT NULL DEFAULT 0,
+                        svc_rspamd smallint NOT NULL DEFAULT 0,
+                        svc_pg smallint NOT NULL DEFAULT 0,
+                        svc_redis smallint NOT NULL DEFAULT 0
+                    )",
+                    &[],
+                )
+                .await;
+            let _ = pg
+                .execute(
+                    "CREATE TABLE IF NOT EXISTS stats_mail_events (
+                        hour timestamptz NOT NULL,
+                        kind text NOT NULL,
+                        count integer NOT NULL DEFAULT 0,
+                        PRIMARY KEY (hour, kind)
+                    )",
+                    &[],
+                )
+                .await;
+            let _ = pg
+                .execute(
                     "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_postfix boolean NOT NULL DEFAULT 0",
                     &[],
                 )
