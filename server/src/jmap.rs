@@ -678,7 +678,7 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
                 not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "unsupported update" }));
             }
             // An id must never appear in both maps (RFC 8620 s5.3; GLM review).
-            if !not_updated.contains_key(&id) {
+            if !not_updated.contains_key(id.as_str()) {
                 updated.insert(id.clone(), json!(null));
             }
         }

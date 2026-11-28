@@ -525,19 +525,19 @@ pub async fn run_collector() {
                 .await;
             let _ = pg
                 .execute(
-                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_postfix boolean NOT NULL DEFAULT 0",
+                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_postfix smallint NOT NULL DEFAULT 0",
                     &[],
                 )
                 .await;
             let _ = pg
                 .execute(
-                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_dovecot boolean NOT NULL DEFAULT 0",
+                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_dovecot smallint NOT NULL DEFAULT 0",
                     &[],
                 )
                 .await;
             let _ = pg
                 .execute(
-                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_rspamd boolean NOT NULL DEFAULT 0",
+                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_rspamd smallint NOT NULL DEFAULT 0",
                     &[],
                 )
                 .await;
@@ -599,16 +599,29 @@ async fn collect_logs(pg: &Client, first_run: bool) {
                     continue;
                 }
                 let hour = format!("{}:00:00Z", &line[..13]);
+                // Postfix lines carry no Stalwart event: classify them FIRST
+                // (GLM review, 2026-11-28: behind the extract_event gate this
+                // branch was unreachable, so delivered/deferred/bounced were
+                // never counted on the Postfix stack).
+                if let Some(kind) = postfix_status_kind(&line) {
+                    if global_side {
+                        *global.entry((hour.clone(), kind)).or_insert(0) += 1;
+                    }
+                    if domain_side {
+                        if let Some(d) = extract_first_recipient(&line)
+                            .and_then(|a| addr_domain(&a))
+                        {
+                            *domain.entry((hour.clone(), d, kind)).or_insert(0) += 1;
+                        }
+                    }
+                    continue;
+                }
                 let event = match extract_event(&line) {
                     Some(e) => e,
                     None => continue,
                 };
-                let postfix_kind = postfix_status_kind(&line);
                 if global_side {
                     if let Some(kind) = classify(&event) {
-                        *global.entry((hour.clone(), kind)).or_insert(0) += 1;
-                    }
-                    if let Some(kind) = postfix_kind {
                         *global.entry((hour.clone(), kind)).or_insert(0) += 1;
                     }
                 }
