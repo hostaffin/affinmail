@@ -47,17 +47,27 @@ async fn mailbox_exists(email: &str) -> bool {
         .is_some()
 }
 
+/// Verify the mailbox password against Dovecot (an IMAP LOGIN under the hood).
+async fn verify_credentials(email: &str, password: &str) -> bool {
+    mail_imap::list_folders(email.to_string(), password.to_string())
+        .await
+        .is_ok()
+}
+
 fn unauthorized() -> Response {
     (StatusCode::UNAUTHORIZED, "invalid email or password").into_response()
 }
 
 /// GET /jmap/session
 pub async fn session(headers: HeaderMap) -> Response {
-    let (email, _password) = match parse_basic(&headers) {
+    let (email, password) = match parse_basic(&headers) {
         Some(c) => c,
         None => return unauthorized(),
     };
     if !mailbox_exists(&email).await {
+        return unauthorized();
+    }
+    if !verify_credentials(&email, &password).await {
         return unauthorized();
     }
 
@@ -93,6 +103,9 @@ pub async fn jmap(headers: HeaderMap, body: Bytes) -> Response {
         None => return unauthorized(),
     };
     if !mailbox_exists(&email).await {
+        return unauthorized();
+    }
+    if !verify_credentials(&email, &password).await {
         return unauthorized();
     }
 
