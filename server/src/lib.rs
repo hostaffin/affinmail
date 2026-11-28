@@ -3,6 +3,7 @@ pub mod mail_imap;
 pub mod jmap;
 pub mod provision_db;
 pub mod security_keys;
+pub mod spam_prefs;
 pub mod stats;
 pub mod state;
 pub mod totp;
@@ -120,6 +121,10 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/api/v1/client/mailboxes/{id}/password",
             put(routes::client::change_mailbox_password),
+        )
+        .route(
+            "/api/v1/client/mailboxes/{id}/spam-prefs",
+            get(routes::client::get_spam_prefs).put(routes::client::set_spam_prefs),
         )
         .route(
             "/api/v1/client/domains/{domain}/aliases",

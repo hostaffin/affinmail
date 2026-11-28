@@ -2189,3 +2189,93 @@ pub async fn disable_2fa(
     mbox.recovery_codes = Vec::new();
     Ok(Json(json!({ "enabled": false, "status": "2FA disabled" })))
 }
+
+
+fn spam_db_err<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorResponse::new(500, format!("database error: {e}"))),
+    )
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SpamPrefsPayload {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub reject_threshold: Option<f64>,
+    pub header_threshold: Option<f64>,
+    #[serde(default)]
+    pub whitelist: Vec<String>,
+    #[serde(default)]
+    pub blacklist: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Resolve an `mb_<id>` client mailbox id to its real email via PG.
+async fn mailbox_email_for_id(id: &str) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
+    let db_id = id
+        .strip_prefix("mb_")
+        .and_then(|s| s.parse::<i32>().ok())
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new(404, "Mailbox not found")),
+        ))?;
+    let client = crate::provision_db::connect_db().await.map_err(spam_db_err)?;
+    let row = client
+        .query_opt("SELECT email FROM mail_users WHERE id = $1", &[&db_id])
+        .await
+        .map_err(spam_db_err)?;
+    row.map(|r| r.get::<_, String>(0)).ok_or((
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse::new(404, "Mailbox not found")),
+    ))
+}
+
+/// GET /api/v1/client/mailboxes/{id}/spam-prefs — per-mailbox spam settings
+/// (post-migration batch 2; stored in mail_spam_prefs, enforced by Rspamd).
+pub async fn get_spam_prefs(
+    State(_state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let email = mailbox_email_for_id(&id).await?;
+    let client = crate::provision_db::connect_db().await.map_err(spam_db_err)?;
+    let prefs = crate::spam_prefs::get_prefs(&client, &email).await.map_err(spam_db_err)?;
+    Ok(Json(serde_json::to_value(prefs).unwrap()))
+}
+
+/// PUT /api/v1/client/mailboxes/{id}/spam-prefs — save + regenerate the
+/// Rspamd user settings file + reload Rspamd.
+pub async fn set_spam_prefs(
+    State(_state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<SpamPrefsPayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let email = mailbox_email_for_id(&id).await?;
+    let prefs = crate::spam_prefs::SpamPrefs {
+        email: email.clone(),
+        enabled: payload.enabled,
+        reject_threshold: payload.reject_threshold,
+        header_threshold: payload.header_threshold,
+        whitelist: payload.whitelist,
+        blacklist: payload.blacklist,
+    };
+    crate::spam_prefs::validate(&prefs).map_err(|e| {
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse::new(400, e)))
+    })?;
+    let client = crate::provision_db::connect_db().await.map_err(spam_db_err)?;
+    crate::spam_prefs::set_prefs(&client, &prefs).await.map_err(spam_db_err)?;
+    let all = crate::spam_prefs::all_prefs(&client).await.map_err(spam_db_err)?;
+    crate::spam_prefs::write_and_reload(&all).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(500, e)),
+        )
+    })?;
+    Ok(Json(
+        serde_json::to_value(prefs).unwrap(),
+    ))
+}
+
