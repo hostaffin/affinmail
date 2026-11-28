@@ -68,3 +68,13 @@ Gate-clearing additions passed: `provision_db::tests::hash_password_format_and_v
 
 - Binary: `server/target/release/affinmail-server` (requires `openssl` CLI at runtime for DKIM keypair generation).
 - No config changes committed; `/etc/affinmail/backend.env` untouched by this batch.
+
+## PM gate verification (Lily, 2026-11-28) — PASSED
+
+Deployed with DATABASE_URL set in /etc/affinmail/backend.env (backup /root/backend-env-backup-20261128) and affinmail-api restarted on the release binary. Verified end-to-end against the live stack:
+- POST /api/v1/domains batch2.local -> row in mail_domains; POST /api/v1/mailboxes -> row in mail_users with {BLF-CRYPT} hash (admin-created mailboxes get a random initial password by design; password then set via PUT /api/v1/client/mailboxes/:id/password).
+- IMAP 993 login for the API-created mailbox succeeds (Dovecot accepts the Rust bcrypt hashes); local SMTP delivery lands in INBOX and is readable over IMAP.
+- Alias created via API -> row in mail_aliases -> mail to the alias delivered to the target mailbox.
+- DKIM: domain create writes /var/lib/rspamd/dkim/<domain>.affin.key (deploy fix: /var/lib/rspamd group muse 2750 so the backend can traverse/write); authenticated submission from an API-created mailbox on an API-created domain carries DKIM-Signature with d=<domain>, s=affin.
+- Regression: test1@affinmail.local IMAP OK; public panel HTTP 200.
+- Test fixtures kept: batch2.local + gate@batch2.local + alias hello2@batch2.local. Scratch domains batch3/batch4.local were deleted via the API after verification (rows and DKIM key files removed).
