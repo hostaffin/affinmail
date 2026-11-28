@@ -102,6 +102,7 @@ fn is_public(path: &str) -> bool {
     path == "/api/v1/health"
         || path == "/api/v1/auth/login"
         || path == "/api/v1/auth/sso-exchange"
+        || path == "/api/v1/domain/login"
         || path.starts_with("/jmap")
 }
 
@@ -122,9 +123,20 @@ pub async fn auth_guard(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
-    let ok = !token.is_empty()
+    let mut ok = !token.is_empty()
         && (token == state.admin_token
             || state.admin_sessions.read().unwrap().contains_key(token));
+    // Batch 4: domain sessions and domain API keys pass ONLY on the
+    // domain panel surface; handlers re-check the domain scope.
+    if !ok && req.uri().path().starts_with("/api/v1/domain/") {
+        if state.domain_sessions.read().unwrap().contains_key(token) {
+            ok = true;
+        } else if token.starts_with("affkey_") {
+            if let Ok(client) = crate::provision_db::connect_db().await {
+                ok = crate::domain_panel::verify_api_key(&client, token).await.is_some();
+            }
+        }
+    }
     if ok {
         next.run(req).await
     } else {

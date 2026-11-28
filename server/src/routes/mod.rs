@@ -3,6 +3,7 @@ pub mod api_keys;
 pub mod auth;
 pub mod batch;
 pub mod client;
+pub mod domain;
 pub mod health;
 pub mod import_mail;
 pub mod infra;

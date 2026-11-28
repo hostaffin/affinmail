@@ -231,6 +231,17 @@ pub struct AdminSession {
     pub created_at: String,
 }
 
+/// Post-migration batch 4: a :2083 domain-panel session, scoped to one
+/// domain (see BATCH7-DESIGN.md).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainSession {
+    pub token: String,
+    pub domain_id: i32,
+    pub domain: String,
+    pub email: String,
+    pub created_at: String,
+}
+
 /// F-034: impersonation audit trail (one entry per SSO-as-client session).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImpersonationLog {

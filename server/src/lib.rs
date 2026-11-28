@@ -5,6 +5,7 @@ pub mod provision_db;
 pub mod security_keys;
 pub mod spam_prefs;
 pub mod panel_auth;
+pub mod domain_panel;
 pub mod stats;
 pub mod state;
 pub mod totp;
@@ -469,6 +470,28 @@ pub fn create_app(state: AppState) -> Router {
         .route("/jmap", post(jmap::jmap)).route("/jmap/", post(jmap::jmap))
         .route("/api/v1/admin/roles", get(routes::infra::roles))
         .route("/api/v1/admin/admins", post(routes::auth::create_admin))
+        .route("/api/v1/domain/login", post(routes::domain::login))
+        .route("/api/v1/domain/logout", post(routes::domain::logout))
+        .route("/api/v1/domain/overview", get(routes::domain::overview))
+        .route(
+            "/api/v1/domain/mailboxes",
+            get(routes::domain::list_mailboxes).post(routes::domain::create_mailbox),
+        )
+        .route(
+            "/api/v1/domain/mailboxes/{id}/password",
+            put(routes::domain::set_mailbox_password),
+        )
+        .route(
+            "/api/v1/domain/aliases",
+            get(routes::domain::list_aliases).post(routes::domain::create_alias),
+        )
+        .route("/api/v1/domain/aliases/{id}", delete(routes::domain::delete_alias))
+        .route(
+            "/api/v1/domain/api-keys",
+            get(routes::domain::list_api_keys).post(routes::domain::create_api_key),
+        )
+        .route("/api/v1/domain/api-keys/{id}", delete(routes::domain::delete_api_key))
+        .route("/api/v1/admin/domains/{id}/owner", post(routes::domain::admin_set_owner))
         .route("/api/v1/api-keys", get(routes::api_keys::list_api_keys).post(routes::api_keys::create_api_key))
         .route("/api/v1/api-keys/{id}", delete(routes::api_keys::delete_api_key))
         .route("/api/v1/api-keys/{id}/rotate", post(routes::api_keys::rotate_api_key))

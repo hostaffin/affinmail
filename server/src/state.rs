@@ -19,6 +19,7 @@ pub struct AppState {
     pub server_nodes: Arc<RwLock<HashMap<String, ServerNode>>>,
     pub login_log: Arc<RwLock<Vec<LoginEvent>>>,
     pub admin_sessions: Arc<RwLock<HashMap<String, AdminSession>>>,
+    pub domain_sessions: Arc<RwLock<HashMap<String, crate::types::DomainSession>>>,
     pub impersonation_log: Arc<RwLock<Vec<ImpersonationLog>>>,
     /// F-027: import job history (in-memory — no DB grants for import tables).
     pub import_jobs: Arc<std::sync::Mutex<HashMap<String, crate::routes::import_mail::ImportJob>>>,
@@ -294,6 +295,7 @@ impl AppState {
             server_nodes: Arc::new(RwLock::new(server_nodes)),
             login_log: Arc::new(RwLock::new(Vec::new())),
             admin_sessions: Arc::new(RwLock::new(HashMap::new())),
+            domain_sessions: Arc::new(RwLock::new(HashMap::new())),
             impersonation_log: Arc::new(RwLock::new(Vec::new())),
             import_jobs: crate::routes::import_mail::new_job_store(),
             notifications: Arc::new(RwLock::new(HashMap::new())),
