@@ -1,3 +1,4 @@
+use crate::provision_db;
 use crate::state::AppState;
 use crate::types::{Alias, AppPassword, ErrorResponse, Mailbox, McpToken};
 use axum::{
@@ -165,15 +166,47 @@ pub async fn client_dashboard(State(state): State<AppState>) -> impl IntoRespons
 pub async fn list_domain_mailboxes(
     State(state): State<AppState>,
     Path(domain): Path<String>,
-) -> impl IntoResponse {
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    if crate::provision_db::database_configured() {
+        let client = match crate::provision_db::connect_db().await {
+            Ok(c) => c,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                ));
+            }
+        };
+        // Resolve domain name to domain_id
+        let domain_row = match crate::provision_db::get_domain_by_name(&client, &domain).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                ));
+            }
+        };
+        let domain_id = domain_row.map(|d| d.id);
+        let rows = match crate::provision_db::list_mailboxes(&client, domain_id).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                ));
+            }
+        };
+        let list: Vec<Mailbox> = rows.iter().map(|m| m.to_api(&domain)).collect();
+        return Ok(Json(json!({ "mailboxes": list, "count": list.len() })));
+    }
     let mailboxes = state.mailboxes.read().unwrap();
     let list: Vec<Mailbox> = mailboxes
         .values()
         .filter(|m| m.domain_name.eq_ignore_ascii_case(&domain))
         .cloned()
         .collect();
-
-    Json(json!({ "mailboxes": list, "count": list.len() }))
+    Ok(Json(json!({ "mailboxes": list, "count": list.len() })))
 }
 
 // POST /api/v1/client/domains/:domain/mailboxes
@@ -183,6 +216,46 @@ pub async fn create_domain_mailbox(
     Json(payload): Json<CreateMailboxPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let email = payload.email.to_lowercase();
+    if crate::provision_db::database_configured() {
+        // F-084: enforce the domain's password policy on creation.
+        if let Some(pw) = &payload.password {
+            let policy = effective_password_policy(&state, &domain);
+            if let Err(msg) = validate_password(&policy, pw) {
+                return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse::new(400, msg))));
+            }
+        }
+        let client = match crate::provision_db::connect_db().await {
+            Ok(c) => c,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                ));
+            }
+        };
+        let domain_row = match crate::provision_db::get_domain_by_name(&client, &domain).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                ));
+            }
+        };
+        let domain_id = domain_row.map(|d| d.id);
+        let quota = payload.quota_mb.unwrap_or(5120) as i32;
+        let created = match crate::provision_db::create_mailbox(&client, domain_id, &email, payload.password.as_deref().unwrap_or("changeme"), quota).await {
+            Ok(m) => m,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                ));
+            }
+        };
+        let mbox = created.to_api(&domain);
+        return Ok((StatusCode::CREATED, Json(json!({ "mailbox": mbox }))));
+    }
     let mut mailboxes = state.mailboxes.write().unwrap();
     if mailboxes.values().any(|m| m.email == email) {
         return Err((
@@ -234,6 +307,35 @@ pub async fn update_mailbox(
     Path(id): Path<String>,
     Json(payload): Json<UpdateMailboxPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    if crate::provision_db::database_configured() {
+        let client = match crate::provision_db::connect_db().await {
+            Ok(c) => c,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                ));
+            }
+        };
+        let db_id = id.strip_prefix("mb_").and_then(|s| s.parse::<i32>().ok());
+        if let Some(did) = db_id {
+            if let Some(quota) = payload.quota_mb {
+                if let Err(e) = crate::provision_db::set_mailbox_quota(&client, did, quota as i32).await {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                    ));
+                }
+            }
+            let mbox = match crate::provision_db::get_mailbox(&client, did).await {
+                Ok(Some(m)) => m.to_api("affinmail.local"),
+                _ => return Err((StatusCode::NOT_FOUND, Json(ErrorResponse::new(404, "Mailbox not found")))),
+            };
+            return Ok(Json(json!({ "status": "updated", "mailbox": mbox })));
+        } else {
+            return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse::new(400, "Expected database mailbox id"))));
+        }
+    }
     let mut mailboxes = state.mailboxes.write().unwrap();
     let mbox = match mailboxes.get_mut(&id) {
         Some(m) => m,
@@ -261,6 +363,33 @@ pub async fn delete_mailbox(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    if crate::provision_db::database_configured() {
+        let client = match crate::provision_db::connect_db().await {
+            Ok(c) => c,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                ));
+            }
+        };
+        let db_id = id.strip_prefix("mb_").and_then(|s| s.parse::<i32>().ok());
+        if let Some(did) = db_id {
+            match crate::provision_db::delete_mailbox(&client, did).await {
+                Ok(_) => {
+                    return Ok(Json(json!({ "deleted": id })));
+                }
+                Err(e) => {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                    ));
+                }
+            }
+        } else {
+            return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse::new(400, "Expected database mailbox id"))));
+        }
+    }
     let mut mailboxes = state.mailboxes.write().unwrap();
     if mailboxes.remove(&id).is_some() {
         Ok(Json(json!({ "deleted": id })))
@@ -280,6 +409,27 @@ pub async fn change_mailbox_password(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // F-084: enforce the mailbox domain's password policy.
     let domain = {
+        if crate::provision_db::database_configured() {
+            let client = match crate::provision_db::connect_db().await {
+                Ok(c) => c,
+                Err(e) => {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                    ));
+                }
+            };
+            let db_id = id.strip_prefix("mb_").and_then(|s| s.parse::<i32>().ok());
+            if let Some(did) = db_id {
+                if let Err(e) = crate::provision_db::set_mailbox_password(&client, did, &payload.password).await {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                    ));
+                }
+                return Ok(Json(json!({ "status": "success", "message": "Password changed successfully" })));
+            }
+        }
         let mailboxes = state.mailboxes.read().unwrap();
         match mailboxes.get(&id) {
             Some(m) => m.domain_name.clone(),
@@ -303,10 +453,49 @@ pub async fn change_mailbox_password(
 pub async fn list_aliases(
     State(state): State<AppState>,
     Path(_domain): Path<String>,
-) -> impl IntoResponse {
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    if crate::provision_db::database_configured() {
+        let client = match crate::provision_db::connect_db().await {
+            Ok(c) => c,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                ));
+            }
+        };
+        let rows = match crate::provision_db::list_aliases(&client, None).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                ));
+            }
+        };
+        let list: Vec<Value> = rows
+            .iter()
+            .map(|a| {
+                json!({
+                    "id": format!("al_{}", a.id),
+                    "domain_id": a.domain_id.map(|d| format!("dom_{}", d)).unwrap_or_default(),
+                    "source_email": a.source,
+                    "destination_email": a.destination,
+                    "is_list": false,
+                    "destinations": vec![a.destination.clone()],
+                    "reply_to": Option::<String>::None,
+                    "who_can_post": Option::<String>::None,
+                    "max_message_size_kb": Option::<i32>::None,
+                    "footer": Option::<String>::None,
+                    "created_at": "",
+                })
+            })
+            .collect();
+        return Ok(Json(json!({ "aliases": list, "count": list.len() })));
+    }
     let aliases = state.aliases.read().unwrap();
     let list: Vec<Alias> = aliases.values().cloned().collect();
-    Json(json!({ "aliases": list, "count": list.len() }))
+    Ok(Json(json!({ "aliases": list, "count": list.len() })))
 }
 
 // POST /api/v1/client/domains/:domain/aliases — also handles distribution
@@ -327,6 +516,67 @@ pub(crate) async fn create_alias_for_domain(
     domain: String,
     payload: CreateAliasPayload,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<ErrorResponse>)> {
+    if crate::provision_db::database_configured() {
+        let client = match crate::provision_db::connect_db().await {
+            Ok(c) => c,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                ));
+            }
+        };
+        let destinations: Vec<String> = payload
+            .destinations
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| d.trim().to_lowercase())
+            .filter(|d| !d.is_empty())
+            .collect();
+        let first = destinations
+            .first()
+            .cloned()
+            .unwrap_or_else(|| payload.destination.trim().to_lowercase());
+        if first.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(400, "At least one destination is required")),
+            ));
+        }
+        let is_list = payload.is_list.unwrap_or(false) || destinations.len() > 1;
+        let domain_row = match crate::provision_db::get_domain_by_name(&client, &domain).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                ));
+            }
+        };
+        let domain_id = domain_row.map(|d| d.id);
+        let created = match crate::provision_db::create_alias(&client, domain_id, &payload.source, &first).await {
+            Ok(a) => a,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                ));
+            }
+        };
+        let al = created.to_api();
+        return Ok((
+            StatusCode::CREATED,
+            Json(json!({
+                "alias": al,
+                "kind": if is_list { "distribution_list" } else { "alias" },
+                "stalwartNote": if is_list {
+                    "Distribution lists route through Stalwart mailing lists; member addresses above are the routing table."
+                } else {
+                    "Simple alias — all destinations receive a copy; does not consume a mailbox slot."
+                },
+            })),
+        ));
+    }
     let destinations: Vec<String> = payload
         .destinations
         .unwrap_or_default()
@@ -384,7 +634,34 @@ pub(crate) async fn create_alias_for_domain(
 pub async fn delete_alias(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    if crate::provision_db::database_configured() {
+        let client = match crate::provision_db::connect_db().await {
+            Ok(c) => c,
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(500, format!("database connect failed: {e}"))),
+                ));
+            }
+        };
+        let db_id = id.strip_prefix("al_").and_then(|s| s.parse::<i32>().ok());
+        if let Some(did) = db_id {
+            match crate::provision_db::delete_alias(&client, did).await {
+                Ok(_) => {
+                    return Ok(Json(json!({ "deleted": id })));
+                }
+                Err(e) => {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse::new(500, format!("database query failed: {e}"))),
+                    ));
+                }
+            }
+        } else {
+            return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse::new(400, "Expected database alias id"))));
+        }
+    }
     let mut aliases = state.aliases.write().unwrap();
     if aliases.remove(&id).is_some() {
         Ok(Json(json!({ "deleted": id })))

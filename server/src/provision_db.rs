@@ -4,6 +4,13 @@ use tokio_postgres::{Client, NoTls, Row};
 
 pub type DbResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// True when DATABASE_URL is configured — the migration layer is active and
+/// mail_* tables are the source of truth. When unset the handlers fall back to
+/// the original in-memory behaviour.
+pub fn database_configured() -> bool {
+    std::env::var("DATABASE_URL").is_ok()
+}
+
 /// Connect to PostgreSQL using the DATABASE_URL environment variable.
 /// The caller must ensure the returned connection task is driven; this helper
 /// spawns it on the tokio runtime so the returned `Client` is immediately usable.
@@ -60,6 +67,86 @@ pub struct Alias {
     pub active: bool,
 }
 
+/// Map a mail_domains row onto the existing API Domain shape (unchanged JSON).
+impl Domain {
+    pub fn to_api(&self) -> crate::types::Domain {
+        crate::types::Domain {
+            id: format!("dom_{}", self.id),
+            account_id: None,
+            domain_name: self.domain.clone(),
+            status: if self.active { "active" } else { "suspended" }.to_string(),
+            hostaffin_service_id: None,
+            max_mailboxes: 25,
+            max_attachment_size_mb: 50,
+            disk_quota_mb: 51200,
+            dkim_selector: String::new(),
+            dkim_public_key: String::new(),
+            dkim_private_key: String::new(),
+            catch_all_mailbox_id: None,
+            hourly_send_limit: 200,
+            daily_send_limit: 1000,
+            send_limit_action: "defer".to_string(),
+            suspend_reason: None,
+            terminated_at: None,
+            created_at: self.created_at.to_rfc3339(),
+        }
+    }
+}
+
+/// Map a mail_users row onto the existing API Mailbox shape (unchanged JSON).
+impl Mailbox {
+    pub fn to_api(&self, domain_name: &str) -> crate::types::Mailbox {
+        crate::types::Mailbox {
+            id: format!("mb_{}", self.id),
+            domain_id: self
+                .domain_id
+                .map(|d| format!("dom_{}", d))
+                .unwrap_or_default(),
+            domain_name: domain_name.to_string(),
+            email: self.email.clone(),
+            display_name: "User".to_string(),
+            quota_limit_mb: self.quota_mb as i64,
+            quota_used_mb: 0,
+            hourly_rate_limit: 200,
+            is_active: self.active,
+            is_suspended: !self.active,
+            forward_to: None,
+            forward_keep_copy: true,
+            vacation_enabled: false,
+            vacation_subject: None,
+            vacation_body: None,
+            vacation_start: None,
+            vacation_end: None,
+            totp_secret: None,
+            totp_enabled: false,
+            recovery_codes: Vec::new(),
+            created_at: self.created_at.to_rfc3339(),
+        }
+    }
+}
+
+/// Map a mail_aliases row onto the existing API Alias shape (unchanged JSON).
+impl Alias {
+    pub fn to_api(&self) -> crate::types::Alias {
+        crate::types::Alias {
+            id: format!("al_{}", self.id),
+            domain_id: self
+                .domain_id
+                .map(|d| format!("dom_{}", d))
+                .unwrap_or_default(),
+            source_email: self.source.clone(),
+            destination_email: self.destination.clone(),
+            is_list: false,
+            destinations: vec![self.destination.clone()],
+            reply_to: None,
+            who_can_post: None,
+            max_message_size_kb: None,
+            footer: None,
+            created_at: String::new(),
+        }
+    }
+}
+
 fn row_to_domain(row: &Row) -> Domain {
     Domain {
         id: row.get("id"),
@@ -110,6 +197,31 @@ pub async fn list_domains(client: &Client) -> DbResult<Vec<Domain>> {
         )
         .await?;
     Ok(rows.iter().map(|r| row_to_domain(r)).collect())
+}
+
+pub async fn get_domain_by_id(client: &Client, id: i32) -> DbResult<Option<Domain>> {
+    let row = client
+        .query_opt(
+            "SELECT id, domain, active, created_at FROM mail_domains WHERE id = $1",
+            &[&id],
+        )
+        .await?;
+    Ok(row.map(|r| row_to_domain(&r)))
+}
+
+pub async fn get_domain_by_name(client: &Client, domain: &str) -> DbResult<Option<Domain>> {
+    let row = client
+        .query_opt(
+            "SELECT id, domain, active, created_at FROM mail_domains WHERE domain = $1",
+            &[&domain],
+        )
+        .await?;
+    Ok(row.map(|r| row_to_domain(&r)))
+}
+
+pub async fn delete_domain_by_id(client: &Client, id: i32) -> DbResult<()> {
+    client.execute("DELETE FROM mail_domains WHERE id = $1", &[&id]).await?;
+    Ok(())
 }
 
 /// Mailboxes
