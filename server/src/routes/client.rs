@@ -2204,6 +2204,7 @@ pub struct SpamPrefsPayload {
     pub enabled: bool,
     pub reject_threshold: Option<f64>,
     pub header_threshold: Option<f64>,
+    pub greylist_threshold: Option<f64>,
     #[serde(default)]
     pub whitelist: Vec<String>,
     #[serde(default)]
@@ -2259,6 +2260,7 @@ pub async fn set_spam_prefs(
         enabled: payload.enabled,
         reject_threshold: payload.reject_threshold,
         header_threshold: payload.header_threshold,
+        greylist_threshold: payload.greylist_threshold,
         whitelist: payload.whitelist,
         blacklist: payload.blacklist,
     };

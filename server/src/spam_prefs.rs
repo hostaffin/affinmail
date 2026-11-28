@@ -17,6 +17,7 @@ pub struct SpamPrefs {
     pub enabled: bool,
     pub reject_threshold: Option<f64>,
     pub header_threshold: Option<f64>,
+    pub greylist_threshold: Option<f64>,
     #[serde(default)]
     pub whitelist: Vec<String>,
     #[serde(default)]
@@ -30,6 +31,7 @@ impl SpamPrefs {
             enabled: true,
             reject_threshold: None,
             header_threshold: None,
+            greylist_threshold: None,
             whitelist: Vec::new(),
             blacklist: Vec::new(),
         }
@@ -38,6 +40,7 @@ impl SpamPrefs {
         self.enabled
             && self.reject_threshold.is_none()
             && self.header_threshold.is_none()
+            && self.greylist_threshold.is_none()
             && self.whitelist.is_empty()
             && self.blacklist.is_empty()
     }
@@ -52,9 +55,17 @@ pub async fn ensure_table(client: &Client) -> Result<(), String> {
                 reject_threshold double precision,
                 header_threshold double precision,
                 whitelist text[] NOT NULL DEFAULT '{}',
+                greylist_threshold double precision,
                 blacklist text[] NOT NULL DEFAULT '{}',
                 updated_at timestamptz NOT NULL DEFAULT now()
             )",
+            &[],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    client
+        .execute(
+            "ALTER TABLE mail_spam_prefs ADD COLUMN IF NOT EXISTS greylist_threshold double precision",
             &[],
         )
         .await
@@ -66,7 +77,7 @@ pub async fn get_prefs(client: &Client, email: &str) -> Result<SpamPrefs, String
     ensure_table(client).await?;
     let row = client
         .query_opt(
-            "SELECT enabled, reject_threshold, header_threshold, whitelist, blacklist FROM mail_spam_prefs WHERE email = $1",
+            "SELECT enabled, reject_threshold, header_threshold, whitelist, blacklist, greylist_threshold FROM mail_spam_prefs WHERE email = $1",
             &[&email],
         )
         .await
@@ -79,6 +90,7 @@ pub async fn get_prefs(client: &Client, email: &str) -> Result<SpamPrefs, String
             header_threshold: r.get(2),
             whitelist: r.get(3),
             blacklist: r.get(4),
+            greylist_threshold: r.get(5),
         },
         None => SpamPrefs::defaults(email),
     })
@@ -88,13 +100,14 @@ pub async fn set_prefs(client: &Client, prefs: &SpamPrefs) -> Result<(), String>
     ensure_table(client).await?;
     client
         .execute(
-            "INSERT INTO mail_spam_prefs (email, enabled, reject_threshold, header_threshold, whitelist, blacklist, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, now())
+            "INSERT INTO mail_spam_prefs (email, enabled, reject_threshold, header_threshold, whitelist, blacklist, greylist_threshold, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, now())
              ON CONFLICT (email) DO UPDATE SET enabled = EXCLUDED.enabled,
                 reject_threshold = EXCLUDED.reject_threshold,
                 header_threshold = EXCLUDED.header_threshold,
                 whitelist = EXCLUDED.whitelist,
                 blacklist = EXCLUDED.blacklist,
+                greylist_threshold = EXCLUDED.greylist_threshold,
                 updated_at = now()",
             &[
                 &prefs.email,
@@ -103,6 +116,7 @@ pub async fn set_prefs(client: &Client, prefs: &SpamPrefs) -> Result<(), String>
                 &prefs.header_threshold,
                 &prefs.whitelist,
                 &prefs.blacklist,
+                &prefs.greylist_threshold,
             ],
         )
         .await
@@ -114,7 +128,7 @@ pub async fn all_prefs(client: &Client) -> Result<Vec<SpamPrefs>, String> {
     ensure_table(client).await?;
     let rows = client
         .query(
-            "SELECT email, enabled, reject_threshold, header_threshold, whitelist, blacklist FROM mail_spam_prefs ORDER BY email",
+            "SELECT email, enabled, reject_threshold, header_threshold, whitelist, blacklist, greylist_threshold FROM mail_spam_prefs ORDER BY email",
             &[],
         )
         .await
@@ -128,6 +142,7 @@ pub async fn all_prefs(client: &Client) -> Result<Vec<SpamPrefs>, String> {
             header_threshold: r.get(3),
             whitelist: r.get(4),
             blacklist: r.get(5),
+            greylist_threshold: r.get(6),
         })
         .collect())
 }
@@ -136,6 +151,7 @@ pub fn validate(prefs: &SpamPrefs) -> Result<(), String> {
     for (name, v) in [
         ("reject_threshold", prefs.reject_threshold),
         ("header_threshold", prefs.header_threshold),
+        ("greylist_threshold", prefs.greylist_threshold),
     ] {
         if let Some(t) = v {
             if !(0.0..=1000.0).contains(&t) {
@@ -189,13 +205,16 @@ pub fn render_settings(all: &[SpamPrefs]) -> String {
         if !p.enabled {
             out.push_str("        actions {\n            reject = null;\n            add_header = null;\n            greylist = null;\n        }\n");
         } else {
-            if p.reject_threshold.is_some() || p.header_threshold.is_some() {
+            if p.reject_threshold.is_some() || p.header_threshold.is_some() || p.greylist_threshold.is_some() {
                 out.push_str("        actions {\n");
                 if let Some(t) = p.reject_threshold {
                     out.push_str(&format!("            reject = {};\n", fmt_threshold(t)));
                 }
                 if let Some(t) = p.header_threshold {
                     out.push_str(&format!("            add_header = {};\n", fmt_threshold(t)));
+                }
+                if let Some(t) = p.greylist_threshold {
+                    out.push_str(&format!("            greylist = {};\n", fmt_threshold(t)));
                 }
                 out.push_str("        }\n");
             }
