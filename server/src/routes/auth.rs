@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[derive(Deserialize)]
 pub struct LoginPayload {
@@ -156,7 +156,7 @@ pub async fn sso_token(
 pub async fn sso_exchange(
     State(state): State<AppState>,
     Json(payload): Json<SsoExchangePayload>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     let token = match payload.token {
         Some(t) if !t.is_empty() => t,
         _ => {
@@ -167,8 +167,12 @@ pub async fn sso_exchange(
         }
     };
 
-    let mut sso = state.sso_tokens.write().unwrap();
-    if let Some((acct_id, email, expires)) = sso.remove(&token) {
+    // Remove the single-use token, releasing the lock before any await.
+    let looked_up = {
+        let mut sso = state.sso_tokens.write().unwrap();
+        sso.remove(&token)
+    };
+    if let Some((acct_id, email, expires)) = looked_up {
         let now = chrono::Utc::now().timestamp();
         if now <= expires {
             let session_token = format!("aff_cli_{}", uuid::Uuid::new_v4().simple());
@@ -184,11 +188,46 @@ pub async fn sso_exchange(
             {
                 entry.ended_at = Some(chrono::Utc::now().to_rfc3339());
             }
+            // Best-effort: recover the mailbox password from the vault so the
+            // webmail can log in directly. If unavailable, degrade gracefully.
+            let mut password_available = false;
+            let mut password: Option<String> = None;
+            if crate::provision_db::database_configured() {
+                if let Ok(client) = crate::provision_db::connect_db().await {
+                    let _ = crate::provision_db::ensure_vault_column(&client).await;
+                    if let Ok(Some(row)) = client
+                        .query_opt(
+                            "SELECT secret_vault FROM mail_users WHERE email = $1",
+                            &[&email],
+                        )
+                        .await
+                    {
+                        if let Some(blob) = row
+                            .try_get::<_, Option<String>>("secret_vault")
+                            .ok()
+                            .flatten()
+                        {
+                            if let Some(key) = crate::provision_db::vault_key_from_env() {
+                                if let Ok(pass) =
+                                    crate::routes::import_mail::decrypt_with_key(&key, &blob)
+                                {
+                                    password_available = true;
+                                    password = Some(pass);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             return Ok(Json(json!({
                 "status": "success",
                 "session_token": session_token,
                 "account_id": acct_id,
-                "email": email
+                "data": {
+                    "email": email,
+                    "password": password,
+                    "password_available": password_available,
+                }
             })));
         }
     }
