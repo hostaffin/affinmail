@@ -1,4 +1,5 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use tokio_postgres::{Client, NoTls, Row};
 
@@ -25,6 +26,19 @@ pub async fn connect_db() -> DbResult<Client> {
     Ok(client)
 }
 
+/// Ensure the `secret_vault` column exists on `mail_users`. Idempotent: safe to
+/// call repeatedly. Should be invoked once (e.g. at startup or on first
+/// password‑set) before any operation that reads/writes this column.
+pub async fn ensure_vault_column(client: &Client) -> DbResult<()> {
+    client
+        .execute(
+            "ALTER TABLE mail_users ADD COLUMN IF NOT EXISTS secret_vault TEXT",
+            &[],
+        )
+        .await?;
+    Ok(())
+}
+
 /// Hash a plaintext password with bcrypt, prefixed with `{BLF-CRYPT}`.
 pub fn hash_password(password: &str) -> DbResult<String> {
     let hashed = hash(password, DEFAULT_COST)?;
@@ -35,6 +49,55 @@ pub fn hash_password(password: &str) -> DbResult<String> {
 pub fn verify_password(password: &str, stored: &str) -> DbResult<bool> {
     let hash = stored.strip_prefix("{BLF-CRYPT}").unwrap_or(stored);
     Ok(verify(password, hash)?)
+}
+
+/// Encrypt a password with AES-256-GCM using the VAULT_KEY process env var.
+/// Output format: base64(iv).base64(tag).base64(ciphertext) — mirrors
+/// routes/import_mail.rs `encrypt_with_key` (same algorithm/format).
+pub fn vault_encrypt_password(password: &str) -> Result<String, String> {
+    use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
+    use ring::digest::{digest, SHA256};
+    use ring::rand::{SecureRandom, SystemRandom};
+
+    let key = std::env::var("VAULT_KEY").map_err(|_| "VAULT_KEY not set".to_string())?;
+    let key = if key.len() == 64 && key.chars().all(|c| c.is_ascii_hexdigit()) {
+        (0..64)
+            .step_by(2)
+            .filter_map(|i| u8::from_str_radix(&key[i..i + 2], 16).ok())
+            .collect::<Vec<u8>>()
+    } else {
+        digest(&SHA256, key.as_bytes()).as_ref().to_vec()
+    };
+
+    let unbound = UnboundKey::new(&AES_256_GCM, &key).map_err(|e| e.to_string())?;
+    let sealing = LessSafeKey::new(unbound);
+    let mut nonce_bytes = [0u8; NONCE_LEN];
+    SystemRandom::new().fill(&mut nonce_bytes).map_err(|_| "rng failed".to_string())?;
+    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
+    let mut in_out = password.as_bytes().to_vec();
+    let tag = sealing
+        .seal_in_place_separate_tag(nonce, Aad::empty(), &mut in_out)
+        .map_err(|_| "encryption failed".to_string())?;
+    let b64 = |bytes: &[u8]| STANDARD.encode(bytes);
+    Ok(format!("{}.{}.{}", b64(&nonce_bytes), b64(tag.as_ref()), b64(&in_out)))
+}
+
+/// Derive the key bytes from VAULT_KEY env var (same derivation as PHP-era key).
+pub fn vault_key_from_env() -> Option<Vec<u8>> {
+    use ring::digest::{digest, SHA256};
+    let key = std::env::var("VAULT_KEY").ok()?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    Some(if key.len() == 64 && key.chars().all(|c| c.is_ascii_hexdigit()) {
+        (0..64)
+            .step_by(2)
+            .filter_map(|i| u8::from_str_radix(&key[i..i + 2], 16).ok())
+            .collect::<Vec<u8>>()
+    } else {
+        digest(&SHA256, key.as_bytes()).as_ref().to_vec()
+    })
 }
 
 /// mail_domains row.
@@ -233,12 +296,18 @@ pub async fn create_mailbox(
     quota_mb: i32,
 ) -> DbResult<Mailbox> {
     let password_hash = hash_password(password)?;
+    let secret_vault = vault_encrypt_password(password).ok();
+    let _ = client
+        .execute(
+            "ALTER TABLE mail_users ADD COLUMN IF NOT EXISTS secret_vault TEXT",
+            &[],
+        ).await;
     let row = client
         .query_one(
-            "INSERT INTO mail_users (domain_id, email, password, quota_mb)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO mail_users (domain_id, email, password, quota_mb, secret_vault)
+             VALUES ($1, $2, $3, $4, $5)
              RETURNING id, domain_id, email, password, quota_mb, active, created_at",
-            &[&domain_id, &email, &password_hash, &quota_mb],
+            &[&domain_id, &email, &password_hash, &quota_mb, &secret_vault],
         )
         .await?;
     Ok(row_to_mailbox(&row))
@@ -280,10 +349,16 @@ pub async fn list_mailboxes(
 
 pub async fn set_mailbox_password(client: &Client, mailbox_id: i32, password: &str) -> DbResult<()> {
     let password_hash = hash_password(password)?;
+    let secret_vault = vault_encrypt_password(password).ok();
+    let _ = client
+        .execute(
+            "ALTER TABLE mail_users ADD COLUMN IF NOT EXISTS secret_vault TEXT",
+            &[],
+        ).await;
     client
         .execute(
-            "UPDATE mail_users SET password = $1 WHERE id = $2",
-            &[&password_hash, &mailbox_id],
+            "UPDATE mail_users SET password = $1, secret_vault = $2 WHERE id = $3",
+            &[&password_hash, &secret_vault, &mailbox_id],
         )
         .await?;
     Ok(())

@@ -60,7 +60,29 @@ pub fn new_job_store() -> Arc<Mutex<HashMap<String, ImportJob>>> {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
+/// Derive a 32-byte key from a VAULT_KEY string (64 hex chars → raw bytes,
+/// else SHA-256 of the string). Same derivation as the PHP-era key.
+fn key_from_string(line: &str) -> Vec<u8> {
+    if line.len() == 64 && line.chars().all(|c| c.is_ascii_hexdigit()) {
+        (0..64)
+            .step_by(2)
+            .filter_map(|i| u8::from_str_radix(&line[i..i + 2], 16).ok())
+            .collect()
+    } else {
+        use ring::digest::{digest, SHA256};
+        digest(&SHA256, line.as_bytes()).as_ref().to_vec()
+    }
+}
+
 fn vault_key() -> Option<Vec<u8>> {
+    // Check the VAULT_KEY process env var FIRST.
+    if let Ok(v) = std::env::var("VAULT_KEY") {
+        let line = v.trim().to_string();
+        if !line.is_empty() {
+            return Some(key_from_string(&line));
+        }
+    }
+    // Fall back to reading the api/.env file as before.
     let raw = std::fs::read_to_string("/var/www/affinmail/api/.env").ok()?;
     let line = raw
         .lines()
@@ -68,22 +90,12 @@ fn vault_key() -> Option<Vec<u8>> {
         .trim_start_matches("VAULT_KEY=")
         .trim()
         .to_string();
-    // Same derivation as PHP: 64 hex chars → raw bytes, else sha256 of the string.
-    if line.len() == 64 && line.chars().all(|c| c.is_ascii_hexdigit()) {
-        Some(
-            (0..64)
-                .step_by(2)
-                .filter_map(|i| u8::from_str_radix(&line[i..i + 2], 16).ok())
-                .collect(),
-        )
-    } else {
-        use ring::digest::{digest, SHA256};
-        Some(digest(&SHA256, line.as_bytes()).as_ref().to_vec())
-    }
+    Some(key_from_string(&line))
 }
 
-fn vault_decrypt(blob: &str) -> Result<String, String> {
-    let key = vault_key().ok_or("VAULT_KEY not configured on this instance")?;
+/// Core decryption with an explicit key. Format: base64(iv).base64(tag).base64(ct)
+/// where the AES-256-GCM tag is carried separately (PHP-compatible).
+pub fn decrypt_with_key(key: &[u8], blob: &str) -> Result<String, String> {
     let parts: Vec<&str> = blob.split('.').collect();
     if parts.len() != 3 {
         return Err("vault value malformed".into());
@@ -94,14 +106,44 @@ fn vault_decrypt(blob: &str) -> Result<String, String> {
     use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
     let nonce_bytes: [u8; 12] = iv.try_into().map_err(|_| "bad iv")?;
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
-    // PHP format: ciphertext || tag. ring wants tag separate.
-    let unbound = UnboundKey::new(&AES_256_GCM, &key).map_err(|e| e.to_string())?;
+    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|e| e.to_string())?;
     let opening = LessSafeKey::new(unbound);
     let tag = ring::aead::Tag::try_from(&tag[..]).map_err(|_| "bad tag")?;
     let plain = opening
         .open_in_place_separate_tag(nonce, Aad::empty(), tag, &mut ct, 0..)
         .map_err(|_| "vault decryption failed (wrong key?)".to_string())?;
     String::from_utf8(plain.to_vec()).map_err(|_| "decrypted password is not utf-8".into())
+}
+
+fn vault_decrypt(blob: &str) -> Result<String, String> {
+    let key = vault_key().ok_or("VAULT_KEY not configured on this instance")?;
+    decrypt_with_key(&key, blob)
+}
+
+/// Core encryption with an explicit key. Mirrors `decrypt_with_key`: AES-256-GCM,
+/// random 12-byte IV from ring::rand::SystemRandom, output
+/// base64(iv).base64(tag).base64(ciphertext).
+pub fn encrypt_with_key(key: &[u8], plaintext: &str) -> Result<String, String> {
+    use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
+    use ring::rand::{SecureRandom, SystemRandom};
+    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|e| e.to_string())?;
+    let sealing = LessSafeKey::new(unbound);
+    let mut nonce_bytes = [0u8; NONCE_LEN];
+    SystemRandom::new()
+        .fill(&mut nonce_bytes)
+        .map_err(|_| "rng failed".to_string())?;
+    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
+    let mut in_out = plaintext.as_bytes().to_vec();
+    let tag = sealing
+        .seal_in_place_separate_tag(nonce, Aad::empty(), &mut in_out)
+        .map_err(|_| "encryption failed".to_string())?;
+    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!(
+        "{}.{}.{}",
+        b64(&nonce_bytes),
+        b64(tag.as_ref()),
+        b64(&in_out)
+    ))
 }
 
 /* ------------------------------------------------------------------ */
@@ -678,6 +720,18 @@ mod tests {
             Ok(p) => assert!(!p.is_empty(), "decrypted to empty string"),
             Err(e) => panic!("decrypt failed: {e} (VAULT_KEY changed on host?)"),
         }
+    }
+
+    #[test]
+    fn vault_roundtrip_fixed_key() {
+        // Fixed 32-byte key — no VAULT_KEY env needed; round-trip must be
+        // byte-compatible (3 dot-separated parts, plaintext restored).
+        let key: [u8; 32] = [0x5a; 32];
+        let plaintext = "s3cr3tP@ssw0rd";
+        let blob = encrypt_with_key(&key, plaintext).unwrap();
+        assert_eq!(blob.split('.').count(), 3, "blob must have 3 parts");
+        let back = decrypt_with_key(&key, &blob).unwrap();
+        assert_eq!(back, plaintext);
     }
 
     #[test]

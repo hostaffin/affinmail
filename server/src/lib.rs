@@ -378,6 +378,7 @@ pub fn create_app(state: AppState) -> Router {
             post(routes::admin::retry_queue_message),
         )
         .route("/api/v1/mail/track", get(routes::admin::mail_track))
+        .route("/api/v1/admin/track-delivery", get(routes::admin::track_delivery))
         .route("/api/v1/system/logs", get(routes::admin::system_logs))
         .route(
             "/api/v1/ip-pools",
