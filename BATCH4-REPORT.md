@@ -69,3 +69,58 @@ close: 7367f6f.
 - Test baseline held throughout: lib 11 passed / 1 failed — the failure is
   vault_decrypt_php_vector, expected and permanent (the PHP-era VAULT_KEY
   was lost with the old VPS; a fresh key was generated 2026-11-28).
+
+## GLM final review addendum (2026-11-28 evening, Rabbi's order)
+
+Reviewer: GLM 5.3 Flash (tokens.bd) over the migration diff cbc9d85..HEAD, per-file.
+9 of 10 files reviewed; server/src/mail_imap.rs repeatedly hit upstream 503s
+(retry left running; the file is covered by the Batch 3 live gate tests).
+Every finding below was verified against the code by the PM before action.
+
+FIXED (commits da4b56c, c2ac314, abba4c0, 9b73ee3):
+- CRITICAL queue DELETE id=ALL passed validation -> postsuper -d ALL would
+  wipe the whole queue. Now: length >= 8 + ALL rejected (verified: 400).
+- CRITICAL client create_domain_mailbox defaulted the password to the
+  literal "changeme". Now: random UUID when omitted.
+- CRITICAL JMAP move ignored the append result and deleted the source
+  anyway -> permanent loss on append failure. Now: delete only on Ok.
+- HIGH DKIM key path interpolated the domain unvalidated (path traversal,
+  admin-authenticated input). Strict DNS charset validation added.
+- HIGH an id could appear in both updated and notUpdated (RFC 8620 5.3).
+- MEDIUM POST /jmap without trailing slash 404'd. Both routes registered
+  (verified: bad creds 401, good creds 200).
+- HIGH (stats) postfix status lines sat behind the Stalwart event gate, so
+  delivered/deferred/bounced were NEVER counted on the Postfix stack.
+  Classification moved before the gate + Postfix to=<addr> extraction.
+
+Gate follow-on fixes the review exposed (e76feaa, a382e54):
+- The collector state dir /var/www/affinmail/data never existed: save_state
+  failed silently, every cycle ran as first-run. Dir created + create_dir_all.
+- Global stats upsert bound count as i32 into a bigint column: tokio-postgres
+  serialization failed every cycle ("error serializing parameter 2" in the
+  journal), so stats_mail_events stayed empty. Now i64. VERIFIED LIVE:
+  stats_mail_events has delivered=1/bounced=2 rows, 0 upsert failures.
+
+GLM claims checked and REJECTED with evidence:
+- "Admin-created mailbox passwords may be stored plaintext": they are
+  {BLF-CRYPT} bcrypt hashes (Batch 2 gate, PG rows inspected); the random
+  UUID password is by design, set later via PUT, delivered via SSO.
+- "JMAP may be unauthenticated": in-handler credential verification added
+  in Batch 3 (22c52d3); wrong password returns 401 on /jmap/session and
+  /jmap/ - re-verified tonight on the new bare /jmap route.
+- "list_queue arrival_time parse assumes epoch": this Postfix emits epoch
+  in postqueue -j; the live gate showed correct created_at values.
+
+Accepted as designed (not defects):
+- sso_exchange returns the mailbox password: Rabbi's SSO design; the token
+  is 60 s, single-use, exchange is atomic; the webmail needs the password
+  for the per-request Basic-auth JMAP bridge.
+- EmailSubmission/set destroys the source message after a successful send:
+  matches the webmail's draft-submit flow.
+
+Still open (honest list): spam settings deferred (no Rspamd user prefs);
+panel auth prototype-grade; :2083 standalone domain-panel login not built;
+stats.rs reads PG creds from /etc/affinmail-stats.env instead of DATABASE_URL;
+svc_redis probe does not use the Redis password (shows 0); stats hour
+buckets are labelled with the log's local hour as UTC (cosmetic +6h shift);
+no rate limiting on JMAP Basic auth (each request is an IMAP LOGIN).
