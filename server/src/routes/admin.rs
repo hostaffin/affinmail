@@ -3,7 +3,7 @@ use crate::security_keys;
 use crate::state::AppState;
 use crate::types::{Domain, ErrorResponse, IpPool, Mailbox, QueueMessage};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -1181,6 +1181,68 @@ pub async fn mail_track() -> impl IntoResponse {
             }
         ]
     }))
+}
+
+// GET /api/v1/admin/track-delivery?q=<term>
+pub async fn track_delivery(Query(params): Query<std::collections::HashMap<String, String>>) -> impl IntoResponse {
+    use std::collections::HashMap;
+    let term = match params.get("q") {
+        Some(t) if !t.is_empty() => t.to_lowercase(),
+        _ => return Json(json!({ "records": [], "count": 0, "error": "missing query parameter 'q'" })),
+    };
+    let path = "/var/log/mail.log";
+    let data = match std::fs::read(path) {
+        Ok(d) => d,
+        Err(_) => return Json(json!({ "records": [], "count": 0, "error": "log file not accessible" })),
+    };
+    let text = String::from_utf8_lossy(&data);
+    let mut records = Vec::new();
+    for line in text.lines() {
+        if line.to_lowercase().contains(&term) {
+            // Extract queue-id (first alnum block after timestamp and before colon)
+            let queue_id = line
+                .split_whitespace()
+                .find(|s| s.len() >= 6 && s.chars().all(|c| c.is_ascii_alphanumeric()))
+                .map(|s| s.trim_end_matches(':').to_string())
+                .unwrap_or_default();
+            // Extract status=...
+            let status = line
+                .split("status=")
+                .nth(1)
+                .and_then(|s| s.split_whitespace().next())
+                .map(|s| s.trim_end_matches(',').to_string())
+                .unwrap_or_default();
+            // Extract dsn=...
+            let dsn = line
+                .split("dsn=")
+                .nth(1)
+                .and_then(|s| s.split_whitespace().next())
+                .map(|s| s.trim_end_matches(',').to_string())
+                .unwrap_or_default();
+            // Extract relay=...
+            let relay = line
+                .split("relay=")
+                .nth(1)
+                .and_then(|s| s.split_whitespace().next())
+                .map(|s| s.trim_end_matches(',').to_string())
+                .unwrap_or_default();
+            // Timestamp: first 25 chars of line (ISO datetime)
+            let timestamp = line.get(..25).unwrap_or("").to_string();
+            records.push(json!({
+                "queue_id": queue_id,
+                "status": status,
+                "dsn": dsn,
+                "relay": relay,
+                "timestamp": timestamp,
+            }));
+        }
+    }
+    // Cap 200 newest last
+    if records.len() > 200 {
+        records.drain(0..records.len() - 200);
+    }
+    let count = records.len();
+    Json(json!({ "records": records, "count": count }))
 }
 
 // GET /api/v1/system/logs

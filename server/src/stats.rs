@@ -30,6 +30,7 @@ use axum::{
 };
 
 const LOG_DIR: &str = "/var/log/stalwart";
+const MAIL_LOG: &str = "/var/log/mail.log";
 const STATE_FILE: &str = "/var/www/affinmail/data/collector-state.json";
 const STALWART_CONFIG: &str = "/etc/stalwart/config.json";
 const SECRETS_FILE: &str = "/etc/stalwart/local-secrets.txt";
@@ -410,6 +411,19 @@ fn addr_domain(addr: &str) -> Option<String> {
     Some(d)
 }
 
+/// Detect postfix delivery status from a mail.log line.
+fn postfix_status_kind(line: &str) -> Option<&'static str> {
+    if line.contains("status=sent") {
+        Some("delivered")
+    } else if line.contains("status=deferred") {
+        Some("deferred")
+    } else if line.contains("status=bounced") {
+        Some("bounced")
+    } else {
+        None
+    }
+}
+
 /// Global counter kind for an event name (admin Overview taxonomy).
 fn classify(event: &str) -> Option<&'static str> {
     match event {
@@ -475,6 +489,24 @@ pub async fn run_collector() {
     let mut first_run = !std::path::Path::new(STATE_FILE).exists();
     loop {
         if let Some(pg) = pg_connect().await {
+            let _ = pg
+                .execute(
+                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_postfix boolean NOT NULL DEFAULT 0",
+                    &[],
+                )
+                .await;
+            let _ = pg
+                .execute(
+                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_dovecot boolean NOT NULL DEFAULT 0",
+                    &[],
+                )
+                .await;
+            let _ = pg
+                .execute(
+                    "ALTER TABLE stats_samples ADD COLUMN IF NOT EXISTS svc_rspamd boolean NOT NULL DEFAULT 0",
+                    &[],
+                )
+                .await;
             collect_logs(&pg, first_run).await;
             collect_sample(&pg).await;
             collect_rbl(&pg).await;
@@ -499,23 +531,17 @@ async fn collect_logs(pg: &Client, first_run: bool) {
         .await;
 
     let mut state = load_state();
-    let today = Utc::now().format("%Y-%m-%d").to_string();
-    let yesterday = (Utc::now() - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-
     let mut global: HashMap<(String, &'static str), i64> = HashMap::new();
     let mut domain: HashMap<(String, String, &'static str), i64> = HashMap::new();
 
-    for day in [yesterday, today] {
-        let name = format!("stalwart.log.{}", day);
-        let path = format!("{}/{}", LOG_DIR, name);
-        let data = match std::fs::read(&path) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-        let size = data.len() as u64;
-        let stored = state.files.get(&name).copied();
+    let name = "mail.log".to_string();
+    let path = MAIL_LOG.to_string();
+    let data = match std::fs::read(&path) {
+        Ok(d) => d,
+        Err(_) => Vec::new(),
+    };
+    let size = data.len() as u64;
+    let stored = state.files.get(&name).copied();
         // On the very first run the global counters for these lines are
         // already in PostgreSQL (the previous collector wrote them), so
         // global parsing starts at EOF — but per-domain history is new,
@@ -543,8 +569,12 @@ async fn collect_logs(pg: &Client, first_run: bool) {
                     Some(e) => e,
                     None => continue,
                 };
+                let postfix_kind = postfix_status_kind(&line);
                 if global_side {
                     if let Some(kind) = classify(&event) {
+                        *global.entry((hour.clone(), kind)).or_insert(0) += 1;
+                    }
+                    if let Some(kind) = postfix_kind {
                         *global.entry((hour.clone(), kind)).or_insert(0) += 1;
                     }
                 }
@@ -586,7 +616,6 @@ async fn collect_logs(pg: &Client, first_run: bool) {
             parse_range(global_from, true, true, &mut global, &mut domain);
         }
         state.files.insert(name, size);
-    }
 
     for ((hour, kind), count) in &global {
         let ts = chrono::DateTime::parse_from_rfc3339(hour)
@@ -636,11 +665,47 @@ async fn mirror_totals(pg: &Client) -> (i64, i64, i64) {
     }
 }
 
-async fn collect_sample(pg: &Client) {
-    let queue_count: Option<i64> = match jmap_queue().await {
-        Some((total, _)) => Some(total),
-        None => None,
+async fn systemctl_active(unit: &str) -> bool {
+    match tokio::process::Command::new("systemctl")
+        .arg("is-active")
+        .arg(unit)
+        .output()
+        .await
+    {
+        Ok(o) => o.status.success(),
+        Err(_) => false,
+    }
+}
+
+async fn rspamd_alive() -> bool {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
     };
+    client.get("http://127.0.0.1:11334/stat").send().await.is_ok()
+}
+
+async fn postqueue_count() -> Option<i64> {
+    match tokio::process::Command::new("/usr/sbin/postqueue")
+        .arg("-j")
+        .output()
+        .await
+    {
+        Ok(o) => Some(
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .count() as i64,
+        ),
+        Err(_) => None,
+    }
+}
+
+async fn collect_sample(pg: &Client) {
+    let queue_count: Option<i64> = postqueue_count().await;
     let (domains, mailboxes, storage) = mirror_totals(pg).await;
     let (disk_total, disk_free) = disk_space();
     let disk_pct: i32 = if disk_total > 0 {
@@ -655,7 +720,9 @@ async fn collect_sample(pg: &Client) {
         0
     };
     let load1 = load_avg()[0];
-    let svc_stalwart = probe_stalwart().await;
+    let svc_postfix = systemctl_active("postfix.service").await;
+    let svc_dovecot = systemctl_active("dovecot.service").await;
+    let svc_rspamd = systemctl_active("rspamd.service").await || rspamd_alive().await;
     let svc_redis = probe_redis().await;
     let rep: Option<f64> = pg
         .query_one(
@@ -670,8 +737,8 @@ async fn collect_sample(pg: &Client) {
     // internally-computed numbers directly (never user input).
     let num = |x: Option<f64>| x.map(|v| format!("{v}")).unwrap_or_else(|| "NULL".to_string());
     let sql = format!(
-        "INSERT INTO stats_samples (queue_count, domains, mailboxes, storage_bytes, disk_pct, mem_pct, load1, rep_score, svc_stalwart, svc_pg, svc_redis)
-         VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, 1, {})",
+        "INSERT INTO stats_samples (queue_count, domains, mailboxes, storage_bytes, disk_pct, mem_pct, load1, rep_score, svc_stalwart, svc_postfix, svc_dovecot, svc_rspamd, svc_pg, svc_redis)
+         VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, 1, {})",
         num(queue_count.map(|q| q as f64)),
         domains,
         mailboxes,
@@ -680,7 +747,10 @@ async fn collect_sample(pg: &Client) {
         mem_pct,
         load1,
         num(rep),
-        if svc_stalwart { 1 } else { 0 },
+        0, // svc_stalwart deprecated
+        if svc_postfix { 1 } else { 0 },
+        if svc_dovecot { 1 } else { 0 },
+        if svc_rspamd { 1 } else { 0 },
         if svc_redis { 1 } else { 0 },
     );
     if let Err(e) = pg.execute(&sql, &[]).await {
