@@ -8,8 +8,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::process::Command;
 
 #[derive(Deserialize)]
 pub struct CreateDomainPayload {
@@ -1033,48 +1035,134 @@ pub async fn put_mailbox_status(
 }
 
 // GET /api/v1/queue
-pub async fn list_queue(State(state): State<AppState>) -> impl IntoResponse {
-    let queue = state.queue.read().unwrap();
-    let list: Vec<QueueMessage> = queue.values().cloned().collect();
+pub async fn list_queue() -> impl IntoResponse {
+    let mut list: Vec<QueueMessage> = Vec::new();
+    if let Ok(output) = Command::new("/usr/sbin/postqueue").arg("-j").output() {
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let v: Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let id = v.get("queue_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let sender = v.get("sender").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let status = v.get("queue_name").and_then(|x| x.as_str()).unwrap_or("active").to_string();
+            let size_bytes = v.get("message_size").and_then(|x| x.as_u64()).unwrap_or(0);
+            let arrival = v
+                .get("arrival_time")
+                .and_then(|x| x.as_i64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+                .unwrap_or(0);
+            let created_at = Utc
+                .timestamp_opt(arrival, 0)
+                .single()
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_default();
+            let (recipient, deferred_reason) = match v.get("recipients").and_then(|x| x.as_array()) {
+                Some(arr) if !arr.is_empty() => {
+                    let first = &arr[0];
+                    let addr = first.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let reason = first.get("delay_reason").and_then(|x| x.as_str()).map(|s| s.to_string());
+                    (addr, reason)
+                }
+                _ => (String::new(), None),
+            };
+            list.push(QueueMessage {
+                id,
+                sender,
+                recipient,
+                size_bytes,
+                status,
+                retry_count: 0,
+                deferred_reason,
+                created_at,
+            });
+        }
+    }
     Json(json!({ "queue": list, "count": list.len() }))
+}
+
+fn valid_queue_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 // DELETE /api/v1/queue/:id
 pub async fn delete_queue_message(
-    State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let mut queue = state.queue.write().unwrap();
-    if queue.remove(&id).is_some() {
+    if !valid_queue_id(&id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(400, "Invalid queue id")),
+        ));
+    }
+    let output = Command::new("sudo")
+        .arg("-n")
+        .arg("/usr/sbin/postsuper")
+        .arg("-d")
+        .arg(&id)
+        .output()
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(500, format!("postsuper command failed: {e}"))),
+            )
+        })?;
+    if output.status.success() {
         Ok(Json(json!({ "deleted": id })))
     } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new(404, "Queue message not found")),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(500, format!("postsuper delete failed: {}", stderr.trim()))),
         ))
     }
 }
 
 // POST /api/v1/queue/:id/retry
 pub async fn retry_queue_message(
-    State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let mut queue = state.queue.write().unwrap();
-    let msg = match queue.get_mut(&id) {
-        Some(m) => m,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse::new(404, "Queue message not found")),
-            ))
-        }
-    };
-
-    msg.retry_count += 1;
-    msg.status = "active".to_string();
-    let res = msg.clone();
-    Ok(Json(json!({ "status": "retrying", "message": res })))
+    if !valid_queue_id(&id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(400, "Invalid queue id")),
+        ));
+    }
+    let output = Command::new("sudo")
+        .arg("-n")
+        .arg("/usr/sbin/postqueue")
+        .arg("-i")
+        .arg(&id)
+        .output()
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(500, format!("postqueue command failed: {e}"))),
+            )
+        })?;
+    if output.status.success() {
+        let res = QueueMessage {
+            id: id.clone(),
+            sender: String::new(),
+            recipient: String::new(),
+            size_bytes: 0,
+            status: "active".to_string(),
+            retry_count: 0,
+            deferred_reason: None,
+            created_at: Utc::now().to_rfc3339(),
+        };
+        Ok(Json(json!({ "status": "retrying", "message": res })))
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(500, format!("postqueue retry failed: {}", stderr.trim()))),
+        ))
+    }
 }
 
 // GET /api/v1/mail/track
