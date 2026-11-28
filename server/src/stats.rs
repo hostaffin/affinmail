@@ -1243,9 +1243,9 @@ pub async fn admin_stats(state: &AppState) -> Value {
     let (queue_count, queue_items) = match jmap_queue().await {
         Some((t, items)) => (t, items),
         None => {
-            let last: Option<i32> = pg
+            let last: Option<i64> = pg
                 .query_one(
-                    "SELECT queue_count FROM stats_samples ORDER BY ts DESC LIMIT 1",
+                    "SELECT queue_count::bigint AS queue_count FROM stats_samples ORDER BY ts DESC LIMIT 1",
                     &[],
                 )
                 .await
