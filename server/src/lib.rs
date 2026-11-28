@@ -1,4 +1,5 @@
 pub mod routes;
+pub mod provision_db;
 pub mod security_keys;
 pub mod stats;
 pub mod state;
