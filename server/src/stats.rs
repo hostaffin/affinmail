@@ -682,7 +682,7 @@ async fn collect_logs(pg: &Client, first_run: bool) {
             .execute(
                 "INSERT INTO stats_mail_events (hour, kind, count) VALUES ($1, $2, $3)
                  ON CONFLICT (hour, kind) DO UPDATE SET count = stats_mail_events.count + EXCLUDED.count",
-                &[&ts, kind, &(*count as i32)],
+                &[&ts, kind, count],
             )
             .await
         {
