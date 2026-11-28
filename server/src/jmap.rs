@@ -144,6 +144,14 @@ pub async fn jmap(headers: HeaderMap, body: Bytes) -> Response {
                 let result = email_set(&email, &password, &args).await;
                 json!(["Email/set", result, cid])
             }
+            "EmailSubmission/set" => {
+                let result = email_submission_set(&email, &password, &args).await;
+                json!(["EmailSubmission/set", result, cid])
+            }
+            "Quota/get" => {
+                let result = quota_get(&email, &password, &args).await;
+                json!(["Quota/get", result, cid])
+            }
             other => json!([
                 "error",
                 {
@@ -591,7 +599,7 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
             if let Some(patch_obj) = patch.as_object() {
                 // keywords changes
                 for (k, v) in patch_obj {
-                    if let Some(keyword) = k.strip_prefix("keywords/") {
+                    if let Some(_keyword) = k.strip_prefix("keywords/") {
                         if let Some(flag_name) = v.as_str() {
                             let imap_flag = match flag_name {
                                 "$seen" => Some("\\Seen"),
@@ -679,6 +687,104 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
         "destroyed": destroyed,
         "notDestroyed": Value::Object(not_destroyed),
     })
+}
+
+async fn email_submission_set(email: &str, password: &str, args: &Value) -> Value {
+    let create = args.get("create").cloned().unwrap_or(Value::Null);
+    let mut created = serde_json::Map::new();
+    let mut not_created = serde_json::Map::new();
+
+    if let Value::Object(map) = &create {
+        for (client_id, obj) in map {
+            let email_id = obj.get("emailId").and_then(|v| v.as_str()).unwrap_or("");
+            let envelope = obj.get("envelope");
+            let from = envelope.and_then(|e| e.get("mailFrom")).and_then(|v| v.get("email")).and_then(|v| v.as_str()).unwrap_or(email).to_string();
+            let rcpts: Vec<String> = envelope.and_then(|e| e.get("rcptTo")).and_then(|v| v.as_array()).map(|arr| {
+                arr.iter().filter_map(|r| r.get("email").and_then(|e| e.as_str()).map(|s| s.to_string())).collect::<Vec<_>>()
+            }).unwrap_or_default();
+
+            let (folder, uid_str) = match email_id.split_once(':') {
+                Some(p) => p,
+                None => { not_created.insert(client_id.clone(), json!({ "type": "serverFail", "description": "bad emailId" })); continue; }
+            };
+            let uid: u32 = match uid_str.parse() { Ok(u) => u, Err(_) => { not_created.insert(client_id.clone(), json!({ "type": "serverFail", "description": "bad uid" })); continue; } };
+
+            let rfc822 = mail_imap::fetch_message(email.to_string(), password.to_string(), folder.to_string(), uid).await;
+            if let Err(e) = rfc822 {
+                not_created.insert(client_id.clone(), json!({ "type": "serverFail", "description": format!("draft fetch failed: {e}") }));
+                continue;
+            }
+            let rfc822 = rfc822.unwrap();
+
+            let to = if rcpts.is_empty() { vec![email.to_string()] } else { rcpts.clone() };
+            let send_res = mail_imap::send_message(email.to_string(), password.to_string(), from.to_string(), to, rfc822.clone()).await;
+            if send_res.is_err() {
+                not_created.insert(client_id.clone(), json!({ "type": "serverFail", "description": "send failed" }));
+                continue;
+            }
+
+            let _ = mail_imap::append_message(email.to_string(), password.to_string(), "Sent".to_string(), rfc822.clone()).await;
+            let _ = mail_imap::delete_message(email.to_string(), password.to_string(), folder.to_string(), uid).await;
+
+            created.insert(client_id.clone(), json!({ "id": client_id, "emailId": email_id, "threadId": email_id }));
+        }
+    }
+
+    json!({
+        "accountId": email,
+        "created": Value::Object(created),
+        "notCreated": Value::Object(not_created),
+        "updated": Value::Object(serde_json::Map::new()),
+        "notUpdated": Value::Object(serde_json::Map::new()),
+        "destroyed": Vec::<String>::new(),
+        "notDestroyed": Value::Object(serde_json::Map::new()),
+    })
+}
+
+async fn quota_get(email: &str, password: &str, _args: &Value) -> Value {
+    let quota_mb = mailbox_quota_mb(email).await;
+    let hard_limit = if quota_mb > 0 { quota_mb * 1024 * 1024 } else { 0 };
+    let mut used: u64 = 0;
+    let folders = mail_imap::list_folders(email.to_string(), password.to_string()).await.unwrap_or_default();
+    for f in folders {
+        let msgs = mail_imap::list_messages(email.to_string(), password.to_string(), f.name.clone(), 100000, 0).await.unwrap_or_default();
+        for m in msgs {
+            used = used.saturating_add(m.size as u64);
+        }
+    }
+    let limit = if hard_limit > 0 { hard_limit as i64 } else { 0 };
+    let free = if hard_limit > 0 { (hard_limit as u64).saturating_sub(used) as i64 } else { 0 };
+    json!({
+        "accountId": email,
+        "list": [{
+            "id": "quota",
+            "accountId": email,
+            "name": "mailbox",
+            "resourceType": "octets",
+            "used": used as i64,
+            "hardLimit": if hard_limit > 0 { json!(hard_limit as i64) } else { Value::Null },
+            "limit": limit,
+            "free": free,
+            "scope": "account",
+            "types": ["Email"],
+        }],
+    })
+}
+
+async fn mailbox_quota_mb(email: &str) -> i64 {
+    let client = match provision_db::connect_db().await {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+    let row = client
+        .query_opt("SELECT quota_mb FROM mail_users WHERE email = $1", &[&email])
+        .await
+        .ok()
+        .flatten();
+    match row {
+        Some(r) => r.get::<_, i64>(0).max(0),
+        None => 0,
+    }
 }
 
 #[cfg(test)]
