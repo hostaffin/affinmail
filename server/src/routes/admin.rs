@@ -160,15 +160,31 @@ pub async fn create_domain(
         };
         // Generate DKIM keypair (reuse existing security_keys machinery).
         let key = crate::security_keys::generate_dkim_keypair(&name, "affinmail");
+        // Rspamd is configured with the fixed selector "affin" and path
+        // /var/lib/rspamd/dkim/$domain.$selector.key, so write under BOTH the
+        // generated selector and the configured affin selector. A write failure
+        // is logged but must not fail domain creation.
         if let Err(e) = crate::security_keys::write_dkim_key_file(&name, &key.selector, &key.private_key_pem) {
             eprintln!("WARNING: failed to write DKIM key file for {}: {}", name, e);
         }
+        if let Err(e) = crate::security_keys::write_dkim_key_file(&name, "affin", &key.private_key_pem) {
+            eprintln!("WARNING: failed to write DKIM key file for {}.affin: {}", name, e);
+        }
+        // The affin selector MUST appear in the advertised DNS records so the
+        // panel can hand the customer the record Rspamd will actually validate.
+        let public_key = key.public_key.clone();
+        let mut dns_records = key.dns_records;
+        dns_records.push(json!({
+            "type": "TXT",
+            "host": format!("affin._domainkey.{}", name),
+            "value": crate::security_keys::dkim_dns_record(&public_key),
+        }));
         let dom = created.to_api();
         return Ok((
             StatusCode::CREATED,
             Json(json!({
                 "domain": dom,
-                "dnsRecords": key.dns_records,
+                "dnsRecords": dns_records,
                 "stalwart": {
                     "registered": false,
                     "note": "Stalwart not wired in database mode yet.",
