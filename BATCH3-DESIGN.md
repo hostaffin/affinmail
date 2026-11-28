@@ -104,3 +104,33 @@ error-prone), Stalwart as backend while keeping JMAP (reverts Batch 3 goal).
   connection, keep alive).
 - No internet outbound mail — keep test sends local (batch3.local).
 - Do not touch live binary restart / deploy in this batch; PM deploys & verifies gate.
+
+## 7. Step 3a addendum — JMAP layer contract (server/src/jmap.rs)
+
+Implements what `webmail/src/lib/jmap.ts` expects. Contract:
+
+- `GET /jmap/session` → JmapSession:
+  `username`, `apiUrl: "/jmap/"`, `uploadUrl: "/jmap/upload/{accountId}/"`,
+  `downloadUrl: "/jmap/download/{accountId}/{blobId}/{name}?type={type}"`,
+  `accounts: { <email>: { name, accountCapabilities } }`,
+  `primaryAccounts: { "urn:ietf:params:jmap:mail": <email> }`,
+  `capabilities: { core, mail, submission, quota }` (urn namespaces as keys).
+
+- `POST /jmap/` body `{ using: [...], methodCalls: [[name, args, callId], ...] }`
+  → `methodResponses: [[name, result, callId], ...]`; errors as `["error", {type, description}, callId]`.
+
+- `Mailbox/get { accountId }`:
+  result `{ list: [{ id (folder name), name, role, parentId: null, totalEmails, unreadEmails, isSubscribed: true }], notFound: [] }`.
+  Folder identity = IMAP folder name (e.g. INBOX, Sent). `totalEmails` from `uid_search ALL`,
+  `unreadEmails` from `uid_search UNSEEN`. Frontend lazily issues `Mailbox/set` to create Archive
+  when absent — not implemented in step 3a (frontend falls back with a try/catch).
+
+- `Identity/get { accountId }` → `{ list: [{ id: "1", email, name, replyTo: null }], notFound: [] }`.
+
+- Auth: `Authorization: Basic base64(email:password)` (from sessionStorage `affinmail.auth`).
+  Email must exist in `mail_users` (DATABASE_URL) else 401.
+
+- Frontend Email properties consumed: `id, threadId, subject, from, to, cc, receivedAt, keywords,
+  mailboxIds, preview, hasAttachment, attachments, bodyValues, textBody, htmlBody`.
+  Bodies: `bodyValues: { body: {value} }` or `{ text:{value}, html:{value} }`, `textBody`/`htmlBody`
+  are partId arrays.

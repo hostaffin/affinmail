@@ -204,6 +204,22 @@ fn search_b(
     Ok(uids)
 }
 
+fn folder_counts_b(email: &str, password: &str, folder: &str) -> Result<(u64, u64), String> {
+    let mut s = connect(email, password)?;
+    s.select(folder)
+        .map_err(|e| format!("imap select: {e}"))?;
+    let total = s
+        .uid_search("ALL")
+        .map_err(|e| format!("imap search all: {e}"))?
+        .len() as u64;
+    let unseen = s
+        .uid_search("UNSEEN")
+        .map_err(|e| format!("imap search unseen: {e}"))?
+        .len() as u64;
+    let _ = s.logout();
+    Ok((total, unseen))
+}
+
 fn append_b(email: &str, password: &str, folder: &str, content: &[u8]) -> Result<(), String> {
     let mut s = connect(email, password)?;
     if s.append(folder, content).is_err() {
@@ -417,6 +433,16 @@ pub async fn search_basic(
     query: String,
 ) -> Result<Vec<u32>, String> {
     task::spawn_blocking(move || search_b(&email, &password, &folder, &query))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+pub async fn folder_counts(
+    email: String,
+    password: String,
+    folder: String,
+) -> Result<(u64, u64), String> {
+    task::spawn_blocking(move || folder_counts_b(&email, &password, &folder))
         .await
         .map_err(|e| format!("join: {e}"))?
 }

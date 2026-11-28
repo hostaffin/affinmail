@@ -1,5 +1,6 @@
 pub mod routes;
 pub mod mail_imap;
+pub mod jmap;
 pub mod provision_db;
 pub mod security_keys;
 pub mod stats;
@@ -455,6 +456,9 @@ pub fn create_app(state: AppState) -> Router {
             "/api/v1/migrations",
             get(routes::infra::list_migrations).post(routes::infra::create_migration),
         )
+        // Batch 3 JMAP layer (Rust IMAP backend answering webmail JMAP calls)
+        .route("/jmap/session", get(jmap::session))
+        .route("/jmap/", post(jmap::jmap))
         .route("/api/v1/admin/roles", get(routes::infra::roles))
         .route("/api/v1/api-keys", get(routes::api_keys::list_api_keys).post(routes::api_keys::create_api_key))
         .route("/api/v1/api-keys/{id}", delete(routes::api_keys::delete_api_key))
