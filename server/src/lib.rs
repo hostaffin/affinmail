@@ -1,4 +1,5 @@
 pub mod routes;
+pub mod mail_imap;
 pub mod provision_db;
 pub mod security_keys;
 pub mod stats;
