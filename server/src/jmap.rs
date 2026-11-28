@@ -573,14 +573,111 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
         }
     }
 
+    // update
+    let mut updated = serde_json::Map::new();
+    let mut not_updated = serde_json::Map::new();
+    if let Value::Object(map) = &update {
+        for (id, patch) in map {
+            let (folder, uid_str) = match id.split_once(':') {
+                Some(p) => p,
+                None => { not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "bad id" })); continue; }
+            };
+            let uid: u32 = match uid_str.parse() {
+                Ok(u) => u,
+                Err(_) => { not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "bad uid" })); continue; }
+            };
+            let mut handled = false;
+
+            if let Some(patch_obj) = patch.as_object() {
+                // keywords changes
+                for (k, v) in patch_obj {
+                    if let Some(keyword) = k.strip_prefix("keywords/") {
+                        if let Some(flag_name) = v.as_str() {
+                            let imap_flag = match flag_name {
+                                "$seen" => Some("\\Seen"),
+                                "$flagged" => Some("\\Flagged"),
+                                "$draft" => Some("\\Draft"),
+                                _ => None,
+                            };
+                            if let Some(flag) = imap_flag {
+                                let add = v.as_str().map(|s| s != "$draft").unwrap_or(true);
+                                let res = mail_imap::set_flag(
+                                    email.to_string(), password.to_string(), folder.to_string(), uid,
+                                    flag.to_string(), add,
+                                ).await;
+                                if res.is_err() {
+                                    not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "set flag failed" }));
+                                }
+                            }
+                            handled = true;
+                        }
+                    }
+                    // mailboxIds change = move
+                    if let Some(rest) = k.strip_prefix("mailboxIds/") {
+                        let target_folder = rest;
+                        if target_folder != folder {
+                            // fetch RFC822 from source
+                            let rfc822 = mail_imap::fetch_message(
+                                email.to_string(), password.to_string(), folder.to_string(), uid
+                            ).await;
+                            if let Ok(msg) = rfc822 {
+                                // append to target
+                                let _ = mail_imap::append_message(
+                                    email.to_string(), password.to_string(), target_folder.to_string(), msg
+                                ).await;
+                                // delete from source
+                                let _ = mail_imap::delete_message(
+                                    email.to_string(), password.to_string(), folder.to_string(), uid
+                                ).await;
+                            } else {
+                                not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "move: fetch failed" }));
+                            }
+                        }
+                        handled = true;
+                    }
+                }
+            }
+            if !handled {
+                not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "unsupported update" }));
+            }
+            updated.insert(id.clone(), json!(null));
+        }
+    }
+
+    // destroy
+    let mut destroyed = Vec::new();
+    let mut not_destroyed = serde_json::Map::new();
+    if let Some(ids) = destroy.as_array() {
+        for id in ids.iter() {
+            if let Some(s) = id.as_str() {
+                let (folder, uid_str) = match s.split_once(':') {
+                    Some(p) => p,
+                    None => { not_destroyed.insert(s.to_string(), json!({ "type": "serverFail", "description": "bad id" })); continue; }
+                };
+                let uid: u32 = match uid_str.parse() {
+                    Ok(u) => u,
+                    Err(_) => { not_destroyed.insert(s.to_string(), json!({ "type": "serverFail", "description": "bad uid" })); continue; }
+                };
+                let res = mail_imap::delete_message(
+                    email.to_string(), password.to_string(), folder.to_string(), uid
+                ).await;
+                if res.is_err() {
+                    not_destroyed.insert(s.to_string(), json!({ "type": "serverFail", "description": "delete failed" }));
+                } else {
+                    destroyed.push(s.to_string());
+                }
+            }
+        }
+    }
+
     json!({
         "accountId": email,
         "created": Value::Object(created),
         "notCreated": Value::Object(serde_json::Map::new()),
-        "updated": Value::Object(serde_json::Map::new()),
-        "notUpdated": Value::Object(serde_json::Map::new()),
-        "destroyed": Vec::<String>::new(),
-        "notDestroyed": Value::Object(serde_json::Map::new()),
+        "updated": Value::Object(updated),
+        "notUpdated": Value::Object(not_updated),
+        "destroyed": destroyed,
+        "notDestroyed": Value::Object(not_destroyed),
     })
 }
 
