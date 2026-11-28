@@ -494,12 +494,12 @@ pub async fn run_collector() {
                     "CREATE TABLE IF NOT EXISTS stats_samples (
                         id bigserial PRIMARY KEY,
                         ts timestamptz NOT NULL DEFAULT now(),
-                        queue_count integer,
-                        domains integer,
-                        mailboxes integer,
+                        queue_count bigint,
+                        domains bigint,
+                        mailboxes bigint,
                         storage_bytes bigint,
-                        disk_pct integer,
-                        mem_pct integer,
+                        disk_pct bigint,
+                        mem_pct bigint,
                         load1 numeric,
                         rep_score numeric,
                         svc_stalwart smallint NOT NULL DEFAULT 0,
@@ -517,7 +517,7 @@ pub async fn run_collector() {
                     "CREATE TABLE IF NOT EXISTS stats_mail_events (
                         hour timestamptz NOT NULL,
                         kind text NOT NULL,
-                        count integer NOT NULL DEFAULT 0,
+                        count bigint NOT NULL DEFAULT 0,
                         PRIMARY KEY (hour, kind)
                     )",
                     &[],
