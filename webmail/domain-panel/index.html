@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AffinMail — Domain Panel</title>
+<style>
+  :root { --accent:#0284c7; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f1f5f9; --ok:#16a34a; --bad:#dc2626; }
+  * { box-sizing:border-box; font-family: ui-sans-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+  body { margin:0; background:var(--bg); color:var(--ink); }
+  header { background:#0c4a6e; color:#fff; padding:14px 22px; display:flex; align-items:center; gap:12px; }
+  header .mark { width:34px; height:34px; border-radius:8px; background:#38bdf8; color:#082f49; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:19px; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header .sp { flex:1; }
+  header button { background:transparent; border:1px solid #7dd3fc; color:#e0f2fe; border-radius:8px; padding:6px 12px; cursor:pointer; }
+  main { max-width:880px; margin:26px auto; padding:0 16px 40px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:18px; }
+  .card h2 { margin:0 0 12px; font-size:15px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:9px; font-size:14px; }
+  .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:10px 16px; font-size:14px; cursor:pointer; margin-top:14px; }
+  .btn.ghost { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  .btn.small { padding:5px 10px; font-size:12.5px; margin-top:0; }
+  .btn.danger { background:#fff; color:var(--bad); border:1px solid var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; }
+  .stats { display:flex; gap:14px; }
+  .stat { flex:1; background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .stat b { font-size:24px; display:block; }
+  .stat span { color:var(--muted); font-size:13px; }
+  .msg { font-size:13.5px; margin-top:10px; min-height:18px; }
+  .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); }
+  .row { display:flex; gap:10px; } .row > div { flex:1; }
+  code.key { background:#fef9c3; border:1px solid #fde047; padding:8px 10px; border-radius:8px; display:block; word-break:break-all; font-size:13px; }
+  #loginView { max-width:420px; margin:60px auto; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div id="loginView">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div class="mark" style="width:34px;height:34px;border-radius:8px;background:#38bdf8;color:#082f49;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:19px">A</div>
+      <h2 style="margin:0">Domain Panel</h2>
+    </div>
+    <p style="color:var(--muted);font-size:13.5px;margin:4px 0 6px">Sign in with the email and password issued when your domain was provisioned.</p>
+    <label>Provisioning email</label>
+    <input id="loginEmail" type="email" autocomplete="username">
+    <label>Password</label>
+    <input id="loginPassword" type="password" autocomplete="current-password">
+    <button class="btn" id="loginBtn" style="width:100%">Sign in</button>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+</div>
+
+<div id="panelView" class="hidden">
+  <header>
+    <div class="mark">A</div>
+    <h1>AffinMail Domain Panel — <span id="hdrDomain"></span></h1>
+    <div class="sp"></div>
+    <button id="logoutBtn">Sign out</button>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Overview</h2>
+      <div class="stats">
+        <div class="stat"><b id="statMailboxes">–</b><span>Mailboxes</span></div>
+        <div class="stat"><b id="statAliases">–</b><span>Aliases</span></div>
+        <div class="stat"><b id="statOwner" style="font-size:15px;padding-top:6px">–</b><span>Owner</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Mailboxes</h2>
+      <table><thead><tr><th>Email</th><th>Quota (MB)</th><th>Status</th><th></th></tr></thead><tbody id="mbBody"></tbody></table>
+      <div class="row">
+        <div><label>New mailbox email</label><input id="mbEmail" placeholder="name@yourdomain"></div>
+        <div><label>Password</label><input id="mbPassword" type="password"></div>
+      </div>
+      <button class="btn" id="mbCreate">Create mailbox</button>
+      <div class="msg" id="mbMsg"></div>
+    </div>
+    <div class="card">
+      <h2>Aliases</h2>
+      <table><thead><tr><th>Source</th><th>Destination</th><th></th></tr></thead><tbody id="alBody"></tbody></table>
+      <div class="row">
+        <div><label>Source</label><input id="alSource" placeholder="alias@yourdomain"></div>
+        <div><label>Destination</label><input id="alDest" placeholder="real@anywhere"></div>
+      </div>
+      <button class="btn" id="alCreate">Create alias</button>
+      <div class="msg" id="alMsg"></div>
+    </div>
+    <div class="card">
+      <h2>API keys</h2>
+      <table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead><tbody id="keyBody"></tbody></table>
+      <div id="newKey"></div>
+      <div class="row"><div><label>Key name</label><input id="keyName" placeholder="e.g. billing sync"></div></div>
+      <button class="btn" id="keyCreate">Create API key</button>
+      <div class="msg" id="keyMsg"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const token = () => sessionStorage.getItem('aff_dom_token') || '';
+async function api(path, opts = {}) {
+  const r = await fetch('/api/v1' + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(token() ? { Authorization: 'Bearer ' + token() } : {}), ...(opts.headers || {}) },
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body?.error?.message || ('HTTP ' + r.status));
+  return body;
+}
+function msg(id, text, ok) { const el = $(id); el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'bad'); }
+
+async function loadAll() {
+  const ov = await api('/domain/overview');
+  $('hdrDomain').textContent = ov.domain;
+  $('statMailboxes').textContent = ov.mailboxes;
+  $('statAliases').textContent = ov.aliases;
+  $('statOwner').textContent = ov.email;
+  const mb = await api('/domain/mailboxes');
+  $('mbBody').innerHTML = mb.mailboxes.map(m => `<tr><td>${m.email}</td><td>${m.quota_mb}</td><td>${m.active ? 'Active' : 'Suspended'}</td>
+    <td><button class="btn ghost small" onclick="resetPw('${m.id}')">Reset password</button></td></tr>`).join('') || '<tr><td colspan="4">No mailboxes yet</td></tr>';
+  const al = await api('/domain/aliases');
+  $('alBody').innerHTML = al.aliases.map(a => `<tr><td>${a.source}</td><td>${a.destination}</td>
+    <td><button class="btn danger small" onclick="delAlias(${a.id})">Delete</button></td></tr>`).join('') || '<tr><td colspan="3">No aliases yet</td></tr>';
+  const keys = await api('/domain/api-keys');
+  $('keyBody').innerHTML = keys.api_keys.map(k => `<tr><td>${k.name || '—'}</td><td>${(k.created_at || '').slice(0, 10)}</td><td>${k.last_used_at ? k.last_used_at.slice(0, 10) : 'never'}</td>
+    <td><button class="btn danger small" onclick="delKey(${k.id})">Revoke</button></td></tr>`).join('') || '<tr><td colspan="4">No API keys yet</td></tr>';
+}
+async function resetPw(id) {
+  const pw = prompt('New password (min 8 characters):');
+  if (!pw) return;
+  try { await api('/domain/mailboxes/' + id + '/password', { method: 'PUT', body: JSON.stringify({ password: pw }) }); msg('mbMsg', 'Password updated.', true); }
+  catch (e) { msg('mbMsg', e.message, false); }
+}
+async function delAlias(id) { if (!confirm('Delete this alias?')) return; try { await api('/domain/aliases/' + id, { method: 'DELETE' }); loadAll(); } catch (e) { msg('alMsg', e.message, false); } }
+async function delKey(id) { if (!confirm('Revoke this API key?')) return; try { await api('/domain/api-keys/' + id, { method: 'DELETE' }); loadAll(); } catch (e) { msg('keyMsg', e.message, false); } }
+
+$('loginBtn').onclick = async () => {
+  try {
+    const r = await api('/domain/login', { method: 'POST', body: JSON.stringify({ email: $('loginEmail').value.trim(), password: $('loginPassword').value }) });
+    sessionStorage.setItem('aff_dom_token', r.token);
+    $('loginView').classList.add('hidden'); $('panelView').classList.remove('hidden');
+    await loadAll();
+  } catch (e) { msg('loginMsg', e.message, false); }
+};
+$('logoutBtn').onclick = async () => { try { await api('/domain/logout', { method: 'POST' }); } catch {} sessionStorage.removeItem('aff_dom_token'); location.reload(); };
+$('mbCreate').onclick = async () => {
+  try { await api('/domain/mailboxes', { method: 'POST', body: JSON.stringify({ email: $('mbEmail').value.trim(), password: $('mbPassword').value }) }); msg('mbMsg', 'Mailbox created.', true); $('mbEmail').value = ''; $('mbPassword').value = ''; loadAll(); }
+  catch (e) { msg('mbMsg', e.message, false); }
+};
+$('alCreate').onclick = async () => {
+  try { await api('/domain/aliases', { method: 'POST', body: JSON.stringify({ source: $('alSource').value.trim(), destination: $('alDest').value.trim() }) }); msg('alMsg', 'Alias created.', true); loadAll(); }
+  catch (e) { msg('alMsg', e.message, false); }
+};
+$('keyCreate').onclick = async () => {
+  try {
+    const r = await api('/domain/api-keys', { method: 'POST', body: JSON.stringify({ name: $('keyName').value.trim() }) });
+    $('newKey').innerHTML = '<p style="font-size:13px;color:var(--muted)">Store this key now — it is shown only once:</p><code class="key">' + r.key + '</code>';
+    loadAll();
+  } catch (e) { msg('keyMsg', e.message, false); }
+};
+if (token()) { $('loginView').classList.add('hidden'); $('panelView').classList.remove('hidden'); loadAll().catch(() => { sessionStorage.removeItem('aff_dom_token'); location.reload(); }); }
+</script>
+</body>
+</html>
