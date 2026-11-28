@@ -21,3 +21,16 @@ Design:
   /api/v1/domain/*; /api/v1/domain/login joins the public allowlist.
 - :2083 serves a standalone static panel (webmail/domain-panel/) —
   the webmail SPA on 443 and the admin panel on 2087 are untouched.
+
+## Completion (2026-11-28 night, master 2c6e9eb)
+Implemented as designed. Live verification matrix: owner provisioned
+via the admin endpoint; wrong owner password -> 401; login -> scoped
+session; overview shows only the owner's domain; cross-domain mailbox
+password change -> 404; creating a mailbox in another domain -> 403,
+in the own domain -> 200; API key authenticates the domain surface
+(200) but is rejected by admin routes (401) and by key management
+(401); a domain session is rejected by admin routes (401). :2083 now
+serves webmail/domain-panel/ (public title check passed); 443 webmail
+and 2087 admin panel untouched. Demo fixture kept for Rabbi:
+batch2.local owner gate@batch2.local (password given to him in chat).
+The verification API key was revoked after the tests.
