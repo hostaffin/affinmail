@@ -18,6 +18,9 @@ base64 = "0.22"
 uuid = { version = "1", features = ["v4", "serde"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1"] }
 bcrypt = "0.15"
+imap = { version = "2", default-features = false, features = ["tls"] }
+native-tls = "0.2"
+mail-parser = "0.9"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
