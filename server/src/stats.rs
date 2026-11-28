@@ -474,6 +474,10 @@ fn load_state() -> CollectorState {
 }
 
 fn save_state(state: &CollectorState) {
+    // The data dir may not exist on a fresh deploy; without it every cycle
+    // looks like a first run and global events are never counted (found at
+    // the Batch 4 gate, 2026-11-28).
+    let _ = std::fs::create_dir_all("/var/www/affinmail/data");
     let files: serde_json::Map<String, Value> = state
         .files
         .iter()
