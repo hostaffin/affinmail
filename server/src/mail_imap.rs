@@ -220,6 +220,21 @@ fn folder_counts_b(email: &str, password: &str, folder: &str) -> Result<(u64, u6
     Ok((total, unseen))
 }
 
+fn fetch_flags_b(email: &str, password: &str, folder: &str, uid: u32) -> Result<Vec<String>, String> {
+    let mut s = connect(email, password)?;
+    s.select(folder)
+        .map_err(|e| format!("imap select: {e}"))?;
+    let fetches = s
+        .uid_fetch(uid.to_string(), "(FLAGS)")
+        .map_err(|e| format!("imap fetch: {e}"))?;
+    let flags = fetches
+        .first()
+        .map(|f| f.flags().iter().map(flag_name).collect())
+        .unwrap_or_default();
+    let _ = s.logout();
+    Ok(flags)
+}
+
 fn append_b(email: &str, password: &str, folder: &str, content: &[u8]) -> Result<(), String> {
     let mut s = connect(email, password)?;
     if s.append(folder, content).is_err() {
@@ -443,6 +458,17 @@ pub async fn folder_counts(
     folder: String,
 ) -> Result<(u64, u64), String> {
     task::spawn_blocking(move || folder_counts_b(&email, &password, &folder))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+pub async fn fetch_flags(
+    email: String,
+    password: String,
+    folder: String,
+    uid: u32,
+) -> Result<Vec<String>, String> {
+    task::spawn_blocking(move || fetch_flags_b(&email, &password, &folder, uid))
         .await
         .map_err(|e| format!("join: {e}"))?
 }
