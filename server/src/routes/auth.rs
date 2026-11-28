@@ -60,8 +60,17 @@ pub async fn admin_login(
     let ip = client_ip(&headers);
     let ua = client_ua(&headers);
 
-    // Default admin root credentials or state admin token
-    if (u == "admin" || u == "root" || u == "admin@affinmail.local") && (!p.is_empty()) {
+    // Post-migration batch 3: real verification against panel_admins
+    // (bcrypt). No in-code fallback — an empty table means login is closed.
+    let verified_role = if crate::provision_db::database_configured() {
+        match crate::provision_db::connect_db().await {
+            Ok(c) => crate::panel_auth::verify_login(&c, &u, &p).await,
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    if let Some(role) = verified_role {
         let token = format!("aff_adm_{}", uuid::Uuid::new_v4().simple());
         let ts = chrono::Utc::now().to_rfc3339();
 
@@ -87,11 +96,11 @@ pub async fn admin_login(
         Ok(Json(json!({
             "status": "success",
             "token": token,
-            "role": "Super Admin",
+            "role": role,
             "expires_in": 86400,
             "user": {
                 "username": u,
-                "role": "Super Admin"
+                "role": role
             }
         })))
     } else {
@@ -254,4 +263,96 @@ pub async fn admin_logout(
         "status": "success",
         "message": "Logged out successfully"
     }))
+}
+
+#[derive(Deserialize)]
+pub struct CreateAdminPayload {
+    pub username: String,
+    pub password: String,
+    pub role: Option<String>,
+}
+
+/// POST /api/v1/admin/admins — create a panel admin (protected route).
+pub async fn create_admin(
+    State(_state): State<AppState>,
+    Json(payload): Json<CreateAdminPayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    if payload.username.trim().is_empty() || payload.password.len() < 10 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(
+                400,
+                "username required; password must be at least 10 characters",
+            )),
+        ));
+    }
+    let client = crate::provision_db::connect_db().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(500, format!("database error: {e}"))),
+        )
+    })?;
+    crate::panel_auth::create_admin(
+        &client,
+        payload.username.trim(),
+        &payload.password,
+        payload.role.as_deref().unwrap_or("Super Admin"),
+    )
+    .await
+    .map_err(|e| {
+        let code = if e.contains("duplicate key") { 409 } else { 500 };
+        (
+            StatusCode::from_u16(code).unwrap(),
+            Json(ErrorResponse::new(code, format!("could not create admin: {e}"))),
+        )
+    })?;
+    Ok(Json(json!({ "status": "success", "username": payload.username.trim() })))
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordPayload {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+/// POST /api/v1/auth/change-password — the session owner changes their
+/// own panel password (the ADMIN_TOKEN cannot, it has no username).
+pub async fn change_password(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<ChangePasswordPayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let username = crate::panel_auth::session_username(&state, &headers).ok_or((
+        StatusCode::UNAUTHORIZED,
+        Json(ErrorResponse::new(401, "A panel session is required")),
+    ))?;
+    if payload.new_password.len() < 10 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(
+                400,
+                "new password must be at least 10 characters",
+            )),
+        ));
+    }
+    let client = crate::provision_db::connect_db().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(500, format!("database error: {e}"))),
+        )
+    })?;
+    crate::panel_auth::change_password(
+        &client,
+        &username,
+        &payload.current_password,
+        &payload.new_password,
+    )
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(400, e)),
+        )
+    })?;
+    Ok(Json(json!({ "status": "success" })))
 }

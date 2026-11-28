@@ -4,6 +4,7 @@ pub mod jmap;
 pub mod provision_db;
 pub mod security_keys;
 pub mod spam_prefs;
+pub mod panel_auth;
 pub mod stats;
 pub mod state;
 pub mod totp;
@@ -44,6 +45,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/api/v1/auth/sso-token", post(routes::auth::sso_token))
         .route("/api/v1/auth/sso-exchange", post(routes::auth::sso_exchange))
         .route("/api/v1/auth/logout", post(routes::auth::admin_logout))
+        .route("/api/v1/auth/change-password", post(routes::auth::change_password))
         // Provisioning API (/api/v1/provision/*)
         .route(
             "/api/v1/provision/plans",
@@ -466,6 +468,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/jmap/session", get(jmap::session))
         .route("/jmap", post(jmap::jmap)).route("/jmap/", post(jmap::jmap))
         .route("/api/v1/admin/roles", get(routes::infra::roles))
+        .route("/api/v1/admin/admins", post(routes::auth::create_admin))
         .route("/api/v1/api-keys", get(routes::api_keys::list_api_keys).post(routes::api_keys::create_api_key))
         .route("/api/v1/api-keys/{id}", delete(routes::api_keys::delete_api_key))
         .route("/api/v1/api-keys/{id}/rotate", post(routes::api_keys::rotate_api_key))
@@ -474,6 +477,10 @@ pub fn create_app(state: AppState) -> Router {
         .route("/api/v1/batch/suspend", post(routes::batch::batch_suspend))
         .route("/api/v1/batch/dns-check", post(routes::batch::batch_dns_check))
         .route("/api/v1/jobs/{id}", get(routes::batch::get_batch_job))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::panel_auth::auth_guard,
+        ))
         .layer(cors)
         .with_state(state)
 }
