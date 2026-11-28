@@ -7,206 +7,188 @@
 <title>AffinMail — Domain Panel</title>
 <style>
 :root{
-  --navy-950:#061523; --navy-900:#0a2033; --navy-800:#0f2c44; --navy-700:#173c59;
-  --sky-300:#7dd3fc; --sky-400:#38bdf8; --sky-500:#0ea5e9; --sky-600:#0284c7; --sky-700:#0369a1;
-  --ink:#0d1b2a; --ink-soft:#33485e; --muted:#61748a; --muted-2:#8296ab;
-  --bg:#eef3f9; --paper:#ffffff; --line:#dde5ef; --line-soft:#eef2f7;
-  --ok:#0d8a5f; --ok-bg:#e6f6ef; --ok-line:#bfe6d5;
-  --warn:#a9630b; --warn-bg:#fdf1dd; --warn-line:#f2dcb4;
-  --bad:#c0392b; --bad-bg:#fdecea; --bad-line:#f3cec8;
-  --r-sm:8px; --r:14px; --r-lg:20px;
-  --sh-1:0 1px 2px rgba(13,27,42,.05), 0 1px 3px rgba(13,27,42,.04);
-  --sh-2:0 6px 16px -6px rgba(13,27,42,.14), 0 2px 6px -2px rgba(13,27,42,.06);
-  --sh-3:0 28px 56px -20px rgba(6,21,35,.5);
+  --ink:#0d1522; --ink-soft:#3a4a5e; --muted:#66768a; --muted-2:#8d9aab;
+  --bg:#f4f5f7; --paper:#ffffff; --line:#d7dee8; --line-2:#e6ebf1;
+  --navy:#0e1626; --navy-2:#16202f; --navy-ink:#c8d3e0; --navy-ink-dim:#8595a8;
+  --accent:#1d4ed8; --accent-dark:#1a44bd; --accent-bg:#eef2fd;
+  --ok:#0f7a4d; --ok-bg:#eef7f1; --ok-line:#c3e0cf;
+  --warn:#8a5a00; --warn-bg:#faf3e2; --warn-line:#e7d6a8;
+  --bad:#b42318; --bad-bg:#fdeeed; --bad-line:#f0cbc7;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
 }
-*,*::before,*::after{box-sizing:border-box}
+*,*::before,*::after{box-sizing:border-box;border-radius:0}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 button,input{font:inherit;color:inherit}
 .hidden{display:none!important}
 .muted{color:var(--muted)}
-:focus-visible{outline:2px solid var(--sky-500);outline-offset:2px;border-radius:4px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .icon{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .icon.sm{width:15px;height:15px}
 .icon.lg{width:22px;height:22px}
 
-/* ---------- brand mark ---------- */
-.mark{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:none;
-  background:linear-gradient(150deg,var(--sky-300),var(--sky-500) 55%,var(--sky-700));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 8px 18px -8px rgba(2,132,199,.85)}
-.mark svg{width:22px;height:22px}
+/* ---------- brand mark: square, bordered ---------- */
+.mark{width:36px;height:36px;display:grid;place-items:center;flex:none;border:1px solid var(--line);background:#fff}
+.mark svg{width:20px;height:20px}
+.mark.on-dark{border-color:rgba(255,255,255,.22);background:var(--navy-2)}
 
-/* ---------- login ---------- */
-.login{position:fixed;inset:0;display:grid;place-items:center;padding:24px;overflow:auto;
-  background:radial-gradient(1200px 620px at 50% -8%,rgba(56,189,248,.20),transparent 62%),
-    linear-gradient(158deg,var(--navy-950),var(--navy-900) 52%,var(--navy-800))}
-.login::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
-  background-image:linear-gradient(rgba(125,211,252,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(125,211,252,.07) 1px,transparent 1px);
-  background-size:44px 44px;mask-image:radial-gradient(700px 460px at 50% 30%,#000,transparent 78%)}
-.login-card{position:relative;width:min(430px,100%);background:var(--paper);border-radius:var(--r-lg);
-  padding:34px 34px 30px;box-shadow:var(--sh-3);border:1px solid rgba(255,255,255,.6)}
+/* ---------- login: flat solid bg, sharp card ---------- */
+.login{position:fixed;inset:0;display:grid;place-items:center;padding:24px;overflow:auto;background:var(--navy)}
+.login-card{width:min(420px,100%);background:var(--paper);border:1px solid #20304a;
+  padding:32px;box-shadow:6px 6px 0 0 #18233a}
 .login .brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}
 .brand-name{font-size:15px;font-weight:650;letter-spacing:-.01em}
 .brand-sub{font-size:12px;color:var(--muted);letter-spacing:.02em}
-.login h1{font-size:24px;line-height:1.2;letter-spacing:-.025em;margin:0 0 8px;font-weight:680}
-.login .lead{margin:0 0 22px;color:var(--muted);font-size:13.5px;max-width:36ch}
-.login-back{position:relative;margin-top:22px;text-align:center;font-size:11.5px;color:var(--muted-2)}
+.login h1{font-size:22px;line-height:1.25;letter-spacing:-.025em;margin:0 0 8px;font-weight:660}
+.login .lead{margin:0 0 22px;color:var(--muted);font-size:13px;max-width:38ch}
+.login-back{margin-top:22px;font-size:11px;color:var(--muted-2);letter-spacing:.04em;text-transform:uppercase}
 
 /* ---------- fields ---------- */
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-label{font-size:12.5px;font-weight:550;color:var(--ink-soft);letter-spacing:.005em}
-input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:#fff;
-  font-size:13.5px;transition:border-color .15s,box-shadow .15s}
+label{font-size:11px;font-weight:600;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
+input{width:100%;padding:10px 12px;border:1px solid var(--line);background:#fff;
+  font-size:13.5px;transition:border-color .12s}
 input::placeholder{color:var(--muted-2)}
-input:focus{outline:none;border-color:var(--sky-400);box-shadow:0 0 0 3px rgba(14,165,233,.16)}
+input:focus{outline:none;border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 
-/* ---------- buttons ---------- */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13.5px;font-weight:550;
-  padding:10px 16px;border-radius:var(--r-sm);border:1px solid transparent;cursor:pointer;white-space:nowrap;
-  transition:background .15s,border-color .15s,box-shadow .15s,filter .15s}
-.btn-primary{background:linear-gradient(180deg,var(--sky-500),var(--sky-600));color:#fff;
-  box-shadow:0 1px 2px rgba(2,132,199,.35),inset 0 1px 0 rgba(255,255,255,.22)}
-.btn-primary:hover{filter:brightness(1.06)}
+/* ---------- buttons: square, flat ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;font-weight:600;
+  letter-spacing:.02em;padding:10px 16px;border:1px solid transparent;cursor:pointer;white-space:nowrap;
+  transition:background .12s,border-color .12s,color .12s}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-dark);border-color:var(--accent-dark)}
 .btn-ghost{background:#fff;border-color:var(--line);color:var(--ink-soft)}
-.btn-ghost:hover{background:var(--line-soft);border-color:#cdd9e6}
+.btn-ghost:hover{background:var(--bg);border-color:#c2ccd9}
 .btn-danger{background:#fff;border-color:var(--bad-line);color:var(--bad)}
 .btn-danger:hover{background:var(--bad-bg)}
-.btn-sm{padding:6px 11px;font-size:12.5px;border-radius:7px;gap:6px}
+.btn-sm{padding:6px 10px;font-size:12px;gap:6px}
 .btn-block{width:100%}
-.btn:disabled{opacity:.6;cursor:not-allowed;filter:none}
-.btn.loading{color:transparent!important;position:relative}
-.btn.loading::after{content:"";position:absolute;width:14px;height:14px;border-radius:50%;
-  border:2px solid currentColor;border-top-color:transparent;animation:spin .7s linear infinite;color:#fff}
-.btn-ghost.loading::after,.btn-danger.loading::after{color:var(--sky-600)}
-@keyframes spin{to{transform:rotate(1turn)}}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.loading{cursor:progress;opacity:.55}
 
 /* ---------- messages ---------- */
-.msg{display:none;align-items:flex-start;gap:8px;margin-top:14px;padding:10px 12px;border-radius:var(--r-sm);
-  font-size:13px;line-height:1.45;border:1px solid transparent}
+.msg{display:none;margin-top:14px;padding:10px 12px;font-size:13px;line-height:1.45;border:1px solid transparent}
 .msg.ok{display:block;background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
 .msg.bad{display:block;background:var(--bad-bg);border-color:var(--bad-line);color:var(--bad)}
 
 /* ---------- app shell ---------- */
 .app{display:flex;min-height:100vh}
-.sidebar{position:fixed;z-index:40;top:0;left:0;bottom:0;width:264px;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,var(--navy-900),var(--navy-950));color:#cfe0ee;padding:18px 14px;
-  border-right:1px solid rgba(255,255,255,.05);transition:transform .22s ease}
-.side-brand{display:flex;align-items:center;gap:11px;padding:6px 8px 18px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:14px}
+.sidebar{position:fixed;z-index:40;top:0;left:0;bottom:0;width:250px;display:flex;flex-direction:column;
+  background:var(--navy);color:var(--navy-ink);padding:16px 12px;border-right:1px solid #1c2638;transition:transform .22s ease}
+.side-brand{display:flex;align-items:center;gap:11px;padding:6px 8px 16px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:14px}
 .side-brand .brand-name{color:#fff}
-.side-brand .brand-sub{color:#8fb0ca}
-.nav{display:flex;flex-direction:column;gap:3px}
-.nav-item{position:relative;display:flex;align-items:center;gap:11px;width:100%;text-align:left;
-  padding:9px 11px;border:none;background:transparent;color:#a9c2d8;border-radius:9px;cursor:pointer;
-  font-size:13.5px;font-weight:500;transition:background .15s,color .15s}
-.nav-item:hover{background:rgba(125,211,252,.09);color:#e6f2fb}
-.nav-item.active{background:linear-gradient(90deg,rgba(56,189,248,.20),rgba(56,189,248,.06));color:#fff;font-weight:600}
-.nav-item.active::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--sky-400)}
-.nav-ico{display:grid;place-items:center;opacity:.9}
-.nav-item.active .nav-ico{color:var(--sky-300);opacity:1}
+.side-brand .brand-sub{color:var(--navy-ink-dim)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  padding:9px 11px;border:1px solid transparent;background:transparent;color:var(--navy-ink);cursor:pointer;
+  font-size:13.5px;font-weight:500;transition:background .12s,color .12s}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.nav-ico{display:grid;place-items:center;opacity:.85}
+.nav-item.active .nav-ico{opacity:1}
 .side-foot{margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
-.btn-logout{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border-radius:9px;
-  background:transparent;border:1px solid rgba(255,255,255,.12);color:#cfe0ee;cursor:pointer;font-size:13.5px;transition:background .15s,color .15s}
-.btn-logout:hover{background:rgba(220,38,38,.16);border-color:rgba(248,113,113,.4);color:#fecaca}
+.btn-logout{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;
+  background:transparent;border:1px solid rgba(255,255,255,.16);color:var(--navy-ink);cursor:pointer;font-size:13px;transition:background .12s,color .12s,border-color .12s}
+.btn-logout:hover{background:rgba(220,38,38,.18);border-color:rgba(248,113,113,.45);color:#fecaca}
 
-.content{flex:1;min-width:0;margin-left:264px;display:flex;flex-direction:column}
+.content{flex:1;min-width:0;margin-left:250px;display:flex;flex-direction:column}
 .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;
-  padding:14px 26px;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.menu-btn{display:none;padding:8px;border:1px solid var(--line);background:#fff;border-radius:9px;cursor:pointer;color:var(--ink-soft)}
+  padding:14px 26px;background:#fff;border-bottom:1px solid var(--line)}
+.menu-btn{display:none;padding:8px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--ink-soft)}
 .topbar-titles{min-width:0}
-.topbar h1{font-size:19px;font-weight:650;letter-spacing:-.02em;margin:0}
+.topbar h1{font-size:17px;font-weight:650;letter-spacing:-.02em;margin:0}
 .topbar .sub{font-size:12.5px;color:var(--muted);margin:1px 0 0}
 .topbar-sp{flex:1}
-.domain-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;
-  background:#f0f7fe;border:1px solid #d6e9f9;color:var(--sky-700);font-family:var(--mono);font-size:12.5px;font-weight:500;max-width:42ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.domain-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--sky-500);flex:none}
+.domain-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;
+  background:#fff;border:1px solid var(--line);color:var(--ink-soft);font-family:var(--mono);font-size:12px;max-width:42ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.domain-chip .dot{width:7px;height:7px;background:var(--accent);flex:none}
 
-.views{width:100%;max-width:1080px;margin:0 auto;padding:26px 26px 64px;animation:rise .3s ease both}
-@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.views{width:100%;max-width:1040px;margin:0 auto;padding:26px 26px 64px;animation:rise .28s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}}
 
 /* ---------- cards + sections ---------- */
-.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh-1)}
-.card+.card{margin-top:18px}
-.card-title{font-size:14.5px;font-weight:620;letter-spacing:-.01em;margin:0}
+.card{background:var(--paper);border:1px solid var(--line)}
+.card+.card{margin-top:16px}
+.card-title{font-size:14px;font-weight:650;letter-spacing:-.01em;margin:0}
 .pad{padding:20px}
-.card-head{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:16px}
-.card-desc{font-size:12.5px;color:var(--muted);margin:3px 0 0;max-width:60ch}
+.card-head{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;margin-bottom:16px}
+.card-desc{font-size:12.5px;color:var(--muted);margin:3px 0 0;max-width:62ch}
 
 /* hero */
-.hero{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px 26px;flex-wrap:wrap;
-  background:linear-gradient(120deg,#fff 55%,#f4f9fe);border-color:#d9e9f7}
-.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--sky-600);margin:0 0 8px}
-.hero-domain{font-size:30px;font-weight:700;letter-spacing:-.03em;margin:0;font-family:var(--mono);word-break:break-all}
+.hero{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:22px 24px;flex-wrap:wrap}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.hero-domain{font-size:26px;font-weight:680;letter-spacing:-.025em;margin:0;font-family:var(--mono);word-break:break-all}
 .hero-owner{text-align:right;min-width:0}
-.hero-owner .lbl{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-2);display:block;margin-bottom:5px}
+.hero-owner .lbl{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);display:block;margin-bottom:5px}
 .hero-owner strong{font-size:14px;font-weight:600;font-family:var(--mono);word-break:break-all}
 
 /* stats */
-.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:18px}
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:16px}
 .stat{position:relative;padding:20px;display:flex;flex-direction:column;gap:4px}
-.stat .stat-ico{position:absolute;top:18px;right:18px;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;
-  background:#f0f7fe;border:1px solid #d9e9f7;color:var(--sky-600)}
-.stat b{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1.15}
-.stat .lbl{font-size:13px;color:var(--muted)}
+.stat .stat-ico{position:absolute;top:18px;right:18px;width:34px;height:34px;display:grid;place-items:center;
+  border:1px solid var(--line);background:#fff;color:var(--accent)}
+.stat b{font-size:28px;font-weight:700;letter-spacing:-.03em;line-height:1.15;font-family:var(--mono)}
+.stat .lbl{font-size:12px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
 .stat-link{margin-top:12px;align-self:flex-start;background:none;border:none;padding:0;cursor:pointer;
-  color:var(--sky-700);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:5px}
-.stat-link:hover{color:var(--sky-500)}
+  color:var(--accent);font-size:12px;font-weight:600;letter-spacing:.02em;display:inline-flex;align-items:center;gap:5px}
+.stat-link:hover{color:var(--accent-dark);text-decoration:underline}
 
 /* forms */
 .inline-form{display:grid;grid-template-columns:1fr 1fr auto;gap:14px;align-items:end}
 .inline-form .field{margin:0}
-.inline-form.four{grid-template-columns:1fr 1fr auto}
-.inline-form .btn{margin-bottom:1px}
+.inline-form.four{grid-template-columns:1fr auto}
+.inline-form .btn{align-self:end}
 
 /* tables */
 .table-head{display:flex;align-items:center;gap:10px;padding:18px 20px 0}
-.count-pill{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted);background:var(--line-soft);
-  border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-family:var(--mono)}
+.count-tag{margin-left:auto;font-size:12px;font-weight:600;color:var(--ink-soft);background:#fff;
+  border:1px solid var(--line);padding:2px 9px;font-family:var(--mono)}
 .table-wrap{overflow-x:auto;padding:6px 8px 8px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{text-align:left;font-size:11.5px;font-weight:600;color:var(--muted);letter-spacing:.02em;
+th{text-align:left;font-size:10.5px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;
   padding:12px 12px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
-tbody tr{transition:background .12s}
-tbody tr:hover{background:#f8fbfe}
+td{padding:12px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+tbody tr{transition:background .1s}
+tbody tr:hover{background:#f4f5f7}
 tbody tr:last-child td{border-bottom:none}
 .cell-mono{font-family:var(--mono);font-size:12.5px;color:var(--ink-soft)}
 .cell-email{font-family:var(--mono);font-size:12.5px}
 .cell-actions{text-align:right;white-space:nowrap}
-.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid}
-.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
-.pill-ok{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)}
-.pill-warn{color:var(--warn);background:var(--warn-bg);border-color:var(--warn-line)}
+.tag{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  padding:3px 8px;border:1px solid}
+.tag-ok{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)}
+.tag-warn{color:var(--warn);background:var(--warn-bg);border-color:var(--warn-line)}
 
 /* empty state */
 .empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:44px 20px;text-align:center;color:var(--muted)}
-.empty svg{color:#b7c6d6;margin-bottom:6px}
+.empty svg{color:#adbacb;margin-bottom:6px}
 .empty strong{color:var(--ink);font-size:14px;font-weight:600}
 .empty p{margin:0;font-size:12.5px;max-width:42ch}
 
 /* revealed key */
-.reveal{margin-top:16px;padding:16px;border-radius:var(--r-sm);background:#fffbeb;border:1px solid #f6e3a8}
-.reveal strong{display:block;font-size:12.5px;color:#8a5a09;margin-bottom:8px;font-weight:620}
+.reveal{margin-top:16px;padding:16px;background:#fafbfd;border:1px solid var(--line)}
+.reveal strong{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 .reveal-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-radius:7px;padding:9px 11px;
-  font-family:var(--mono);font-size:12.5px;word-break:break-all;color:#5c4708}
+code.key{flex:1;min-width:200px;background:#fff;border:1px solid var(--line);padding:9px 11px;
+  font-family:var(--mono);font-size:12.5px;word-break:break-all;color:var(--ink)}
 
 /* dialog */
-.dialog{border:none;border-radius:var(--r-lg);padding:0;width:min(440px,92vw);box-shadow:var(--sh-3);color:var(--ink)}
-.dialog::backdrop{background:rgba(6,21,35,.5);backdrop-filter:blur(2px)}
-.dialog .pad{padding:26px}
-.dialog h3{font-size:17px;font-weight:660;letter-spacing:-.02em;margin:0 0 4px}
-.dialog .sub{font-size:12.5px;color:var(--muted);margin:0 0 18px}
+.dialog{border:1px solid var(--line);padding:0;width:min(430px,92vw);color:var(--ink);
+  box-shadow:6px 6px 0 0 rgba(13,21,34,.16)}
+.dialog::backdrop{background:rgba(14,22,38,.6)}
+.dialog .pad{padding:24px}
+.dialog h3{font-size:16px;font-weight:660;letter-spacing:-.02em;margin:0 0 4px}
+.dialog .sub{font-size:12.5px;color:var(--muted);margin:0 0 18px;word-break:break-word}
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
 
 /* scrim for mobile sidebar */
-.scrim{display:none;position:fixed;inset:0;z-index:35;background:rgba(6,21,35,.45)}
+.scrim{display:none;position:fixed;inset:0;z-index:35;background:rgba(14,22,38,.5)}
 .app.sidebar-open .scrim{display:block}
 
 /* ---------- responsive ---------- */
 @media (max-width:860px){
-  .sidebar{transform:translateX(-100%);box-shadow:var(--sh-3)}
+  .sidebar{transform:translateX(-100%)}
   .app.sidebar-open .sidebar{transform:translateX(0)}
   .content{margin-left:0}
   .menu-btn{display:inline-flex}
@@ -215,7 +197,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
   .domain-chip{display:none}
   .inline-form,.inline-form.four{grid-template-columns:1fr}
   .stat-grid{grid-template-columns:1fr}
-  .hero-domain{font-size:24px}
+  .hero-domain{font-size:22px}
   .hero-owner{text-align:left}
 }
 @media (prefers-reduced-motion:reduce){
@@ -230,7 +212,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
   <div class="login-card">
     <div class="brand">
       <span class="mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32"><path d="M16 8 23 24M16 8 9 24M12.4 18h7.2" stroke="#062033" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        <svg viewBox="0 0 32 32"><path d="M16 6 24 26M16 6 8 26M11.6 19h8.8" stroke="#0d1522" stroke-width="2.6" stroke-linecap="square" fill="none"/></svg>
       </span>
       <div><div class="brand-name">AffinMail</div><div class="brand-sub">Domain Panel</div></div>
     </div>
@@ -258,18 +240,18 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
 
   <aside class="sidebar">
     <div class="side-brand">
-      <span class="mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32"><path d="M16 8 23 24M16 8 9 24M12.4 18h7.2" stroke="#062033" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <span class="mark on-dark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><path d="M16 6 24 26M16 6 8 26M11.6 19h8.8" stroke="#ffffff" stroke-width="2.6" stroke-linecap="square" fill="none"/></svg>
       </span>
       <div><div class="brand-name">AffinMail</div><div class="brand-sub">Domain Panel</div></div>
     </div>
     <nav class="nav" aria-label="Sections">
       <button class="nav-item active" data-view="overview">
-        <span class="nav-ico"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+        <span class="nav-ico"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
         <span>Overview</span>
       </button>
       <button class="nav-item" data-view="mailboxes">
-        <span class="nav-ico"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span>
+        <span class="nav-ico"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14"/><path d="m3 7 9 6 9-6"/></svg></span>
         <span>Mailboxes</span>
       </button>
       <button class="nav-item" data-view="aliases">
@@ -277,7 +259,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
         <span>Aliases</span>
       </button>
       <button class="nav-item" data-view="keys">
-        <span class="nav-ico"><svg class="icon" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.8 12.2 20 3l2 2-2 2 2 2-3 3-2-2-2.2 2.2"/></svg></span>
+        <span class="nav-ico"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="9" width="12" height="6"/><rect x="6" y="11" width="2" height="2"/><path d="M15 12h6M18 12v3M21 12v2"/></svg></span>
         <span>API Keys</span>
       </button>
     </nav>
@@ -317,7 +299,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
         </div>
         <div class="stat-grid">
           <article class="card stat">
-            <span class="stat-ico"><svg class="icon lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span>
+            <span class="stat-ico"><svg class="icon lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14"/><path d="m3 7 9 6 9-6"/></svg></span>
             <b id="statMailboxes">–</b><span class="lbl">Mailboxes</span>
             <button class="stat-link" data-view="mailboxes">Manage mailboxes</button>
           </article>
@@ -345,12 +327,12 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
           <div class="msg" id="mbMsg"></div>
         </div>
         <div class="card">
-          <div class="table-head"><h3 class="card-title">Mailboxes</h3><span class="count-pill" id="mbCount">0</span></div>
+          <div class="table-head"><h3 class="card-title">Mailboxes</h3><span class="count-tag" id="mbCount">0</span></div>
           <div class="table-wrap" id="mbWrap">
             <table><thead><tr><th>Email</th><th>Quota</th><th>Status</th><th></th></tr></thead><tbody id="mbBody"></tbody></table>
           </div>
           <div class="empty hidden" id="mbEmpty">
-            <svg class="icon lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+            <svg class="icon lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14"/><path d="m3 7 9 6 9-6"/></svg>
             <strong>No mailboxes yet</strong>
             <p>Create your first mailbox to start sending and receiving mail for this domain.</p>
           </div>
@@ -373,7 +355,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
           <div class="msg" id="alMsg"></div>
         </div>
         <div class="card">
-          <div class="table-head"><h3 class="card-title">Aliases</h3><span class="count-pill" id="alCount">0</span></div>
+          <div class="table-head"><h3 class="card-title">Aliases</h3><span class="count-tag" id="alCount">0</span></div>
           <div class="table-wrap" id="alWrap">
             <table><thead><tr><th>Source</th><th>Destination</th><th></th></tr></thead><tbody id="alBody"></tbody></table>
           </div>
@@ -393,7 +375,6 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
           </div>
           <form id="keyForm" class="inline-form four">
             <div class="field"><label for="keyName">Key name</label><input id="keyName" type="text" placeholder="e.g. billing sync" required></div>
-            <span></span>
             <button class="btn btn-primary" id="keyCreate" type="submit">
               <svg class="icon sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Create key
             </button>
@@ -402,12 +383,12 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
           <div class="msg" id="keyMsg"></div>
         </div>
         <div class="card">
-          <div class="table-head"><h3 class="card-title">API keys</h3><span class="count-pill" id="keyCount">0</span></div>
+          <div class="table-head"><h3 class="card-title">API keys</h3><span class="count-tag" id="keyCount">0</span></div>
           <div class="table-wrap" id="keyWrap">
             <table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead><tbody id="keyBody"></tbody></table>
           </div>
           <div class="empty hidden" id="keyEmpty">
-            <svg class="icon lg" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.8 12.2 20 3l2 2-2 2 2 2-3 3-2-2-2.2 2.2"/></svg>
+            <svg class="icon lg" viewBox="0 0 24 24"><rect x="3" y="9" width="12" height="6"/><rect x="6" y="11" width="2" height="2"/><path d="M15 12h6M18 12v3M21 12v2"/></svg>
             <strong>No API keys yet</strong>
             <p>Create a key to let your own tools manage this domain.</p>
           </div>
@@ -505,12 +486,12 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
     setEmpty('mbWrap', 'mbEmpty', list.length > 0);
     $('mbCount').textContent = list.length;
     $('mbBody').innerHTML = list.map(function (m) {
-      var status = m.active ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-warn">Suspended</span>';
+      var status = m.active ? '<span class="tag tag-ok">Active</span>' : '<span class="tag tag-warn">Suspended</span>';
       return '<tr><td class="cell-email">' + esc(m.email) + '</td>'
         + '<td class="cell-mono">' + esc(m.quota_mb) + ' MB</td>'
         + '<td>' + status + '</td>'
         + '<td class="cell-actions"><button class="btn btn-sm btn-ghost" data-action="reset" data-id="' + esc(m.id) + '" data-email="' + esc(m.email) + '">'
-        + '<svg class="icon sm" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg> Reset password</button></td></tr>';
+        + '<svg class="icon sm" viewBox="0 0 24 24"><rect x="3" y="9" width="12" height="6"/><rect x="6" y="11" width="2" height="2"/><path d="M15 12h6M18 12v3M21 12v2"/></svg> Reset password</button></td></tr>';
     }).join('');
   }
   function renderAliases(list) {
@@ -520,7 +501,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
       return '<tr><td class="cell-email">' + esc(a.source) + '</td>'
         + '<td class="cell-mono">' + esc(a.destination) + '</td>'
         + '<td class="cell-actions"><button class="btn btn-sm btn-danger" data-action="del-alias" data-id="' + esc(a.id) + '">'
-        + '<svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m1 0v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V7"/></svg> Delete</button></td></tr>';
+        + '<svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7v13h12V7"/><path d="M10 11v6M14 11v6"/></svg> Delete</button></td></tr>';
     }).join('');
   }
   function renderKeys(list) {
@@ -531,7 +512,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
         + '<td class="cell-mono">' + esc(dd(k.created_at) || '—') + '</td>'
         + '<td class="cell-mono">' + (k.last_used_at ? esc(dd(k.last_used_at)) : '<span class="muted">Never</span>') + '</td>'
         + '<td class="cell-actions"><button class="btn btn-sm btn-danger" data-action="del-key" data-id="' + esc(k.id) + '">'
-        + '<svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m1 0v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V7"/></svg> Revoke</button></td></tr>';
+        + '<svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7v13h12V7"/><path d="M10 11v6M14 11v6"/></svg> Revoke</button></td></tr>';
     }).join('');
   }
 
@@ -648,7 +629,7 @@ code.key{flex:1;min-width:200px;background:#fff;border:1px solid #f0dfae;border-
       $('newKey').innerHTML = '<div class="reveal"><strong>Store this key now — it is shown only once.</strong>'
         + '<div class="reveal-row"><code class="key">' + esc(r.key) + '</code>'
         + '<button class="btn btn-sm btn-ghost" id="copyKey" type="button">'
-        + '<svg class="icon sm" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg> Copy</button></div></div>';
+        + '<svg class="icon sm" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg> Copy</button></div></div>';
       $('keyName').value = '';
       setMsg('keyMsg', '', true);
       var cb = $('copyKey');
