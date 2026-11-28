@@ -650,14 +650,22 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
                                 email.to_string(), password.to_string(), folder.to_string(), uid
                             ).await;
                             if let Ok(msg) = rfc822 {
-                                // append to target
-                                let _ = mail_imap::append_message(
+                                // Append FIRST; delete the source only when the
+                                // append succeeded (GLM review, 2026-11-28:
+                                // ignoring the append result deleted mail
+                                // permanently when the append failed).
+                                match mail_imap::append_message(
                                     email.to_string(), password.to_string(), target_folder.to_string(), msg
-                                ).await;
-                                // delete from source
-                                let _ = mail_imap::delete_message(
-                                    email.to_string(), password.to_string(), folder.to_string(), uid
-                                ).await;
+                                ).await {
+                                    Ok(_) => {
+                                        let _ = mail_imap::delete_message(
+                                            email.to_string(), password.to_string(), folder.to_string(), uid
+                                        ).await;
+                                    }
+                                    Err(_) => {
+                                        not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "move: append failed" }));
+                                    }
+                                }
                             } else {
                                 not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "move: fetch failed" }));
                             }
@@ -669,7 +677,10 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
             if !handled {
                 not_updated.insert(id.clone(), json!({ "type": "serverFail", "description": "unsupported update" }));
             }
-            updated.insert(id.clone(), json!(null));
+            // An id must never appear in both maps (RFC 8620 s5.3; GLM review).
+            if !not_updated.contains_key(&id) {
+                updated.insert(id.clone(), json!(null));
+            }
         }
     }
 

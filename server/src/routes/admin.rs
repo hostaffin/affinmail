@@ -1086,7 +1086,11 @@ pub async fn list_queue() -> impl IntoResponse {
 }
 
 fn valid_queue_id(id: &str) -> bool {
-    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())
+    // Real Postfix queue ids are 10+ chars. "ALL" must never reach postsuper:
+    // `postsuper -d ALL` deletes the ENTIRE queue (GLM review, 2026-11-28).
+    id.len() >= 8
+        && !id.eq_ignore_ascii_case("ALL")
+        && id.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 // DELETE /api/v1/queue/:id

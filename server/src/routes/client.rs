@@ -244,7 +244,10 @@ pub async fn create_domain_mailbox(
         };
         let domain_id = domain_row.map(|d| d.id);
         let quota = payload.quota_mb.unwrap_or(5120) as i32;
-        let created = match crate::provision_db::create_mailbox(&client, domain_id, &email, payload.password.as_deref().unwrap_or("changeme"), quota).await {
+        // Never a known default password (GLM review, 2026-11-28): when the
+        // caller omits one, generate a random secret like the admin path.
+        let generated_pw = uuid::Uuid::new_v4().to_string();
+        let created = match crate::provision_db::create_mailbox(&client, domain_id, &email, payload.password.as_deref().unwrap_or(&generated_pw), quota).await {
             Ok(m) => m,
             Err(e) => {
                 return Err((

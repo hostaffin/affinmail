@@ -21,6 +21,22 @@ pub fn dkim_dns_record(public_key: &str) -> String {
 }
 
 /// Path where Rspamd expects the DKIM private key for a given domain and selector suffix.
+/// Domain/selector values are interpolated into a filesystem path; reject
+/// anything outside a strict DNS-label charset (GLM review, 2026-11-28:
+/// path traversal via a crafted domain name).
+fn validate_key_name_part(v: &str) -> io::Result<()> {
+    let ok = !v.is_empty()
+        && !v.contains("..")
+        && !v.starts_with(['.', '-'])
+        && !v.ends_with(['.', '-'])
+        && v.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-');
+    if ok {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid domain/selector for key path"))
+    }
+}
+
 pub fn dkim_key_file_path(domain: &str, selector_suffix: &str) -> String {
     format!("/var/lib/rspamd/dkim/{}.{}.key", domain, selector_suffix)
 }
@@ -30,6 +46,8 @@ pub fn dkim_key_file_path(domain: &str, selector_suffix: &str) -> String {
 /// If the write fails, the caller should log the error and continue — domain
 /// creation must not fail because of permissions (PM handles deploy-time setup).
 pub fn write_dkim_key_file(domain: &str, selector_suffix: &str, pem: &str) -> io::Result<()> {
+    validate_key_name_part(domain)?;
+    validate_key_name_part(selector_suffix)?;
     let path = dkim_key_file_path(domain, selector_suffix);
     std::fs::write(&path, pem)?;
     Ok(())
@@ -37,6 +55,8 @@ pub fn write_dkim_key_file(domain: &str, selector_suffix: &str, pem: &str) -> io
 
 /// Delete the Rspamd DKIM key file for a given domain and selector suffix (best‑effort).
 pub fn delete_dkim_key_file(domain: &str, selector_suffix: &str) -> io::Result<()> {
+    validate_key_name_part(domain)?;
+    validate_key_name_part(selector_suffix)?;
     let path = dkim_key_file_path(domain, selector_suffix);
     if Path::new(&path).exists() {
         std::fs::remove_file(&path)?;
