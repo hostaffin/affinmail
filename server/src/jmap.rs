@@ -529,28 +529,29 @@ fn build_rfc822_from_jmap(obj: &Value, from_email: &str) -> Vec<u8> {
         .and_then(|b| b.get("value").and_then(|v| v.as_str()))
         .unwrap_or("");
 
+    let fmt_addr = |n: &str, e: &str| -> String {
+        if n.trim().is_empty() {
+            e.to_string()
+        } else {
+            format!("{} <{}>", n, e)
+        }
+    };
     let mut headers = String::new();
-    headers.push_str("From: ");
-    headers.push_str(&sanitize_header(&format!("{} <{}>", from_name, from_addr)));
-    headers.push_str("\r\nTo: ");
-    for (n, e) in &to_addrs {
-        headers.push_str(&sanitize_header(&format!("{} <{}>", n, e)));
-        headers.push_str("\r\n");
+    headers.push_str(&format!(
+        "From: {}\r\n",
+        sanitize_header(&fmt_addr(&from_name, &from_addr))
+    ));
+    if !to_addrs.is_empty() {
+        let tos: Vec<String> = to_addrs.iter().map(|(n, e)| fmt_addr(n, e)).collect();
+        headers.push_str(&format!("To: {}\r\n", sanitize_header(&tos.join(", "))));
     }
-    headers.push_str("Cc: ");
-    for (n, e) in &cc_addrs {
-        headers.push_str(&sanitize_header(&format!("{} <{}>", n, e)));
-        headers.push_str("\r\n");
+    if !cc_addrs.is_empty() {
+        let ccs: Vec<String> = cc_addrs.iter().map(|(n, e)| fmt_addr(n, e)).collect();
+        headers.push_str(&format!("Cc: {}\r\n", sanitize_header(&ccs.join(", "))));
     }
-    headers.push_str("Subject: ");
-    headers.push_str(&sanitize_header(&subject));
-    headers.push_str("\r\n");
-    headers.push_str("Date: ");
-    headers.push_str(&Utc::now().to_rfc3339());
-    headers.push_str("\r\n");
-    headers.push_str("Message-ID: <");
-    headers.push_str(&uuid::Uuid::new_v4().to_string());
-    headers.push_str(">\r\n");
+    headers.push_str(&format!("Subject: {}\r\n", sanitize_header(&subject)));
+    headers.push_str(&format!("Date: {}\r\n", Utc::now().to_rfc2822()));
+    headers.push_str(&format!("Message-ID: <{}>\r\n", uuid::Uuid::new_v4()));
     headers.push_str("MIME-Version: 1.0\r\n");
     headers.push_str("Content-Type: text/plain; charset=utf-8\r\n\r\n");
 
@@ -564,6 +565,7 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
     let destroy = args.get("destroy").cloned().unwrap_or(Value::Null);
 
     let mut created = serde_json::Map::new();
+    let mut not_created = serde_json::Map::new();
     if let Value::Object(map) = &create {
         for (name, obj) in map {
             let folder = if let Some(Value::Object(mbox)) = obj.get("mailboxIds") {
@@ -572,12 +574,18 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
                 } else { "Drafts".to_string() }
             } else { "Drafts".to_string() };
             let bytes = build_rfc822_from_jmap(obj, email);
-            mail_imap::append_message(email.to_string(), password.to_string(), folder.clone(), bytes).await.unwrap_or(());
-            // get new uid (highest UID)
-            let uids = mail_imap::search_basic(email.to_string(), password.to_string(), folder.clone(), "".to_string()).await.unwrap_or_default();
-            let new_uid = uids.first().copied().unwrap_or(0);
-            let id = format!("{}:{}", folder, new_uid);
-            created.insert(name.clone(), json!({ "id": id, "threadId": id }));
+            match mail_imap::append_message(email.to_string(), password.to_string(), folder.clone(), bytes).await {
+                Ok(()) => {
+                    // the new message has the highest UID in the folder
+                    let uids = mail_imap::search_basic(email.to_string(), password.to_string(), folder.clone(), "".to_string()).await.unwrap_or_default();
+                    let new_uid = uids.iter().max().copied().unwrap_or(0);
+                    let id = format!("{}:{}", folder, new_uid);
+                    created.insert(name.clone(), json!({ "id": id, "threadId": id }));
+                }
+                Err(e) => {
+                    not_created.insert(name.clone(), json!({ "type": "serverFail", "description": format!("append failed: {e}") }));
+                }
+            }
         }
     }
 
@@ -681,7 +689,7 @@ async fn email_set(email: &str, password: &str, args: &Value) -> Value {
     json!({
         "accountId": email,
         "created": Value::Object(created),
-        "notCreated": Value::Object(serde_json::Map::new()),
+        "notCreated": Value::Object(not_created),
         "updated": Value::Object(updated),
         "notUpdated": Value::Object(not_updated),
         "destroyed": destroyed,
