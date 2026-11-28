@@ -1,4 +1,5 @@
 use crate::provision_db;
+use crate::security_keys;
 use crate::state::AppState;
 use crate::types::{Domain, ErrorResponse, IpPool, Mailbox, QueueMessage};
 use axum::{
@@ -157,12 +158,17 @@ pub async fn create_domain(
                 ));
             }
         };
+        // Generate DKIM keypair (reuse existing security_keys machinery).
+        let key = crate::security_keys::generate_dkim_keypair(&name, "affinmail");
+        if let Err(e) = crate::security_keys::write_dkim_key_file(&name, &key.selector, &key.private_key_pem) {
+            eprintln!("WARNING: failed to write DKIM key file for {}: {}", name, e);
+        }
         let dom = created.to_api();
         return Ok((
             StatusCode::CREATED,
             Json(json!({
                 "domain": dom,
-                "dnsRecords": [],
+                "dnsRecords": key.dns_records,
                 "stalwart": {
                     "registered": false,
                     "note": "Stalwart not wired in database mode yet.",
@@ -294,6 +300,11 @@ pub async fn delete_domain(
         };
         let db_id = id.strip_prefix("dom_").and_then(|s| s.parse::<i32>().ok());
         if let Some(did) = db_id {
+            // Best-effort: remove the DKIM key file(s) before deleting the row.
+            let dom_row = crate::provision_db::get_domain_by_id(&client, did).await;
+            if let Ok(Some(d)) = dom_row {
+                let _ = crate::security_keys::delete_all_dkim_keys_for_domain(&d.domain);
+            }
             match crate::provision_db::delete_domain_by_id(&client, did).await {
                 Ok(_) => {
                     return Ok(Json(json!({
