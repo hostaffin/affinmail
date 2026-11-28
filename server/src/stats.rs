@@ -494,7 +494,7 @@ pub async fn run_collector() {
                     "CREATE TABLE IF NOT EXISTS stats_samples (
                         id bigserial PRIMARY KEY,
                         ts timestamptz NOT NULL DEFAULT now(),
-                        queue_count bigint,
+                        queue_count integer,
                         domains bigint,
                         mailboxes bigint,
                         storage_bytes bigint,
@@ -1243,7 +1243,7 @@ pub async fn admin_stats(state: &AppState) -> Value {
     let (queue_count, queue_items) = match jmap_queue().await {
         Some((t, items)) => (t, items),
         None => {
-            let last: Option<i64> = pg
+            let last: Option<i32> = pg
                 .query_one(
                     "SELECT queue_count FROM stats_samples ORDER BY ts DESC LIMIT 1",
                     &[],
