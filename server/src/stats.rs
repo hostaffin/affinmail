@@ -608,9 +608,15 @@ async fn collect_logs(pg: &Client, first_run: bool) {
                         *global.entry((hour.clone(), kind)).or_insert(0) += 1;
                     }
                     if domain_side {
-                        if let Some(d) = extract_first_recipient(&line)
-                            .and_then(|a| addr_domain(&a))
-                        {
+                        // Postfix writes the recipient as to=<addr>; the
+                        // Stalwart-format extractor does not match it.
+                        let rcpt = line
+                            .split("to=<")
+                            .nth(1)
+                            .and_then(|r| r.split('>').next())
+                            .map(|a| a.to_string())
+                            .or_else(|| extract_first_recipient(&line));
+                        if let Some(d) = rcpt.and_then(|a| addr_domain(&a)) {
                             *domain.entry((hour.clone(), d, kind)).or_insert(0) += 1;
                         }
                     }
